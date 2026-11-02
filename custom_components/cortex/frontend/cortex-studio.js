@@ -676,64 +676,87 @@ class CortexStudio extends HTMLElement {
   }
   _ctlCards() {
     const d = this._data, c = d.control; if (!c) return "";
-    const mode = this._ctlMode(), manual = mode === "manual", dis = manual ? "" : " disabled";
-    const modes = [["manual", "Manual"], ["timers", "Timers"], ["advise", "Advise"], ["auto", "Autopilot"]];
-    const blurb = { manual: "You decide. Cortex never starts or stops the battery by itself.",
-      timers: "Fixed timers start the grid top-up in the shoulder window and the export in the evening feed-in window.",
-      advise: "Autopilot plans each window and tells you what it would do, but does nothing.",
-      auto: "Autopilot plans each window with your local AI inside hard limits, then charges or exports by itself." }[mode];
+    const mode = this._ctlMode(), manual = mode === "manual";
+    const MODES = [["manual", "✋", "Manual", "You decide. Cortex never starts or stops the battery."],
+      ["timers", "⏱", "Timers", "Fixed windows: grid top-up in the shoulder, export in the evening."],
+      ["advise", "💡", "Advise", "Autopilot plans each window and tells you. It takes no action."],
+      ["auto", "🤖", "Autopilot", "Your local AI plans inside hard limits, then acts by itself."]];
     const dm = c.mode_entity && this._hass.states[c.mode_entity], dispatch = dm ? dm.state : "–";
+    const dcol = /discharge/i.test(dispatch) ? C.off_peak : /charge/i.test(dispatch) ? C.grid : C.shoulder;
     const ap = d.autopilot || { decisions: [] }, last = (ap.decisions || [])[0];
-    const num = (k, label, min, max, step) => `<label class="row"><span>${label}</span><input type="number" class="num" data-opt="${k}" value="${c[k]}" min="${min}" max="${max}" step="${step}"></label>`;
-    const ctls = this._neoControls().map(st => {
-      const id = st.entity_id, a = st.attributes, n = esc(a.friendly_name || id), dm = id.split(".")[0];
-      const w = dm === "switch" ? `<input type="checkbox" class="sw" data-ctl="${id}" ${st.state === "on" ? "checked" : ""}${dis}>`
-        : dm === "number" ? `<input type="number" class="num" data-ctl="${id}" value="${esc(st.state)}" step="${a.step || "any"}" min="${a.min ?? ""}" max="${a.max ?? ""}"${dis}>${a.unit_of_measurement ? ` <span class="muted">${esc(a.unit_of_measurement)}</span>` : ""}`
-        : dm === "select" ? `<select data-ctl="${id}"${dis}>${(a.options || []).map(o => `<option${o === st.state ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>`
-        : `<input type="time" data-ctl="${id}" value="${esc(String(st.state).slice(0, 5))}"${dis}>`;
-      return `<div class="row"><span>${n}</span><span>${w}</span></div>`;
-    }).join("");
-    return `<div class="card wide"><h2>Battery control <span class="pill" style="background:${mode === "manual" ? "#757575" : C.shoulder}">${mode === "manual" ? "manual" : "automatic"}</span>
-        <span class="muted">dispatch now: <b>${esc(dispatch)}</b></span></h2>
-      <div class="seg" id="ctl-mode">${modes.map(([k, l]) => `<button data-cm="${k}" class="${k === mode ? "on" : ""}">${l}</button>`).join("")}</div>
-      <div class="muted" style="margin:8px 0">${blurb}</div>
-      <div class="muted" id="ctl-msg"></div>
+    const slider = (k, label, min, max, step, unit) => `<div class="lim"><div class="limh"><span>${label}</span><b><output data-out="${k}">${c[k]}</output> ${unit}</b></div>
+      <input type="range" class="slider" data-opt="${k}" value="${c[k]}" min="${min}" max="${max}" step="${step}"></div>`;
+    const tiles = MODES.map(([k, ic, t, sub]) => `<button class="mt ${k === mode ? "on" : ""} ${k === "manual" ? "man" : "aut"}" data-cm="${k}"><span class="mti">${ic}</span><b>${t}</b><span class="muted">${sub}</span></button>`).join("");
+    const manualPane = `<h3>Manual dispatch</h3>
+      <div class="mbtns"><button class="mb exp" id="m-exp"><span>⬆</span>Discharge to grid<small>${c.export_kw} kW down to ${c.export_floor}%</small></button>
+        <button class="mb top" id="m-top"><span>⬇</span>Charge from grid<small>${c.topup_kw} kW up to 100%</small></button>
+        <button class="mb stp" id="m-stop"><span>■</span>Stop<small>back to normal</small></button></div>`;
+    const autoPane = `<h3>Latest Autopilot decision</h3>${last ? `<div class="dec"><b>${last.window === "topup" ? "Top-up" : "Export"} ${last.do ? "✅ go" : "⏸ hold"}</b><span>${esc(last.reason || "")}</span><span class="muted">${esc(last.result || "")}</span></div>` : '<div class="muted">No decision yet.</div>'}
+      <div class="seg" style="margin-top:8px"><button id="ap-topup">Plan top-up</button><button id="ap-export">Plan export</button></div>
+      ${mode === "advise" || mode === "auto" ? `<label class="row" style="margin-top:6px"><span>Ask the local AI first</span>${this._toggle(`data-optb="use_ai"`, c.use_ai)}</label>` : ""}`;
+    return `<div class="card wide ctl"><h2>Battery control <span class="pill" style="background:${dcol}">dispatch: ${esc(dispatch)}</span></h2>
+      <div class="mtiles">${tiles}</div>
       <div class="ctl2">
-        <div><h3>Limits <span class="muted">used by timers, Autopilot and manual start</span></h3>
-          ${num("export_kw", "Export power (kW)", 0.5, 15, 0.5)}${num("export_floor", "Export floor (battery %)", 5, 90, 1)}${num("topup_kw", "Top-up power (kW)", 0.5, 15, 0.5)}
-          ${mode === "advise" || mode === "auto" ? `<label class="row"><span>Ask the local AI first</span><input type="checkbox" class="sw" data-optb="use_ai" ${c.use_ai ? "checked" : ""}></label>` : ""}</div>
-        <div>${manual ? `<h3>Manual dispatch</h3>
-          <div class="seg" style="flex-wrap:wrap"><button id="m-exp">Discharge to grid</button><button id="m-top">Charge from grid</button><button id="m-stop">Stop</button></div>
-          <div class="muted" style="margin-top:6px">Uses the limits on the left. Stop returns the battery to normal.</div>`
-        : `<h3>Latest decision</h3>${last ? `<div class="row"><span><b>${last.window === "topup" ? "Top-up" : "Export"}</b> ${last.do ? "✅" : "⏸"} ${esc(last.reason || "")}</span><span class="muted">${esc(last.result || "")}</span></div>` : '<div class="muted">No decision yet.</div>'}
-          <div class="seg" style="margin-top:8px"><button id="ap-topup">Plan top-up</button><button id="ap-export">Plan export</button></div>`}</div>
-      </div></div>
-      <div class="card wide"><h2>Neovolt output settings ${manual ? "" : '<span class="muted">locked: switch to Manual to edit</span>'}</h2>
-        ${ctls ? `<div class="ctl2">${ctls}</div>` : '<div class="muted">No Neovolt output controls found.</div>'}
-        <div class="muted" style="margin-top:6px">Feed-in, discharge cut-off, dispatch and inverter limits straight from the Neovolt and inverter entities.</div></div>`;
+        <div><h3>Limits <span class="muted">used by timers, Autopilot and manual dispatch</span></h3>
+          ${slider("export_kw", "Export power", 0.5, 10, 0.5, "kW")}${slider("export_floor", "Export floor, battery stops at", 10, 90, 1, "%")}${slider("topup_kw", "Top-up power", 0.5, 10, 0.5, "kW")}</div>
+        <div>${manual ? manualPane : autoPane}</div></div>
+      <div class="toast" id="ctl-msg"></div></div>
+      ${this._neoCard(manual, mode)}`;
+  }
+  _toggle(attrs, on, dis = false) { return `<label class="tg"><input type="checkbox" ${attrs} ${on ? "checked" : ""}${dis ? " disabled" : ""}><i></i></label>`; }
+  _neoCard(manual, mode) {
+    const group = n => /dispatch/i.test(n) ? "Dispatch" : /feed.?in/i.test(n) ? "Grid feed-in" : /cutoff|minimum soc|charg\w*\s+(start|end)/i.test(n) ? "Battery limits" : "Inverter";
+    const order = ["Grid feed-in", "Dispatch", "Battery limits", "Inverter"], groups = {};
+    const short = n => { const t = n.replace(/^(neovolt online|neovolt|local|inverter|sg10rs \(local\)|sg10rs)\s+/i, ""); return t.charAt(0).toUpperCase() + t.slice(1); };
+    for (const st of this._neoControls()) {
+      const id = st.entity_id, a = st.attributes, dm = id.split(".")[0], fn = a.friendly_name || id;
+      const w = dm === "switch" ? this._toggle(`data-ctl="${id}"`, st.state === "on")
+        : dm === "number" ? `<div class="nstep"><button data-step="-1" data-for="${id}">−</button><input type="number" data-ctl="${id}" value="${esc(st.state)}" step="${a.step || "any"}" min="${a.min ?? ""}" max="${a.max ?? ""}"><button data-step="1" data-for="${id}">+</button>${a.unit_of_measurement ? `<span class="muted">${esc(a.unit_of_measurement)}</span>` : ""}</div>`
+        : dm === "select" ? `<select data-ctl="${id}">${(a.options || []).map(o => `<option${o === st.state ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>`
+        : `<input type="time" data-ctl="${id}" value="${esc(String(st.state).slice(0, 5))}">`;
+      (groups[group(fn)] = groups[group(fn)] || []).push(`<div class="srow"><span>${esc(short(fn))}</span>${w}</div>`);
+    }
+    const blocks = order.filter(g => groups[g]).map(g => `<div class="grp"><h3>${g}</h3>${groups[g].join("")}</div>`).join("");
+    const label = { timers: "Timers", advise: "Advise", auto: "Autopilot" }[mode];
+    return `<div class="card wide"><h2>Neovolt output settings</h2>
+      ${manual ? "" : `<div class="lockbar"><span>🔒 Locked while Cortex runs <b>${label}</b>, so it and your edits don't fight.</span><button id="to-manual">Switch to Manual</button></div>`}
+      ${blocks ? `<div class="grps ${manual ? "" : "locked"}">${blocks}</div>` : '<div class="muted">No Neovolt output controls found.</div>'}
+      <div class="muted" style="margin-top:8px">These write straight to the Neovolt and inverter entities.</div></div>`;
   }
   _wireCtl() {
-    const r = this._root, q = s => r.querySelector(s), msg = t => { const m = q("#ctl-msg"); if (m) m.textContent = t; };
+    const r = this._root, q = s => r.querySelector(s), msg = (t, bad) => { const m = q("#ctl-msg"); if (m) { m.textContent = t; m.className = "toast" + (t ? " show" : "") + (bad ? " bad" : ""); } };
     const presets = { manual: { autopilot_mode: "off", auto_topup: false, auto_export: false }, timers: { autopilot_mode: "off", auto_topup: true, auto_export: true },
       advise: { autopilot_mode: "shadow", auto_topup: false, auto_export: false }, auto: { autopilot_mode: "auto" } };
-    const save = async options => { msg("Saving…"); try { await this._hass.callWS({ type: "cortex/set_options", options }); msg("Saved. Cortex is reloading…"); setTimeout(() => this._load(), 3500); } catch (e) { msg("Failed: " + (e.message || e.code)); } };
+    const save = async options => { msg("Saving…"); try { await this._hass.callWS({ type: "cortex/set_options", options }); msg("Saved. Cortex is reloading…"); setTimeout(() => this._load(), 3500); } catch (e) { msg("Failed: " + (e.message || e.code), true); } };
     r.querySelectorAll("[data-cm]").forEach(b => b.onclick = () => { if (b.dataset.cm !== this._ctlMode()) save(presets[b.dataset.cm]); });
-    r.querySelectorAll("[data-opt]").forEach(i => i.onchange = () => { const v = parseFloat(i.value); if (!Number.isNaN(v)) save({ [{ export_kw: "export_kw", topup_kw: "topup_kw", export_floor: "export_floor_soc" }[i.dataset.opt]]: v }); });
+    const tm = q("#to-manual"); if (tm) tm.onclick = () => save(presets.manual);
+    const key = { export_kw: "export_kw", topup_kw: "topup_kw", export_floor: "export_floor_soc" };
+    r.querySelectorAll("[data-opt]").forEach(i => {
+      const out = q(`[data-out="${i.dataset.opt}"]`);
+      i.oninput = () => { if (out) out.textContent = i.value; };
+      i.onchange = () => { const v = parseFloat(i.value); if (!Number.isNaN(v)) save({ [key[i.dataset.opt]]: v }); };
+    });
     r.querySelectorAll("[data-optb]").forEach(i => i.onchange = () => save({ autopilot_use_ai: i.checked }));
-    const act = async (action, extra) => { msg("Sending…"); try { const x = await this._hass.callWS({ type: "cortex/action", action, ...extra }); msg(typeof x.result === "string" ? x.result : "Done"); } catch (e) { msg("Failed: " + (e.message || e.code)); } setTimeout(() => this._load(), 1500); };
+    const act = async (action, extra) => { msg("Sending…"); try { const x = await this._hass.callWS({ type: "cortex/action", action, ...extra }); msg(typeof x.result === "string" ? x.result : "Done"); } catch (e) { msg("Failed: " + (e.message || e.code), true); } setTimeout(() => this._load(), 1500); };
     const val = k => parseFloat((q(`[data-opt="${k}"]`) || {}).value);
     const click = (id, fn) => { const el = q(id); if (el) el.onclick = fn; };
     click("#m-exp", () => act("manual_export", { kw: val("export_kw"), soc: val("export_floor") }));
     click("#m-top", () => act("manual_topup", { kw: val("topup_kw"), soc: 100 }));
     click("#m-stop", () => act("manual_stop"));
     click("#ap-topup", () => act("autopilot_topup")); click("#ap-export", () => act("autopilot_export"));
-    const call = (dm, sv, data) => this._hass.callService(dm, sv, data).then(() => msg("Sent to " + data.entity_id), e => msg("Failed: " + (e.message || e)));
+    const call = (dm, sv, data) => this._hass.callService(dm, sv, data).then(() => msg("Sent to " + data.entity_id), e => msg("Failed: " + (e.message || e), true));
     r.querySelectorAll("[data-ctl]").forEach(el => el.onchange = () => {
       const id = el.dataset.ctl, dm = id.split(".")[0];
       if (dm === "switch") call("switch", el.checked ? "turn_on" : "turn_off", { entity_id: id });
       else if (dm === "number") { const v = parseFloat(el.value); if (!Number.isNaN(v)) call("number", "set_value", { entity_id: id, value: v }); }
       else if (dm === "select") call("select", "select_option", { entity_id: id, option: el.value });
       else call("time", "set_value", { entity_id: id, time: el.value.length === 5 ? el.value + ":00" : el.value });
+    });
+    r.querySelectorAll("[data-step]").forEach(b => b.onclick = () => {
+      const i = q(`input[data-ctl="${b.dataset.for}"]`); if (!i) return;
+      const st = parseFloat(i.step) || 1, v = (parseFloat(i.value) || 0) + st * Number(b.dataset.step);
+      i.value = String(Math.round(Math.min(i.max === "" ? Infinity : +i.max, Math.max(i.min === "" ? -Infinity : +i.min, v)) * 1000) / 1000);
+      i.dispatchEvent(new Event("change"));
     });
   }
 
@@ -1285,8 +1308,31 @@ nav button.on{background:var(--primary-color);color:var(--text-primary-color,#ff
 .seg button.on{background:var(--primary-color);color:var(--text-primary-color,#fff);border-color:transparent}
 button{cursor:pointer;border:0;border-radius:8px;padding:6px 12px;background:var(--primary-color);color:var(--text-primary-color,#fff)}
 .ok{color:#66bb6a} .bad{color:#ef5350}
-.ctl2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:4px 24px}h3{font-size:13px;margin:6px 0;opacity:.8;font-weight:600}
-input:disabled,select:disabled{opacity:.5;cursor:not-allowed}
+.ctl2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px 28px;margin-top:14px}h3{font-size:13px;margin:6px 0 8px;opacity:.85;font-weight:600;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}h3 .muted{font-weight:400;font-size:12px}
+.mtiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.mt{display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--primary-text-color) 5%,transparent);color:inherit;border:2px solid transparent;transition:border-color .2s,background .2s}
+.mt .mti{font-size:22px;line-height:1}.mt b{font-size:15px}.mt .muted{font-size:12px;line-height:1.35}
+.mt:hover{background:color-mix(in srgb,var(--primary-text-color) 9%,transparent)}
+.mt.on.aut{border-color:#66bb6a;background:color-mix(in srgb,#66bb6a 14%,transparent)}.mt.on.man{border-color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 14%,transparent)}
+.lim{margin:8px 0 14px}.limh{display:flex;justify-content:space-between;font-size:14px;margin-bottom:2px}
+.mbtns{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.mb{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border-radius:14px;font-size:15px;font-weight:600;color:#fff;text-align:left}
+.mb span{font-size:20px;line-height:1}.mb small{font-weight:400;opacity:.85;font-size:12px}
+.mb.exp{background:#ef8a1c}.mb.top{background:#3b82f6}.mb.stp{background:transparent;color:inherit;border:2px solid #ef5350}.mb.stp span{color:#ef5350}
+.dec{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--primary-text-color) 5%,transparent)}
+.toast{min-height:0;max-height:0;overflow:hidden;opacity:0;margin-top:0;padding:0 12px;border-radius:10px;font-size:13px;transition:all .25s;background:color-mix(in srgb,#66bb6a 18%,transparent)}
+.toast.show{max-height:60px;opacity:1;margin-top:12px;padding:8px 12px}.toast.bad{background:color-mix(in srgb,#ef5350 20%,transparent)}
+.lockbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;margin-bottom:12px;border-radius:12px;background:color-mix(in srgb,var(--primary-text-color) 6%,transparent);font-size:13px}
+.grps{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}.grps.locked{opacity:.5;pointer-events:none;filter:grayscale(.4)}
+.grp{padding:10px 14px;border-radius:14px;background:color-mix(in srgb,var(--primary-text-color) 4%,transparent)}
+.srow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--divider-color);min-height:40px}.srow:last-child{border-bottom:0}.srow>span:first-child{font-size:14px}
+.nstep{display:inline-flex;align-items:center;gap:4px}.nstep button{width:28px;height:28px;padding:0;border-radius:50%;font-size:16px;line-height:1;background:color-mix(in srgb,var(--primary-text-color) 12%,transparent);color:inherit}
+.nstep input{width:64px;text-align:center;background:transparent;color:inherit;border:1px solid var(--divider-color);border-radius:8px;padding:4px}.nstep .muted{margin-left:2px}
+.tg{position:relative;display:inline-block;width:44px;height:24px;flex:none}.tg input{opacity:0;width:0;height:0;position:absolute}
+.tg i{position:absolute;inset:0;border-radius:999px;background:color-mix(in srgb,var(--primary-text-color) 22%,transparent);transition:background .2s;cursor:pointer}
+.tg i:after{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .2s;box-shadow:0 1px 3px #0005}
+.tg input:checked+i{background:#66bb6a}.tg input:checked+i:after{transform:translateX(20px)}
+input[type=range].slider{accent-color:var(--primary-color)}
 button.ghost{background:transparent;color:var(--secondary-text-color);padding:2px 8px}
 input[type=text],input:not([type]),select{padding:6px;border-radius:6px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color)}
 .mem{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--divider-color);align-items:center}.mem .t{flex:1}
