@@ -338,3 +338,53 @@ async def test_health_ignore_list_and_battery_unit(hass: HomeAssistant):
     hass.states.async_set("sensor.house_battery_energy", "3", {"device_class": "battery", "unit_of_measurement": "kWh", "friendly_name": "House battery"})
     hass.states.async_set("sensor.door_battery", "9", {"device_class": "battery", "unit_of_measurement": "%", "friendly_name": "Door"})
     assert await brain.run_health() == ["Door battery at 9%"]
+
+
+# ---- battery control from the panel ---------------------------------------------
+async def test_panel_set_options_and_manual_dispatch(hass: HomeAssistant, hass_ws_client):
+    async_mock_service(hass, "notify", "send_message")
+    brain = await _setup(hass, autopilot_mode="shadow")
+    hass.states.async_set("sensor.neovolt_online_soc", "80")
+    sent = []
+    for domain, svc in (("number", "set_value"), ("select", "select_option"), ("button", "press")):
+        async def rec(call, d=domain, s=svc):
+            sent.append((d, s, dict(call.data)))
+        hass.services.async_register(domain, svc, rec)
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": "cortex/overview"})
+    ctl = (await ws.receive_json())["result"]["control"]
+    assert ctl["autopilot_mode"] == "shadow" and "export_kw" in ctl
+    # change mode (rejects unknown keys and out of range values)
+    await ws.send_json({"id": 2, "type": "cortex/set_options", "options": {"secret_key": 1}})
+    assert not (await ws.receive_json())["success"]
+    await ws.send_json({"id": 3, "type": "cortex/set_options", "options": {"export_kw": 99}})
+    assert not (await ws.receive_json())["success"]
+    await ws.send_json({"id": 4, "type": "cortex/set_options", "options": {"autopilot_mode": "off", "auto_topup": False, "export_kw": 6.5}})
+    assert (await ws.receive_json())["success"]
+    await hass.async_block_till_done()
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    assert entry.options["autopilot_mode"] == "off" and entry.options["export_kw"] == 6.5
+    # manual discharge uses the numbers from the panel
+    await ws.send_json({"id": 5, "type": "cortex/action", "action": "manual_export", "kw": 4.0, "soc": 35})
+    assert (await ws.receive_json())["result"]["result"] == "started"
+    assert ("number", "set_value", {"entity_id": DEFAULTS["dispatch_power"], "value": 4.0}) in sent
+    assert ("number", "set_value", {"entity_id": DEFAULTS["discharge_target"], "value": 35.0}) in sent
+    assert any(d == "select" and x.get("option") == "Force Discharge" for d, _, x in sent)
+    await ws.send_json({"id": 6, "type": "cortex/action", "action": "manual_stop"})
+    assert (await ws.receive_json())["result"]["result"] == "stopped"
+
+
+async def test_panel_object_actions_use_target_not_id(hass: HomeAssistant, hass_ws_client):
+    """The websocket protocol owns "id"; object ids travel in "target" or HA rejects the message."""
+    async_mock_service(hass, "notify", "send_message")
+    brain = await _setup(hass)
+    mem = brain.remember("Bins on Tuesday", "fact", "test")
+    item = brain.add_reminder("Call plumber", dt_util.now() + timedelta(hours=1))
+    brain.routines.save({"name": "tidy", "steps": [{"service": "light.turn_off", "target": {"entity_id": "light.x"}}]})
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": "cortex/memory_delete", "target": mem.id})
+    assert (await ws.receive_json())["result"]["deleted"]
+    await ws.send_json({"id": 2, "type": "cortex/cancel", "kind": "reminder", "target": item["id"]})
+    assert (await ws.receive_json())["result"]["ok"]
+    await ws.send_json({"id": 3, "type": "cortex/action", "action": "delete_routine", "target": "tidy"})
+    assert (await ws.receive_json())["success"] and "tidy" not in brain.routines.items

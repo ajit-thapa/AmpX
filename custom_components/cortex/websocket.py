@@ -11,7 +11,17 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import (
+    AP_MODES,
+    CONF_AP_LLM,
+    CONF_AP_MODE,
+    CONF_AUTO_EXPORT,
+    CONF_AUTO_TOPUP,
+    CONF_EXPORT_FLOOR,
+    CONF_EXPORT_KW,
+    CONF_TOPUP_KW,
+    DOMAIN,
+)
 from .memory import CATEGORIES
 from .runtime import Cortex
 from . import tariff
@@ -38,6 +48,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_hush)
     websocket_api.async_register_command(hass, ws_cancel)
     websocket_api.async_register_command(hass, ws_action)
+    websocket_api.async_register_command(hass, ws_set_options)
 
 
 @websocket_api.websocket_command({vol.Required("type"): "cortex/overview"})
@@ -95,6 +106,16 @@ async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
                 "day_export": brain.opts.get("studio_day_export"),
                 "day_import": brain.opts.get("studio_day_import"),
             },
+            "control": {
+                "autopilot_mode": brain.autopilot.mode,
+                "use_ai": bool(brain.opts.get(CONF_AP_LLM)),
+                "auto_topup": bool(brain.opts[CONF_AUTO_TOPUP]),
+                "auto_export": bool(brain.opts[CONF_AUTO_EXPORT]),
+                "topup_kw": float(brain.opts[CONF_TOPUP_KW]),
+                "export_kw": float(brain.opts[CONF_EXPORT_KW]),
+                "export_floor": float(brain.opts[CONF_EXPORT_FLOOR]),
+                "mode_entity": brain.opts.get("dispatch_mode"),
+            },
             "autopilot": {
                 "mode": brain.autopilot.mode,
                 "active": brain.autopilot.active,
@@ -127,12 +148,12 @@ async def ws_memory_add(hass: HomeAssistant, connection, msg) -> None:
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "cortex/memory_delete", vol.Required("id"): str}
+    {vol.Required("type"): "cortex/memory_delete", vol.Required("target"): str}
 )
 @websocket_api.async_response
 async def ws_memory_delete(hass: HomeAssistant, connection, msg) -> None:
     brain = _brain(hass)
-    gone = brain.forget(msg["id"]) if brain else None
+    gone = brain.forget(msg["target"]) if brain else None
     connection.send_result(msg["id"], {"deleted": bool(gone)})
 
 
@@ -150,14 +171,14 @@ async def ws_hush(hass: HomeAssistant, connection, msg) -> None:
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "cortex/cancel", vol.Required("kind"): vol.In(["reminder", "watch"]), vol.Required("id"): str}
+    {vol.Required("type"): "cortex/cancel", vol.Required("kind"): vol.In(["reminder", "watch"]), vol.Required("target"): str}
 )
 @websocket_api.async_response
 async def ws_cancel(hass: HomeAssistant, connection, msg) -> None:
     brain = _brain(hass)
     ok = False
     if brain:
-        ok = brain.cancel_reminder(msg["id"]) if msg["kind"] == "reminder" else brain.remove_watch(msg["id"])
+        ok = brain.cancel_reminder(msg["target"]) if msg["kind"] == "reminder" else brain.remove_watch(msg["target"])
     connection.send_result(msg["id"], {"ok": ok})
 
 
@@ -165,16 +186,31 @@ ACTIONS = (
     "autopilot_topup", "autopilot_export",
     "accept_suggestion", "dismiss_suggestion", "run_routine", "delete_routine",
     "set_spot", "parcels_collected", "security_check", "backup", "weekly_report",
+    "manual_export", "manual_topup", "manual_stop",
 )
+
+# Options the panel may change. Anything else is rejected.
+CONTROL_OPTIONS = {
+    CONF_AP_MODE: vol.In(AP_MODES),
+    CONF_AP_LLM: bool,
+    CONF_AUTO_TOPUP: bool,
+    CONF_AUTO_EXPORT: bool,
+    CONF_TOPUP_KW: vol.All(vol.Coerce(float), vol.Range(min=0.5, max=15)),
+    CONF_EXPORT_KW: vol.All(vol.Coerce(float), vol.Range(min=0.5, max=15)),
+    CONF_EXPORT_FLOOR: vol.All(vol.Coerce(float), vol.Range(min=5, max=90)),
+}
 
 
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "cortex/action",
         vol.Required("action"): vol.In(ACTIONS),
-        vol.Optional("id"): str,
+        # "id" is reserved by the websocket protocol for the message number, so the object goes in "target"
+        vol.Optional("target"): str,
         vol.Optional("camera"): str,
         vol.Optional("spot"): str,
+        vol.Optional("kw"): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=15)),
+        vol.Optional("soc"): vol.All(vol.Coerce(float), vol.Range(min=5, max=100)),
     }
 )
 @websocket_api.async_response
@@ -183,7 +219,7 @@ async def ws_action(hass: HomeAssistant, connection, msg) -> None:
     if brain is None:
         connection.send_error(msg["id"], "not_loaded", "Cortex is not set up")
         return
-    action, ident = msg["action"], msg.get("id", "")
+    action, ident = msg["action"], msg.get("target", "")
     try:
         if action == "accept_suggestion":
             result: Any = brain.learning.accept(ident)
@@ -203,6 +239,13 @@ async def ws_action(hass: HomeAssistant, connection, msg) -> None:
             result = brain.security.check()
         elif action in ("autopilot_topup", "autopilot_export"):
             result = await brain.autopilot.decide(action.split("_", 1)[1], False)
+        elif action == "manual_export":
+            result = await brain.energy.start_export(True, msg.get("kw"), msg.get("soc"))
+        elif action == "manual_topup":
+            result = await brain.energy.start_topup(True, msg.get("kw"), msg.get("soc"))
+        elif action == "manual_stop":
+            brain.autopilot.active = None  # a manual stop ends whatever Autopilot started too
+            result = await brain.energy.stop()
         elif action == "backup":
             result = await brain.backup.create()
         else:
@@ -211,3 +254,27 @@ async def ws_action(hass: HomeAssistant, connection, msg) -> None:
         connection.send_error(msg["id"], "failed", str(err))
         return
     connection.send_result(msg["id"], {"result": result})
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "cortex/set_options", vol.Required("options"): dict}
+)
+@websocket_api.async_response
+async def ws_set_options(hass: HomeAssistant, connection, msg) -> None:
+    """Change battery control settings (automatic or manual) from the panel."""
+    brain = _brain(hass)
+    if brain is None:
+        connection.send_error(msg["id"], "not_loaded", "Cortex is not set up")
+        return
+    changes: dict[str, Any] = {}
+    try:
+        for key, value in msg["options"].items():
+            if key not in CONTROL_OPTIONS:
+                raise vol.Invalid(f"{key} cannot be changed here")
+            changes[key] = CONTROL_OPTIONS[key](value)
+    except vol.Invalid as err:
+        connection.send_error(msg["id"], "invalid", str(err))
+        return
+    entry = brain.entry
+    hass.config_entries.async_update_entry(entry, options={**entry.options, **changes})  # reloads Cortex
+    connection.send_result(msg["id"], {"saved": changes})

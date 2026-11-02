@@ -208,7 +208,7 @@ class CortexStudio extends HTMLElement {
     this._root.querySelector("#clock").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     const view = this._root.querySelector("#view");
     view.innerHTML = ({ now: () => this._viewNow(), ev: () => this._viewEv(), battery: () => this._viewBattery(), analytics: () => this._viewAnalytics(), plan: () => this._viewPlan(), house: () => this._viewHouse(), assistant: () => this._viewAssistant() })[this._tab]();
-    ({ now: () => { this._paintLive(); this._paintChart(); }, ev: () => { this._wireEv(); this._paintEv(); }, battery: () => { this._battWidgets(); this._paintMore("battery"); }, analytics: () => this._paintMore("analytics"), plan: () => { this._wirePlan(); this._wireExtras(); this._paintEarn(); }, house: () => this._wireHouse(), assistant: () => this._wireAssistant() })[this._tab]();
+    ({ now: () => { this._paintLive(); this._paintChart(); }, ev: () => { this._wireEv(); this._paintEv(); }, battery: () => { this._battWidgets(); this._paintMore("battery"); this._wireCtl(); }, analytics: () => this._paintMore("analytics"), plan: () => { this._wirePlan(); this._wireExtras(); this._paintEarn(); }, house: () => this._wireHouse(), assistant: () => this._wireAssistant() })[this._tab]();
   }
 
   // ---- NOW ------------------------------------------------------------
@@ -648,6 +648,7 @@ class CortexStudio extends HTMLElement {
     const soc = this._num(N + "combined_battery_soc") ?? this._num(N + "battery_soc");
     const cap = this._num("input_number.system_battery_capacity") ?? 50;
     return `<section class="grid">
+      ${this._ctlCards()}
       <div class="card"><h2>Home ESS</h2><div data-bhost="house"></div>
         <div class="stats" style="margin-top:12px">${E.life.map(([l, id]) => this._tile(l, id, C.batt)).join("")}</div></div>
       <div class="card"><h2>Monitor</h2><div class="stats">${E.bt.map(([l, id]) => this._tile(l, id, C.batt)).join("")}</div></div>
@@ -658,6 +659,82 @@ class CortexStudio extends HTMLElement {
       <div class="card"><h2>Charge level 48h (%)</h2><div id="bt-soc"></div></div>
       <div class="card"><h2>Cell temperatures 24h (°C)</h2><div id="bt-tmp"></div></div>
     </section>`;
+  }
+
+  // ---- BATTERY CONTROL: automatic or manual ----------------------------
+  _ctlMode() {
+    const c = this._data.control || {};
+    return c.autopilot_mode === "auto" ? "auto" : c.autopilot_mode === "shadow" ? "advise" : (c.auto_topup || c.auto_export ? "timers" : "manual");
+  }
+  /** Neovolt / inverter output settings, found by name so no entity ids are hard-coded. */
+  _neoControls() {
+    const dom = e => e.split(".")[0], re = /feed.?in|cutoff|dispatch|export limit|active power|discharg|charg\w*\s+(start|end)|minimum soc|grid power offset|pv switch/i, own = /^(neovolt|local\b|inverter|sg10rs)/i;
+    return Object.entries(this._hass.states).filter(([id, st]) => st && ["switch", "number", "select", "time"].includes(dom(id))
+      && own.test((st.attributes || {}).friendly_name || "") && re.test(st.attributes.friendly_name || "") && st.state !== "unavailable")
+      .map(([id, st]) => ({ ...st, entity_id: id, attributes: st.attributes }))
+      .sort((a, b) => (a.attributes.friendly_name || "").localeCompare(b.attributes.friendly_name || ""));
+  }
+  _ctlCards() {
+    const d = this._data, c = d.control; if (!c) return "";
+    const mode = this._ctlMode(), manual = mode === "manual", dis = manual ? "" : " disabled";
+    const modes = [["manual", "Manual"], ["timers", "Timers"], ["advise", "Advise"], ["auto", "Autopilot"]];
+    const blurb = { manual: "You decide. Cortex never starts or stops the battery by itself.",
+      timers: "Fixed timers start the grid top-up in the shoulder window and the export in the evening feed-in window.",
+      advise: "Autopilot plans each window and tells you what it would do, but does nothing.",
+      auto: "Autopilot plans each window with your local AI inside hard limits, then charges or exports by itself." }[mode];
+    const dm = c.mode_entity && this._hass.states[c.mode_entity], dispatch = dm ? dm.state : "–";
+    const ap = d.autopilot || { decisions: [] }, last = (ap.decisions || [])[0];
+    const num = (k, label, min, max, step) => `<label class="row"><span>${label}</span><input type="number" class="num" data-opt="${k}" value="${c[k]}" min="${min}" max="${max}" step="${step}"></label>`;
+    const ctls = this._neoControls().map(st => {
+      const id = st.entity_id, a = st.attributes, n = esc(a.friendly_name || id), dm = id.split(".")[0];
+      const w = dm === "switch" ? `<input type="checkbox" class="sw" data-ctl="${id}" ${st.state === "on" ? "checked" : ""}${dis}>`
+        : dm === "number" ? `<input type="number" class="num" data-ctl="${id}" value="${esc(st.state)}" step="${a.step || "any"}" min="${a.min ?? ""}" max="${a.max ?? ""}"${dis}>${a.unit_of_measurement ? ` <span class="muted">${esc(a.unit_of_measurement)}</span>` : ""}`
+        : dm === "select" ? `<select data-ctl="${id}"${dis}>${(a.options || []).map(o => `<option${o === st.state ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>`
+        : `<input type="time" data-ctl="${id}" value="${esc(String(st.state).slice(0, 5))}"${dis}>`;
+      return `<div class="row"><span>${n}</span><span>${w}</span></div>`;
+    }).join("");
+    return `<div class="card wide"><h2>Battery control <span class="pill" style="background:${mode === "manual" ? "#757575" : C.shoulder}">${mode === "manual" ? "manual" : "automatic"}</span>
+        <span class="muted">dispatch now: <b>${esc(dispatch)}</b></span></h2>
+      <div class="seg" id="ctl-mode">${modes.map(([k, l]) => `<button data-cm="${k}" class="${k === mode ? "on" : ""}">${l}</button>`).join("")}</div>
+      <div class="muted" style="margin:8px 0">${blurb}</div>
+      <div class="muted" id="ctl-msg"></div>
+      <div class="ctl2">
+        <div><h3>Limits <span class="muted">used by timers, Autopilot and manual start</span></h3>
+          ${num("export_kw", "Export power (kW)", 0.5, 15, 0.5)}${num("export_floor", "Export floor (battery %)", 5, 90, 1)}${num("topup_kw", "Top-up power (kW)", 0.5, 15, 0.5)}
+          ${mode === "advise" || mode === "auto" ? `<label class="row"><span>Ask the local AI first</span><input type="checkbox" class="sw" data-optb="use_ai" ${c.use_ai ? "checked" : ""}></label>` : ""}</div>
+        <div>${manual ? `<h3>Manual dispatch</h3>
+          <div class="seg" style="flex-wrap:wrap"><button id="m-exp">Discharge to grid</button><button id="m-top">Charge from grid</button><button id="m-stop">Stop</button></div>
+          <div class="muted" style="margin-top:6px">Uses the limits on the left. Stop returns the battery to normal.</div>`
+        : `<h3>Latest decision</h3>${last ? `<div class="row"><span><b>${last.window === "topup" ? "Top-up" : "Export"}</b> ${last.do ? "✅" : "⏸"} ${esc(last.reason || "")}</span><span class="muted">${esc(last.result || "")}</span></div>` : '<div class="muted">No decision yet.</div>'}
+          <div class="seg" style="margin-top:8px"><button id="ap-topup">Plan top-up</button><button id="ap-export">Plan export</button></div>`}</div>
+      </div></div>
+      <div class="card wide"><h2>Neovolt output settings ${manual ? "" : '<span class="muted">locked: switch to Manual to edit</span>'}</h2>
+        ${ctls ? `<div class="ctl2">${ctls}</div>` : '<div class="muted">No Neovolt output controls found.</div>'}
+        <div class="muted" style="margin-top:6px">Feed-in, discharge cut-off, dispatch and inverter limits straight from the Neovolt and inverter entities.</div></div>`;
+  }
+  _wireCtl() {
+    const r = this._root, q = s => r.querySelector(s), msg = t => { const m = q("#ctl-msg"); if (m) m.textContent = t; };
+    const presets = { manual: { autopilot_mode: "off", auto_topup: false, auto_export: false }, timers: { autopilot_mode: "off", auto_topup: true, auto_export: true },
+      advise: { autopilot_mode: "shadow", auto_topup: false, auto_export: false }, auto: { autopilot_mode: "auto" } };
+    const save = async options => { msg("Saving…"); try { await this._hass.callWS({ type: "cortex/set_options", options }); msg("Saved. Cortex is reloading…"); setTimeout(() => this._load(), 3500); } catch (e) { msg("Failed: " + (e.message || e.code)); } };
+    r.querySelectorAll("[data-cm]").forEach(b => b.onclick = () => { if (b.dataset.cm !== this._ctlMode()) save(presets[b.dataset.cm]); });
+    r.querySelectorAll("[data-opt]").forEach(i => i.onchange = () => { const v = parseFloat(i.value); if (!Number.isNaN(v)) save({ [{ export_kw: "export_kw", topup_kw: "topup_kw", export_floor: "export_floor_soc" }[i.dataset.opt]]: v }); });
+    r.querySelectorAll("[data-optb]").forEach(i => i.onchange = () => save({ autopilot_use_ai: i.checked }));
+    const act = async (action, extra) => { msg("Sending…"); try { const x = await this._hass.callWS({ type: "cortex/action", action, ...extra }); msg(typeof x.result === "string" ? x.result : "Done"); } catch (e) { msg("Failed: " + (e.message || e.code)); } setTimeout(() => this._load(), 1500); };
+    const val = k => parseFloat((q(`[data-opt="${k}"]`) || {}).value);
+    const click = (id, fn) => { const el = q(id); if (el) el.onclick = fn; };
+    click("#m-exp", () => act("manual_export", { kw: val("export_kw"), soc: val("export_floor") }));
+    click("#m-top", () => act("manual_topup", { kw: val("topup_kw"), soc: 100 }));
+    click("#m-stop", () => act("manual_stop"));
+    click("#ap-topup", () => act("autopilot_topup")); click("#ap-export", () => act("autopilot_export"));
+    const call = (dm, sv, data) => this._hass.callService(dm, sv, data).then(() => msg("Sent to " + data.entity_id), e => msg("Failed: " + (e.message || e)));
+    r.querySelectorAll("[data-ctl]").forEach(el => el.onchange = () => {
+      const id = el.dataset.ctl, dm = id.split(".")[0];
+      if (dm === "switch") call("switch", el.checked ? "turn_on" : "turn_off", { entity_id: id });
+      else if (dm === "number") { const v = parseFloat(el.value); if (!Number.isNaN(v)) call("number", "set_value", { entity_id: id, value: v }); }
+      else if (dm === "select") call("select", "select_option", { entity_id: id, option: el.value });
+      else call("time", "set_value", { entity_id: id, time: el.value.length === 5 ? el.value + ":00" : el.value });
+    });
   }
 
   // ---- ANALYTICS -------------------------------------------------------
@@ -941,12 +1018,12 @@ class CortexStudio extends HTMLElement {
   }
   _wireAssistant() {
     const r = this._root, click = (id, fn) => { const el = r.querySelector(id); if (el) el.onclick = fn; };
-    r.querySelectorAll("[data-del]").forEach(b => b.onclick = () => this._ws({ type: "cortex/memory_delete", id: b.dataset.del }));
-    r.querySelectorAll("[data-cancel]").forEach(b => b.onclick = () => { const [kind, id] = b.dataset.cancel.split(":"); this._ws({ type: "cortex/cancel", kind, id }); });
-    r.querySelectorAll("[data-acc]").forEach(b => b.onclick = () => this._act({ action: "accept_suggestion", id: b.dataset.acc }, () => "Routine created"));
-    r.querySelectorAll("[data-dis]").forEach(b => b.onclick = () => this._act({ action: "dismiss_suggestion", id: b.dataset.dis }));
-    r.querySelectorAll("[data-run]").forEach(b => b.onclick = () => this._act({ action: "run_routine", id: b.dataset.run }, () => "Ran " + b.dataset.run));
-    r.querySelectorAll("[data-delr]").forEach(b => b.onclick = () => this._act({ action: "delete_routine", id: b.dataset.delr }));
+    r.querySelectorAll("[data-del]").forEach(b => b.onclick = () => this._ws({ type: "cortex/memory_delete", target: b.dataset.del }));
+    r.querySelectorAll("[data-cancel]").forEach(b => b.onclick = () => { const [kind, id] = b.dataset.cancel.split(":"); this._ws({ type: "cortex/cancel", kind, target: id }); });
+    r.querySelectorAll("[data-acc]").forEach(b => b.onclick = () => this._act({ action: "accept_suggestion", target: b.dataset.acc }, () => "Routine created"));
+    r.querySelectorAll("[data-dis]").forEach(b => b.onclick = () => this._act({ action: "dismiss_suggestion", target: b.dataset.dis }));
+    r.querySelectorAll("[data-run]").forEach(b => b.onclick = () => this._act({ action: "run_routine", target: b.dataset.run }, () => "Ran " + b.dataset.run));
+    r.querySelectorAll("[data-delr]").forEach(b => b.onclick = () => this._act({ action: "delete_routine", target: b.dataset.delr }));
     click("#backup", () => this._act({ action: "backup" }, x => "Saved " + String(x).split("/").pop()));
     click("#weekly", () => this._act({ action: "weekly_report" }, () => "Weekly report sent"));
     click("#hush", () => this._ws({ type: "cortex/hush", minutes: this._data.hushed ? 0 : 60 }));
@@ -1208,6 +1285,8 @@ nav button.on{background:var(--primary-color);color:var(--text-primary-color,#ff
 .seg button.on{background:var(--primary-color);color:var(--text-primary-color,#fff);border-color:transparent}
 button{cursor:pointer;border:0;border-radius:8px;padding:6px 12px;background:var(--primary-color);color:var(--text-primary-color,#fff)}
 .ok{color:#66bb6a} .bad{color:#ef5350}
+.ctl2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:4px 24px}h3{font-size:13px;margin:6px 0;opacity:.8;font-weight:600}
+input:disabled,select:disabled{opacity:.5;cursor:not-allowed}
 button.ghost{background:transparent;color:var(--secondary-text-color);padding:2px 8px}
 input[type=text],input:not([type]),select{padding:6px;border-radius:6px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color)}
 .mem{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--divider-color);align-items:center}.mem .t{flex:1}
