@@ -20,6 +20,8 @@ const ICONS = {
   check: '<path d="m5 12 5 5 9-10"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   send: '<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>',
+  mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/>',
+  star: '<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
   chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
 };
 const icon = (n, cls = "ic") => `<svg viewBox="0 0 24 24" class="${cls}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
@@ -923,6 +925,12 @@ class CortexStudio extends HTMLElement {
       <div class="card wide" id="set-plans"><div class="chead"><h2>Plans to compare</h2><button id="pl-add" class="ghost">+ Add plan</button></div><div id="plans"></div>
         <div class="row"><span class="muted">Rates in cents per kWh, supply in cents per day. Bands are hours from–to; anything outside a band uses the default.</span><button id="pl-save">Save plans</button></div><div class="toast" id="pl-msg"></div></div>
       <div class="card wide" id="set-ai"><h2>AI and chat</h2>
+        <div class="row"><span>Answer style</span><span class="seg" id="set-style">${[["brief", "Brief"], ["normal", "Normal"], ["detailed", "Detailed"]].map(([k, l]) => `<button data-style="${k}" class="${(st.style || "brief") === k ? "on" : ""}">${l}</button>`).join("")}</span></div>
+        <div class="row col"><span>Household instructions <span class="muted">Cortex follows these in every chat, e.g. "Call me Ajit. Use 24-hour time. Never start the dishwasher after 22:00."</span></span>
+          <textarea id="set-notes" maxlength="600" rows="3" placeholder="Anything the assistant should always know or do">${esc(st.notes || "")}</textarea>
+          <div class="rowend"><span class="muted" id="notes-n">${(st.notes || "").length}/600</span><button id="set-notes-save">Save instructions</button></div></div>
+        <div class="row"><span>Speakers for announcements</span><b class="${st.speakers ? "ok" : "bad"}">${st.speakers ? "set up" : "none chosen"}</b></div>
+        <div class="row"><span>Camera vision (AI Task)</span><b class="${st.ai_task ? "ok" : "bad"}">${st.ai_task ? "set up" : "not set up"}</b></div>
         <div class="row"><span>Conversation agent for chat and Autopilot</span><select id="set-agent"><option value="">Home Assistant default</option></select></div>
         <div class="row"><span>AI calls allowed per hour</span><div class="nstep"><input type="number" id="set-aph" min="0" max="120" step="1" value="${st.ai_per_hour ?? 12}"></div></div>
         <div class="row"><span>More options (speakers, quiet hours, sensors)</span><a class="lnk" href="/config/integrations/integration/cortex" target="_top">Open integration ↗</a></div>
@@ -951,6 +959,9 @@ class CortexStudio extends HTMLElement {
       sel.innerHTML = '<option value="">Home Assistant default</option>' + list.map(a => `<option value="${esc(a.id)}"${a.id === (d.settings || {}).agent ? " selected" : ""}>${esc(a.name)}</option>`).join("");
       sel.onchange = () => save({ conversation_agent: sel.value });
     });
+    r.querySelectorAll("[data-style]").forEach(b => b.onclick = () => save({ assistant_style: b.dataset.style }));
+    const nt = q("#set-notes"); nt.oninput = () => { q("#notes-n").textContent = nt.value.length + "/600"; };
+    q("#set-notes-save").onclick = () => save({ assistant_notes: nt.value.trim() });
     q("#set-aph").onchange = e => { const v = parseInt(e.target.value, 10); if (!Number.isNaN(v)) save({ ai_per_hour: v }); };
   }
   _paintPlans() {
@@ -1025,22 +1036,83 @@ class CortexStudio extends HTMLElement {
     if (!this._chat) this._chat = { msgs: [], cid: null };
     return this._chat;
   }
+  _chatPrefs() {
+    let p = {}; try { p = JSON.parse(localStorage.getItem("cortex-chat-prefs") || "{}"); } catch (e) { /* ignore */ }
+    return { speak: "off", cat: "energy", mine: [], ...p };
+  }
+  _setChatPrefs(ch) { const p = { ...this._chatPrefs(), ...ch }; try { localStorage.setItem("cortex-chat-prefs", JSON.stringify(p)); } catch (e) { /* ignore */ } return p; }
   _chatCard() {
-    const prompts = ["What should I do with energy right now?", "Start exporting the battery", "Why did the battery top up today?", "How much did solar save me today?", "Remind me at 9pm to put the bins out"];
-    return `<div class="card wide chat"><div class="chead"><h2>${icon("spark")} Ask Cortex</h2><div class="chtools"><select id="chat-agent" aria-label="Agent"></select><button class="ghost" id="chat-new">New chat</button></div></div>
+    const pr = this._chatPrefs(), mic = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+    const cats = [["energy", "Energy"], ["ev", "EV"], ["house", "House"], ["routines", "Routines"], ["remind", "Reminders"], ["mine", "My prompts"]];
+    return `<div class="card wide chat"><div class="chead"><h2>${icon("spark")} Ask Cortex</h2>
+        <div class="chtools"><select id="chat-agent" aria-label="Agent"></select>
+          <select id="chat-speak" aria-label="Speak replies"><option value="off">Silent</option><option value="device">Speak here</option><option value="house">Speak on speakers</option></select>
+          <button class="ghost" id="chat-export" title="Download this chat">Export</button><button class="ghost" id="chat-new">New chat</button></div></div>
       <div class="msgs" id="msgs" aria-live="polite"></div>
-      <div class="qp">${prompts.map(p => `<button class="chip" data-qp="${esc(p)}">${esc(p)}</button>`).join("")}</div>
-      <form class="chatf" id="chatf"><input id="chatin" autocomplete="off" placeholder="Ask anything, or tell Cortex what to do…" aria-label="Message"><button type="submit" aria-label="Send" id="chatsend">${icon("send")}</button></form></div>`;
+      <div class="pcats seg">${cats.map(([k, l]) => `<button data-pcat="${k}" class="${pr.cat === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      <div class="qp" id="qp"></div>
+      <form class="chatf" id="chatf">${mic ? `<button type="button" class="mic" id="chatmic" aria-label="Speak your message">${icon("mic")}</button>` : ""}
+        <input id="chatin" autocomplete="off" placeholder="Ask anything, or tell Cortex what to do…" aria-label="Message">
+        <button type="button" class="star" id="chatstar" aria-label="Save as one of my prompts" title="Save as my prompt">${icon("star")}</button>
+        <button type="submit" aria-label="Send" id="chatsend">${icon("send")}</button></form></div>`;
+  }
+  _promptsFor(cat) {
+    const P = {
+      energy: ["What should I do with energy right now?", "Why did the battery top up today?", "How much did solar save me today?", "Start exporting the battery", "Stop the battery dispatch", "Switch the battery to Autopilot", "Is tomorrow a low solar day?"],
+      ev: ["When should I charge the EV?", "How full is the EV and how long to 80%?", "Is the EV charging right now?", "What will a full charge cost in the shoulder window?"],
+      house: ["Is the house locked up?", "Who came to the door today?", "What happened around the house today?", "Look at the front door camera", "Any house health problems?", "Be quiet for an hour"],
+      routines: ["Make a goodnight routine that turns off all lights at 23:00", "What routines do I have?", "Run the goodnight routine", "Tell me when the garage door opens"],
+      remind: ["Remind me at 9pm to put the bins out", "Remind me in 30 minutes to check the oven", "What reminders do I have?", "Give me today's briefing", "Give me the weekly summary"],
+    };
+    return cat === "mine" ? this._chatPrefs().mine : P[cat] || [];
+  }
+  _paintPrompts() {
+    const el = this._root.querySelector("#qp"); if (!el) return;
+    const cat = this._chatPrefs().cat, list = this._promptsFor(cat);
+    el.innerHTML = list.length ? list.map((p, i) => `<span class="chipw"><button class="chip" data-qp="${esc(p)}">${esc(p)}</button>${cat === "mine" ? `<button class="ghost x" data-qdel="${i}" aria-label="Remove prompt">✕</button>` : ""}</span>`).join("")
+      : '<span class="muted">Type a message and press ☆ to keep it here.</span>';
+    el.querySelectorAll("[data-qp]").forEach(b => b.onclick = () => this._chatSend(b.dataset.qp));
+    el.querySelectorAll("[data-qdel]").forEach(b => b.onclick = () => { const m = this._chatPrefs().mine; m.splice(Number(b.dataset.qdel), 1); this._setChatPrefs({ mine: m }); this._paintPrompts(); });
   }
   _paintChat() {
     const el = this._root.querySelector("#msgs"); if (!el) return;
-    const c = this._chatState(), fmt = t => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
-    el.innerHTML = c.msgs.length ? c.msgs.map(m => `<div class="msg ${m.who}${m.err ? " err" : ""}">${fmt(m.text)}</div>`).join("") + (this._chatBusy ? '<div class="msg ai typing"><i></i><i></i><i></i></div>' : "")
-      : `<div class="empty">${icon("spark")}<b>Ask about your energy, house or reminders.</b><span>Cortex can check the battery, start an export, set reminders and run routines. With Home Assistant's Assist turned on for your agent, it can control any exposed device.</span></div>`;
+    const c = this._chatState(), fmt = t => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\n/g, "<br>");
+    const lastAi = c.msgs.map(m => m.who).lastIndexOf("ai");
+    el.innerHTML = c.msgs.length ? c.msgs.map((m, i) => `<div class="mwrap ${m.who}"><div class="msg ${m.who}${m.err ? " err" : ""}">${fmt(m.text)}</div>
+        ${m.who === "ai" ? `<div class="macts"><button class="ghost" data-mcopy="${i}">Copy</button><button class="ghost" data-mspeak="${i}">Speak</button>${i === lastAi ? '<button class="ghost" data-mretry="1">Retry</button>' : ""}${m.t ? `<span class="muted">${m.t}</span>` : ""}</div>` : ""}</div>`).join("")
+        + (this._chatBusy ? '<div class="msg ai typing"><i></i><i></i><i></i></div>' : "")
+      : `<div class="empty">${icon("spark")}<b>Ask about your energy, house or reminders.</b>
+          <span>Cortex can control the battery, give tips, look at cameras, announce on speakers, set reminders and watches, and create or run routines. With Assist turned on for your agent it can also control any exposed device.</span></div>`;
+    const say = t => this._speak(t);
+    el.querySelectorAll("[data-mcopy]").forEach(b => b.onclick = () => { try { navigator.clipboard.writeText(c.msgs[b.dataset.mcopy].text); b.textContent = "Copied"; } catch (e) { /* ignore */ } });
+    el.querySelectorAll("[data-mspeak]").forEach(b => b.onclick = () => say(c.msgs[b.dataset.mspeak].text, true));
+    el.querySelectorAll("[data-mretry]").forEach(b => b.onclick = () => { const last = [...c.msgs].reverse().find(m => m.who === "me"); if (last) { c.msgs.splice(c.msgs.lastIndexOf(last)); this._chatSend(last.text); } });
     el.scrollTop = el.scrollHeight;
   }
+  _speak(text, force) {
+    const mode = this._chatPrefs().speak, plain = String(text).replace(/\*\*|`/g, "");
+    if (mode === "house") { this._hass.callService("cortex", "say", { message: plain }).catch(() => {}); return; }
+    if ((mode === "device" || force) && window.speechSynthesis) { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(plain); u.lang = this._hass.language || "en"; speechSynthesis.speak(u); }
+  }
+  _keepChat() { const c = this._chatState(); try { sessionStorage.setItem("cortex-chat", JSON.stringify({ msgs: c.msgs.slice(-40), cid: c.cid })); } catch (e) { /* ignore */ } }
+  async _chatSend(text) {
+    const q = s => this._root.querySelector(s), c = this._chatState();
+    text = (text || "").trim(); if (!text || this._chatBusy) return;
+    const t = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    c.msgs.push({ who: "me", text, t: t() }); this._chatBusy = true; this._paintChat(); this._keepChat();
+    const sel = q("#chat-agent"), agent = sel ? sel.value : "";
+    try {
+      const res = await this._hass.callWS({ type: "conversation/process", text, conversation_id: c.cid || undefined, agent_id: agent || undefined, language: this._hass.language });
+      c.cid = res.conversation_id || c.cid;
+      const reply = (((res.response || {}).speech || {}).plain || {}).speech || "Done.";
+      c.msgs.push({ who: "ai", text: reply, err: (res.response || {}).response_type === "error", t: t() });
+      this._speak(reply);
+    } catch (e) { c.msgs.push({ who: "ai", text: "Couldn't reach the agent: " + (e.message || e.code), err: true, t: t() }); }
+    this._chatBusy = false; this._paintChat(); this._keepChat();
+    if (/export|top.?up|charg|stop|battery|autopilot|routine|quiet|watch/i.test(text)) setTimeout(() => this._load(), 2500);
+  }
   _wireChat() {
-    const r = this._root, q = s => r.querySelector(s), c = this._chatState();
+    const r = this._root, q = s => r.querySelector(s), c = this._chatState(), pr = this._chatPrefs();
     this._agents().then(list => {
       const sel = q("#chat-agent"); if (!sel) return;
       let pick = null; try { pick = localStorage.getItem("cortex-chat-agent"); } catch (e) { /* ignore */ }
@@ -1048,24 +1120,25 @@ class CortexStudio extends HTMLElement {
       sel.innerHTML = '<option value="">Default agent</option>' + list.map(a => `<option value="${esc(a.id)}"${a.id === def ? " selected" : ""}>${esc(a.name)}</option>`).join("");
       sel.onchange = () => { try { localStorage.setItem("cortex-chat-agent", sel.value); } catch (e) { /* ignore */ } c.cid = null; };
     });
-    const keep = () => { try { sessionStorage.setItem("cortex-chat", JSON.stringify({ msgs: c.msgs.slice(-40), cid: c.cid })); } catch (e) { /* ignore */ } };
-    const send = async text => {
-      text = (text || "").trim(); if (!text || this._chatBusy) return;
-      c.msgs.push({ who: "me", text }); this._chatBusy = true; this._paintChat(); keep();
-      const sel = q("#chat-agent"), agent = sel ? sel.value : "";
-      try {
-        const res = await this._hass.callWS({ type: "conversation/process", text, conversation_id: c.cid || undefined, agent_id: agent || undefined, language: this._hass.language });
-        c.cid = res.conversation_id || c.cid;
-        const sp = ((res.response || {}).speech || {}).plain || {};
-        c.msgs.push({ who: "ai", text: sp.speech || "Done.", err: (res.response || {}).response_type === "error" });
-      } catch (e) { c.msgs.push({ who: "ai", text: "Couldn't reach the agent: " + (e.message || e.code), err: true }); }
-      this._chatBusy = false; this._paintChat(); keep();
-      if (/export|top.?up|charg|stop|battery|autopilot/i.test(text)) setTimeout(() => this._load(), 2500);
+    const sp = q("#chat-speak"); sp.value = pr.speak; sp.onchange = () => this._setChatPrefs({ speak: sp.value });
+    r.querySelectorAll("[data-pcat]").forEach(b => b.onclick = () => { this._setChatPrefs({ cat: b.dataset.pcat }); r.querySelectorAll("[data-pcat]").forEach(x => x.classList.toggle("on", x === b)); this._paintPrompts(); });
+    q("#chatf").onsubmit = e => { e.preventDefault(); const i = q("#chatin"); const t = i.value; i.value = ""; this._chatSend(t); };
+    q("#chatstar").onclick = () => { const v = q("#chatin").value.trim(); if (!v) return; const m = this._chatPrefs().mine.filter(x => x !== v); m.unshift(v); this._setChatPrefs({ mine: m.slice(0, 20), cat: "mine" }); r.querySelectorAll("[data-pcat]").forEach(x => x.classList.toggle("on", x.dataset.pcat === "mine")); this._paintPrompts(); };
+    q("#chat-new").onclick = () => { c.msgs = []; c.cid = null; this._keepChat(); this._paintChat(); };
+    q("#chat-export").onclick = () => {
+      const txt = c.msgs.map(m => `[${m.t || ""}] ${m.who === "me" ? "You" : "Cortex"}: ${m.text}`).join("\n\n") || "(empty chat)";
+      const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([txt], { type: "text/plain" })); a.download = `cortex-chat-${new Date().toISOString().slice(0, 10)}.txt`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     };
-    q("#chatf").onsubmit = e => { e.preventDefault(); const i = q("#chatin"); const t = i.value; i.value = ""; send(t); };
-    r.querySelectorAll("[data-qp]").forEach(b => b.onclick = () => send(b.dataset.qp));
-    q("#chat-new").onclick = () => { c.msgs = []; c.cid = null; keep(); this._paintChat(); };
-    this._paintChat();
+    const micB = q("#chatmic");
+    if (micB) micB.onclick = () => {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (this._rec) { this._rec.stop(); return; }
+      const rec = new SR(); rec.lang = this._hass.language || "en-AU"; rec.interimResults = true; this._rec = rec; micB.classList.add("on");
+      rec.onresult = e => { const t = [...e.results].map(x => x[0].transcript).join(""); q("#chatin").value = t; if (e.results[e.results.length - 1].isFinal) { rec.stop(); q("#chatin").value = ""; this._chatSend(t); } };
+      rec.onend = rec.onerror = () => { this._rec = null; micB.classList.remove("on"); };
+      rec.start();
+    };
+    this._paintPrompts(); this._paintChat();
   }
 
   // ---- ANALYTICS -------------------------------------------------------
@@ -1897,6 +1970,18 @@ button.pill{min-height:0;font:650 12.5px/1 var(--ff);padding:5px 12px}
 .bimk{position:absolute;inset:0;pointer-events:none}.bimk i{position:absolute;opacity:.9}
 .battmeta{display:flex;flex-direction:column;align-items:center;text-align:center;font-size:13px;gap:2px}
 .battmeta b{font-size:15px}.bbig{font-size:36px;font-weight:700;line-height:1.1;color:var(--bc);letter-spacing:-.02em}
+
+/* ---- v0.16: assistant options ---- */
+.pcats{flex-wrap:wrap;align-self:flex-start}.pcats button{padding:6px 12px;min-height:32px;font-size:13px}
+.chipw{display:inline-flex;align-items:center;flex:none}.chipw .x{min-height:28px;padding:2px 6px;margin-left:-4px}
+.mwrap{display:flex;flex-direction:column;gap:3px}.mwrap.me{align-items:flex-end}.mwrap.ai{align-items:flex-start}
+.macts{display:flex;gap:2px;align-items:center;opacity:.75}.macts button{min-height:26px;padding:3px 8px;font-size:12px}.macts .muted{font-size:11.5px;margin-left:6px}
+.msg code{font-family:ui-monospace,monospace;font-size:13px;background:color-mix(in srgb,var(--text) 10%,transparent);padding:1px 5px;border-radius:6px}
+.chatf .mic,.chatf .star{background:var(--surface2);color:var(--text)}.chatf .mic.on{background:var(--bad);color:#fff;animation:blink 1.2s infinite}
+textarea{font:500 14px/1.45 var(--ff);color:var(--text);background:var(--surface2);border:1px solid var(--line);border-radius:14px;padding:10px 12px;width:100%;resize:vertical}
+.row.col{flex-direction:column;align-items:stretch}.rowend{display:flex;justify-content:space-between;align-items:center}
+.chatf input{min-width:0}
+@media (max-width:720px){.chtools{flex-wrap:wrap;justify-content:flex-end}.chead:has(.chtools){flex-wrap:wrap}.chatf{gap:6px}.chatf button{width:44px;height:44px}.chatf input{min-height:44px;padding:10px 14px}}
 
 /* ---- v0.15: advice, sankey, plans, settings, chat ---- */
 .tips{display:flex;flex-direction:column;gap:10px}

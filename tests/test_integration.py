@@ -165,3 +165,26 @@ async def test_battery_control_and_advice_tools(hass: HomeAssistant):
     out = await run("battery_control", action="mode", mode="auto")
     await hass.async_block_till_done()
     assert hass.config_entries.async_entries(DOMAIN)[0].options["autopilot_mode"] == "auto"
+
+
+async def test_assistant_tools_and_style(hass: HomeAssistant):
+    entry = await _setup(hass, assistant_style="detailed", assistant_notes="Call me Ajit.")
+    brain = hass.data[DOMAIN][entry.entry_id]
+    ctx = llm.LLMContext(platform="test", context=None, language="en", assistant=None, device_id=None)
+    api = await llm.async_get_api(hass, DOMAIN, ctx)
+    assert "full answer" in api.api_prompt and "Call me Ajit." in api.api_prompt
+    tools = {t.name: t for t in api.tools}
+    assert {"announce", "camera_look", "save_routine", "delete_routine", "watch", "quiet", "briefing"} <= set(tools)
+    run = lambda n, **a: tools[n].async_call(hass, llm.ToolInput(tool_name=n, tool_args=a), ctx)  # noqa: E731
+    d = lambda x: getattr(x, "data", x)  # noqa: E731
+    out = d(await run("save_routine", name="lights out", steps=[{"service": "light.turn_off", "target": {"entity_id": "light.all"}}], schedule={"at": "23:00"}))
+    assert out["saved"] == "lights out" and "lights out" in brain.routines.items
+    assert "error" in d(await run("save_routine", name="bad", steps=[{"service": "not valid"}]))
+    assert d(await run("delete_routine", name="lights out"))["deleted"]
+    hass.states.async_set("cover.garage", "closed")
+    assert d(await run("watch", entity_id="cover.garage", message="Garage opened", to_state="open"))["watching"] == "cover.garage"
+    assert "error" in d(await run("watch", entity_id="cover.nope", message="x"))
+    assert d(await run("quiet", minutes=30))["hushed_minutes"] == 30 and brain.gate.hushed_until
+    assert "error" in d(await run("camera_look", camera="front"))
+    assert isinstance(d(await run("briefing"))["text"], str)
+    assert "spoken" in d(await run("announce", message="Dinner is ready"))

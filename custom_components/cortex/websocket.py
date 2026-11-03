@@ -15,6 +15,9 @@ from .const import (
     AP_MODES,
     CONF_AGENT,
     CONF_AI_PER_HOUR,
+    CONF_AS_NOTES,
+    CONF_AS_STYLE,
+    AS_STYLES,
     CONF_AP_LLM,
     CONF_AP_MODE,
     CONF_AUTO_EXPORT,
@@ -130,6 +133,10 @@ async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
             "settings": {
                 "agent": brain.opts.get(CONF_AGENT) or "",
                 "ai_per_hour": int(brain.opts.get(CONF_AI_PER_HOUR) or 0),
+                "style": brain.opts.get(CONF_AS_STYLE) or "brief",
+                "notes": brain.opts.get(CONF_AS_NOTES) or "",
+                "speakers": bool(brain.opts.get("speakers")),
+                "ai_task": bool(brain.opts.get("ai_task")),
                 "health_ignore": list(brain.opts.get(CONF_HEALTH_IGNORE) or []),
             },
             "automation": {
@@ -212,6 +219,8 @@ CONTROL_OPTIONS = {
     CONF_HEALTH_IGNORE: vol.All([str], vol.Length(max=500)),
     CONF_AGENT: vol.Any(None, "", str),
     CONF_AI_PER_HOUR: vol.All(vol.Coerce(int), vol.Range(min=0, max=120)),
+    CONF_AS_STYLE: vol.In(AS_STYLES),
+    CONF_AS_NOTES: vol.All(str, vol.Length(max=600)),
 }
 
 _BAND = vol.Schema({

@@ -10,7 +10,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from datetime import timedelta
+
+from .const import CONF_AS_NOTES, CONF_AS_STYLE, DOMAIN
 from .memory import CATEGORIES
 from .runtime import Cortex
 
@@ -221,6 +223,109 @@ class BatteryControlTool(_Tool):
         return _out({"result": f"battery control set to {mode}"})
 
 
+class AnnounceTool(_Tool):
+    name = "announce"
+    description = "Say something out loud on the house speakers (quiet hours and hush still apply unless urgent). Optionally push it to the phone."
+    parameters = vol.Schema({
+        vol.Required("message"): vol.All(str, vol.Length(min=1, max=300)),
+        vol.Optional("urgent", default=False): bool,
+        vol.Optional("area"): str,
+        vol.Optional("push", default=False): bool,
+    })
+
+    async def async_call(self, hass, tool_input, llm_context) -> dict[str, Any]:
+        a = tool_input.tool_args
+        rec = await self.brain.speaker.say(a["message"], a.get("urgent", False), a.get("area"), a.get("push") or None)
+        return _out({"spoken": bool(rec.get("spoken")), "reason": rec.get("reason"), "pushed": bool(rec.get("pushed"))})
+
+
+class CameraLookTool(_Tool):
+    name = "camera_look"
+    description = "Look at a camera and describe what it sees, or answer a question about the picture. Cameras: use the camera entity id."
+    parameters = vol.Schema({vol.Required("camera"): str, vol.Optional("question"): str})
+
+    async def async_call(self, hass, tool_input, llm_context) -> dict[str, Any]:
+        a = tool_input.tool_args
+        cam = a["camera"] if a["camera"].startswith("camera.") else "camera." + a["camera"]
+        if hass.states.get(cam) is None:
+            return _out({"error": f"no camera {cam}", "cameras": sorted(s.entity_id for s in hass.states.async_all("camera"))})
+        try:
+            return _out({"camera": cam, "sees": await self.brain.look(cam, a.get("question"))})
+        except Exception as err:  # noqa: BLE001 - tell the model, it can explain to the user
+            return _out({"error": str(err)})
+
+
+class SaveRoutineTool(_Tool):
+    name = "save_routine"
+    description = (
+        "Create or replace a named routine. steps is a list; each step is one of {say: text}, {push: text}, "
+        "{service: 'domain.service', target: {entity_id: ...}, data: {...}} or {delay: seconds}. "
+        "Optional schedule {at: 'HH:MM', days: daily|weekdays|weekends} or on_state {entity_id, to}. Confirm with the user first."
+    )
+    parameters = vol.Schema({
+        vol.Required("name"): str,
+        vol.Required("steps"): list,
+        vol.Optional("schedule"): dict,
+        vol.Optional("on_state"): dict,
+    })
+
+    async def async_call(self, hass, tool_input, llm_context) -> dict[str, Any]:
+        try:
+            saved = self.brain.routines.save(dict(tool_input.tool_args))
+        except vol.Invalid as err:
+            return _out({"error": f"routine not valid: {err}"})
+        return _out({"saved": saved["name"], "steps": len(saved["steps"]), "schedule": saved.get("schedule"), "on_state": saved.get("on_state")})
+
+
+class DeleteRoutineTool(_Tool):
+    name = "delete_routine"
+    description = "Delete a saved routine by name."
+    parameters = vol.Schema({vol.Required("name"): str})
+
+    async def async_call(self, hass, tool_input, llm_context) -> dict[str, Any]:
+        return _out({"deleted": bool(self.brain.routines.delete(tool_input.tool_args["name"]))})
+
+
+class WatchTool(_Tool):
+    name = "watch"
+    description = "Tell the household when an entity changes (optionally only to a given state), e.g. tell me when the garage door opens."
+    parameters = vol.Schema({
+        vol.Required("entity_id"): str,
+        vol.Required("message"): vol.All(str, vol.Length(min=1, max=200)),
+        vol.Optional("to_state"): str,
+        vol.Optional("urgent", default=False): bool,
+    })
+
+    async def async_call(self, hass, tool_input, llm_context) -> dict[str, Any]:
+        a = tool_input.tool_args
+        if hass.states.get(a["entity_id"]) is None:
+            return _out({"error": f"unknown entity {a['entity_id']}"})
+        item = self.brain.add_watch(a["entity_id"], a["message"], a.get("to_state"), urgent=a.get("urgent", False))
+        return _out({"watching": item["entity_id"], "id": item["id"]})
+
+
+class QuietTool(_Tool):
+    name = "quiet"
+    description = "Stop Cortex speaking for a number of minutes (0 to resume)."
+    parameters = vol.Schema({vol.Required("minutes"): vol.All(vol.Coerce(int), vol.Range(min=0, max=1440))})
+
+    async def async_call(self, hass, tool_input, llm_context) -> dict[str, Any]:
+        m = tool_input.tool_args["minutes"]
+        self.brain.gate.hush(dt_util.now() + timedelta(minutes=m) if m else None)
+        self.brain.notify_update()
+        return _out({"hushed_minutes": m})
+
+
+class BriefingTool(_Tool):
+    name = "briefing"
+    description = "Today's household briefing (weather, energy, reminders) or the weekly summary as text."
+    parameters = vol.Schema({vol.Optional("kind", default="today"): vol.In(["today", "week"])})
+
+    async def async_call(self, hass, tool_input, llm_context) -> dict[str, Any]:
+        kind = tool_input.tool_args.get("kind", "today")
+        return _out({"text": self.brain.briefing.weekly_text() if kind == "week" else self.brain.briefing_text()})
+
+
 class RunRoutineTool(_Tool):
     name = "run_routine"
     description = "Run a saved Cortex routine by name (for example goodnight or leaving)."
@@ -264,12 +369,25 @@ class CortexAPI(llm.API):
             HouseStatusTool(self.brain),
             TimelineTool(self.brain),
             RunRoutineTool(self.brain),
+            SaveRoutineTool(self.brain),
+            DeleteRoutineTool(self.brain),
+            AnnounceTool(self.brain),
+            CameraLookTool(self.brain),
+            WatchTool(self.brain),
+            QuietTool(self.brain),
+            BriefingTool(self.brain),
             SecurityCheckTool(self.brain),
         ]
         if self.brain.routines.items:
             prompt_routines = ", ".join(sorted(self.brain.routines.items))
         top = self.brain.book.recall("", 5)
         prompt = PROMPT + f" Now: {dt_util.now().strftime('%A %d %B %H:%M')}."
+        style = self.brain.opts.get(CONF_AS_STYLE) or "brief"
+        prompt += {"brief": " Keep answers to one or two sentences.", "normal": " Answer in a short paragraph.",
+                   "detailed": " Give a full answer with the numbers and reasons; short lists are fine."}.get(style, "")
+        notes = (self.brain.opts.get(CONF_AS_NOTES) or "").strip()
+        if notes:
+            prompt += " Household instructions: " + notes[:600]
         if self.brain.routines.items:
             prompt += " Routines you can run: " + prompt_routines + "."
         if top:

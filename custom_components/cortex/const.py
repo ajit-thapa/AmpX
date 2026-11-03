@@ -28,6 +28,9 @@ CONF_WEEKLY_TIME = "weekly_time"
 CONF_AUTO_BACKUP = "auto_backup"
 CONF_AI_TASK = "ai_task"
 CONF_AI_PER_HOUR = "ai_per_hour"
+CONF_AS_STYLE = "assistant_style"  # brief | normal | detailed
+CONF_AS_NOTES = "assistant_notes"  # the household's own standing instructions for the assistant
+AS_STYLES = ("brief", "normal", "detailed")
 
 # --- security, visitors, learning ------------------------------------------
 CONF_NIGHT_WATCH = "night_watch"
@@ -111,6 +114,8 @@ DEFAULTS: dict[str, object] = {
     CONF_AUTO_BACKUP: True,
     CONF_AI_TASK: None,
     CONF_AI_PER_HOUR: 12,
+    CONF_AS_STYLE: "brief",
+    CONF_AS_NOTES: "",
     CONF_NIGHT_WATCH: True,
     CONF_NIGHT_START: "23:00:00",
     CONF_NIGHT_END: "06:00:00",
