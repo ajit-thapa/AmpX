@@ -388,3 +388,23 @@ async def test_panel_object_actions_use_target_not_id(hass: HomeAssistant, hass_
     assert (await ws.receive_json())["result"]["ok"]
     await ws.send_json({"id": 3, "type": "cortex/action", "action": "delete_routine", "target": "tidy"})
     assert (await ws.receive_json())["success"] and "tidy" not in brain.routines.items
+
+
+async def test_overview_advice_plans_and_settings(hass: HomeAssistant, hass_ws_client):
+    async_mock_service(hass, "notify", "send_message")
+    brain = await _setup(hass)
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": "cortex/overview"})
+    res = (await ws.receive_json())["result"]
+    assert res["advice"] and res["plans"] == [] and "health_ignore" in res["settings"]
+    plan = {"id": "p1", "name": "Flat", "supply": 100, "import_default": 30, "fit_default": 5,
+            "import": [{"from": 10, "to": 14, "rate": 10, "days": "all"}], "junk": 1}
+    await ws.send_json({"id": 2, "type": "cortex/plans_save", "plans": [plan]})
+    out = await ws.receive_json()
+    assert out["success"] and "junk" not in out["result"]["plans"][0] and brain.plans[0]["name"] == "Flat"
+    await ws.send_json({"id": 3, "type": "cortex/plans_save", "plans": [{**plan, "supply": -5}]})
+    assert not (await ws.receive_json())["success"]
+    await ws.send_json({"id": 4, "type": "cortex/set_options", "options": {"health_ignore": ["switch.x"], "ai_per_hour": 20}})
+    assert (await ws.receive_json())["success"]
+    await hass.async_block_till_done()
+    assert hass.config_entries.async_entries(DOMAIN)[0].options["health_ignore"] == ["switch.x"]

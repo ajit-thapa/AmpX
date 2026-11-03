@@ -24,6 +24,13 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_AGENT,
+    CONF_RESERVE,
+    CONF_ST_BATT,
+    CONF_ST_BATT_INVERT,
+    CONF_ST_EV,
+    CONF_ST_GRID,
+    CONF_ST_GRID_INVERT,
+    CONF_ST_PV,
     CONF_AI_PER_HOUR,
     CONF_AI_TASK,
     CONF_HEALTH_IGNORE,
@@ -47,6 +54,7 @@ from .const import (
     SIGNAL_UPDATE,
     STORAGE_VERSION,
 )
+from . import advisor
 from .autopilot import Autopilot
 from .backup import Backup
 from .briefing import Briefing
@@ -86,6 +94,7 @@ class Cortex:
         self.book = MemoryBook()
         self.watches: list[dict[str, Any]] = []
         self.reminders: list[dict[str, Any]] = []
+        self.plans: list[dict[str, Any]] = []  # other tariffs to compare against, edited in the panel
         self.gate = SpeechGate()
         self.speaker = Speaker(hass, self, self.gate)
         self.energy = EnergyBrain(hass, self)
@@ -133,6 +142,7 @@ class Cortex:
         self.book = MemoryBook.from_data(data.get("memory"))
         self.watches = list(data.get("watches", []))
         self.reminders = list(data.get("reminders", []))
+        self.plans = list(data.get("plans", []))
         saved = data.get("features", {})
         for feature in self.features:
             feature.load(saved.get(feature.name))
@@ -192,6 +202,7 @@ class Cortex:
             "memory": self.book.to_data(),
             "watches": self.watches,
             "reminders": self.reminders,
+            "plans": self.plans,
             "features": {f.name: f.dump() for f in self.features},
         }
 
@@ -208,6 +219,7 @@ class Cortex:
         self.book = MemoryBook.from_data(data.get("memory"))
         self.watches = list(data.get("watches", []))
         self.reminders = list(data.get("reminders", []))
+        self.plans = list(data.get("plans", []))
         saved = data.get("features", {})
         for feature in self.features:
             feature.load(saved.get(feature.name))
@@ -284,6 +296,33 @@ class Cortex:
 
     # ---- snapshot -------------------------------------------------------
     @callback
+    def live_flows(self) -> dict[str, float]:
+        """Live power in kW. Grid + is import, battery + is charging."""
+        def kw(key: str, invert: str | None = None) -> float:
+            state = self.hass.states.get(self.opts.get(key) or "")
+            try:
+                value = float(state.state)  # type: ignore[union-attr]
+            except (AttributeError, TypeError, ValueError):
+                return 0.0
+            if (state.attributes.get("unit_of_measurement") or "kW").lower() == "w":
+                value /= 1000
+            return -value if invert and self.opts.get(invert) else value
+
+        pv, ev = max(kw(CONF_ST_PV), 0.0), max(kw(CONF_ST_EV), 0.0)
+        grid, batt = kw(CONF_ST_GRID, CONF_ST_GRID_INVERT), kw(CONF_ST_BATT, CONF_ST_BATT_INVERT)
+        return {"pv": pv, "grid": grid, "batt": batt, "ev": ev, "load": max(pv + grid - batt, 0.0)}
+
+    def control_mode(self) -> str:
+        mode = self.autopilot.mode
+        if mode in ("auto", "shadow"):
+            return mode
+        return "timers" if self.opts.get(CONF_AUTO_TOPUP) or self.opts.get(CONF_AUTO_EXPORT) else "off"
+
+    def advice(self) -> list[dict[str, str]]:
+        """Instant rule-based tips for right now (no AI call)."""
+        return advisor.tips(self.snapshot, self.live_flows(), dt_util.now(), mode=self.control_mode(),
+                            reserve=float(self.opts.get(CONF_RESERVE) or 20))
+
     def refresh(self) -> None:
         self.snapshot = self.energy.snapshot()
         snap = self.snapshot

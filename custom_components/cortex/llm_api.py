@@ -19,6 +19,8 @@ PROMPT = (
     "Use cortex tools to remember durable facts the user tells you, recall them "
     "before answering questions about the household, and set reminders. "
     "Energy questions: use energy_status instead of guessing; for why the battery did something, use autopilot_status. "
+    "For what to do right now with energy, use energy_advice. To start or stop battery export or grid charging, or change "
+    "how the battery is controlled, use battery_control and say what you did. "
     "For house questions (doors, visitors, parcels, what happened today) use house_status or timeline. "
     "Answer briefly and in plain words, then say what you did if you changed anything. "
     "Never invent numbers: if a tool has no value, say so."
@@ -173,6 +175,52 @@ class EnergyStatusTool(_Tool):
         return _out(s)
 
 
+class EnergyAdviceTool(_Tool):
+    name = "energy_advice"
+    description = "Up to four plain tips on what to do with energy right now (EV, battery, peak, solar spill), most urgent first."
+    parameters = vol.Schema({})
+
+    async def async_call(self, hass, tool_input, llm_context) -> dict[str, Any]:
+        self.brain.refresh()
+        return _out({"tips": self.brain.advice(), "control_mode": self.brain.control_mode()})
+
+
+class BatteryControlTool(_Tool):
+    name = "battery_control"
+    description = (
+        "Control the home battery. action: export (discharge to the grid), topup (charge from the grid), "
+        "stop (back to normal), or mode (who controls it: off = manual, timers, shadow = advise only, auto = Autopilot). "
+        "kw is the power (0.5-10), soc the floor for export or the target for topup (10-100). Omit them to use the saved limits."
+    )
+    parameters = vol.Schema({
+        vol.Required("action"): vol.In(["export", "topup", "stop", "mode"]),
+        vol.Optional("kw"): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10)),
+        vol.Optional("soc"): vol.All(vol.Coerce(float), vol.Range(min=10, max=100)),
+        vol.Optional("mode"): vol.In(["off", "timers", "shadow", "auto"]),
+    })
+
+    async def async_call(self, hass, tool_input, llm_context) -> dict[str, Any]:
+        args, energy = tool_input.tool_args, self.brain.energy
+        action = args["action"]
+        if action == "export":
+            return _out({"result": await energy.start_export(True, args.get("kw"), args.get("soc"))})
+        if action == "topup":
+            return _out({"result": await energy.start_topup(True, args.get("kw"), args.get("soc"))})
+        if action == "stop":
+            self.brain.autopilot.active = None
+            return _out({"result": await energy.stop()})
+        mode = args.get("mode")
+        if not mode:
+            return _out({"error": "give mode: off, timers, shadow or auto", "current": self.brain.control_mode()})
+        opts = {"off": {"autopilot_mode": "off", "auto_topup": False, "auto_export": False},
+                "timers": {"autopilot_mode": "off", "auto_topup": True, "auto_export": True},
+                "shadow": {"autopilot_mode": "shadow", "auto_topup": False, "auto_export": False},
+                "auto": {"autopilot_mode": "auto"}}[mode]
+        entry = self.brain.entry
+        hass.config_entries.async_update_entry(entry, options={**entry.options, **opts})  # Cortex reloads
+        return _out({"result": f"battery control set to {mode}"})
+
+
 class RunRoutineTool(_Tool):
     name = "run_routine"
     description = "Run a saved Cortex routine by name (for example goodnight or leaving)."
@@ -211,6 +259,8 @@ class CortexAPI(llm.API):
             RemindersTool(self.brain),
             EnergyStatusTool(self.brain),
             AutopilotStatusTool(self.brain),
+            EnergyAdviceTool(self.brain),
+            BatteryControlTool(self.brain),
             HouseStatusTool(self.brain),
             TimelineTool(self.brain),
             RunRoutineTool(self.brain),

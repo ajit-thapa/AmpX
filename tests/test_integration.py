@@ -47,7 +47,7 @@ async def test_memory_services_and_llm_api(hass: HomeAssistant):
         hass, DOMAIN,
         llm.LLMContext(platform="test", context=None, language="en", assistant=None, device_id=None),
     )
-    assert {t.name for t in api.tools} >= {"remember", "recall", "energy_status", "autopilot_status", "house_status", "timeline", "reminders"}
+    assert {t.name for t in api.tools} >= {"remember", "recall", "energy_status", "autopilot_status", "house_status", "timeline", "reminders", "energy_advice", "battery_control"}
     tools = {t.name: t for t in api.tools}
     ctx = llm.LLMContext(platform="test", context=None, language="en", assistant=None, device_id=None)
 
@@ -145,3 +145,23 @@ async def test_llm_tools_declare_integration_and_return_dicts(hass: HomeAssistan
     out = await tool.async_call(hass, llm.ToolInput("recall", {"query": ""}), api.llm_context)
     data = getattr(out, "data", out)
     assert "memories" in data
+
+
+async def test_battery_control_and_advice_tools(hass: HomeAssistant):
+    brain = await _setup(hass)
+    hass.states.async_set("sensor.neovolt_online_soc", "80")
+    for domain, svc in (("number", "set_value"), ("select", "select_option"), ("button", "press")):
+        hass.services.async_register(domain, svc, lambda call: None)
+    ctx = llm.LLMContext(platform="test", context=None, language="en", assistant=None, device_id=None)
+    api = await llm.async_get_api(hass, DOMAIN, ctx)
+    tools = {t.name: t for t in api.tools}
+    run = lambda n, **a: tools[n].async_call(hass, llm.ToolInput(tool_name=n, tool_args=a), ctx)  # noqa: E731
+    out = await run("energy_advice")
+    assert getattr(out, "data", out)["tips"]
+    out = await run("battery_control", action="export", kw=5.0, soc=40)
+    assert getattr(out, "data", out)["result"] == "started"
+    out = await run("battery_control", action="stop")
+    assert getattr(out, "data", out)["result"] == "stopped"
+    out = await run("battery_control", action="mode", mode="auto")
+    await hass.async_block_till_done()
+    assert hass.config_entries.async_entries(DOMAIN)[0].options["autopilot_mode"] == "auto"

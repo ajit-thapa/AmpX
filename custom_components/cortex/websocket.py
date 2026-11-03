@@ -13,12 +13,15 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     AP_MODES,
+    CONF_AGENT,
+    CONF_AI_PER_HOUR,
     CONF_AP_LLM,
     CONF_AP_MODE,
     CONF_AUTO_EXPORT,
     CONF_AUTO_TOPUP,
     CONF_EXPORT_FLOOR,
     CONF_EXPORT_KW,
+    CONF_HEALTH_IGNORE,
     CONF_TOPUP_KW,
     DOMAIN,
 )
@@ -49,6 +52,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_cancel)
     websocket_api.async_register_command(hass, ws_action)
     websocket_api.async_register_command(hass, ws_set_options)
+    websocket_api.async_register_command(hass, ws_plans_save)
 
 
 @websocket_api.websocket_command({vol.Required("type"): "cortex/overview"})
@@ -120,6 +124,13 @@ async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
                 "mode": brain.autopilot.mode,
                 "active": brain.autopilot.active,
                 "decisions": brain.autopilot.decisions[-6:][::-1],
+            },
+            "advice": brain.advice(),
+            "plans": brain.plans,
+            "settings": {
+                "agent": brain.opts.get(CONF_AGENT) or "",
+                "ai_per_hour": int(brain.opts.get(CONF_AI_PER_HOUR) or 0),
+                "health_ignore": list(brain.opts.get(CONF_HEALTH_IGNORE) or []),
             },
             "automation": {
                 "topup": brain.opts["auto_topup"],
@@ -198,7 +209,26 @@ CONTROL_OPTIONS = {
     CONF_TOPUP_KW: vol.All(vol.Coerce(float), vol.Range(min=0.5, max=15)),
     CONF_EXPORT_KW: vol.All(vol.Coerce(float), vol.Range(min=0.5, max=15)),
     CONF_EXPORT_FLOOR: vol.All(vol.Coerce(float), vol.Range(min=5, max=90)),
+    CONF_HEALTH_IGNORE: vol.All([str], vol.Length(max=500)),
+    CONF_AGENT: vol.Any(None, "", str),
+    CONF_AI_PER_HOUR: vol.All(vol.Coerce(int), vol.Range(min=0, max=120)),
 }
+
+_BAND = vol.Schema({
+    vol.Required("from"): vol.All(vol.Coerce(int), vol.Range(min=0, max=23)),
+    vol.Required("to"): vol.All(vol.Coerce(int), vol.Range(min=1, max=24)),
+    vol.Required("rate"): vol.All(vol.Coerce(float), vol.Range(min=-200, max=500)),
+    vol.Optional("days", default="all"): vol.In(["all", "weekday", "weekend"]),
+})
+PLAN_SCHEMA = vol.Schema({
+    vol.Required("id"): vol.All(str, vol.Length(min=1, max=40)),
+    vol.Required("name"): vol.All(str, vol.Length(min=1, max=40)),
+    vol.Required("supply"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1000)),
+    vol.Required("import_default"): vol.All(vol.Coerce(float), vol.Range(min=-200, max=500)),
+    vol.Optional("import", default=[]): vol.All([_BAND], vol.Length(max=12)),
+    vol.Required("fit_default"): vol.All(vol.Coerce(float), vol.Range(min=-200, max=500)),
+    vol.Optional("fit", default=[]): vol.All([_BAND], vol.Length(max=12)),
+}, extra=vol.REMOVE_EXTRA)
 
 
 @websocket_api.websocket_command(
@@ -278,3 +308,23 @@ async def ws_set_options(hass: HomeAssistant, connection, msg) -> None:
     entry = brain.entry
     hass.config_entries.async_update_entry(entry, options={**entry.options, **changes})  # reloads Cortex
     connection.send_result(msg["id"], {"saved": changes})
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "cortex/plans_save", vol.Required("plans"): vol.All(list, vol.Length(max=8))}
+)
+@websocket_api.async_response
+async def ws_plans_save(hass: HomeAssistant, connection, msg) -> None:
+    """Store the tariffs the panel compares the current plan against."""
+    brain = _brain(hass)
+    if brain is None:
+        connection.send_error(msg["id"], "not_loaded", "Cortex is not set up")
+        return
+    try:
+        plans = [PLAN_SCHEMA(p) for p in msg["plans"]]
+    except vol.Invalid as err:
+        connection.send_error(msg["id"], "invalid", str(err))
+        return
+    brain.plans = plans
+    brain.save()
+    connection.send_result(msg["id"], {"plans": plans})

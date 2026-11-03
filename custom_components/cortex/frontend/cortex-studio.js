@@ -18,6 +18,9 @@ const ICONS = {
   moon: '<path d="M20 14A8 8 0 1 1 10 4a6.5 6.5 0 0 0 10 10z"/>',
   arrow: '<path d="M7 17 17 7M8 7h9v9"/>',
   check: '<path d="m5 12 5 5 9-10"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  send: '<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>',
+  chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
 };
 const icon = (n, cls = "ic") => `<svg viewBox="0 0 24 24" class="${cls}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const bigNum = (v, d = 1, unit = "") => {
@@ -80,7 +83,7 @@ function tariffAt(h, r) {
   return { per, imp, fit };
 }
 const dayLabel = (key, long) => long ? key.slice(8) + "/" + key.slice(5, 7) : new Date(key + "T12:00").toLocaleDateString([], { weekday: "short" });
-const TABS = [["now", "Now", "bolt"], ["ev", "EV", "car"], ["battery", "Battery", "battery"], ["plan", "Plan", "plan"], ["analytics", "Analytics", "chart"], ["house", "Home", "home"], ["assistant", "Assistant", "spark"]];
+const TABS = [["now", "Now", "bolt"], ["ev", "EV", "car"], ["battery", "Battery", "battery"], ["plan", "Plan", "plan"], ["analytics", "Analytics", "chart"], ["house", "Home", "home"], ["assistant", "Assistant", "spark"], ["settings", "Settings", "gear"]];
 const BG_PATHS = ["/local/simple_dreams_light.jpg", "/local/images/simple_dreams_light.jpg", "/local/backgrounds/simple_dreams_light.jpg", "/local/cortex/simple_dreams_light.jpg"];
 const CAT_ICON = { fact: "📌", preference: "⭐", person: "👤", place: "📍", routine: "🔁", note: "📝" };
 
@@ -129,8 +132,11 @@ class CortexStudio extends HTMLElement {
     if (a && (a.tagName === "INPUT" || a.tagName === "SELECT")) return;
     const mt = this._root.querySelector("#mtext");
     if (this._tab === "assistant" && mt && mt.value) return;
+    const ci = this._root.querySelector("#chatin");
+    if (this._tab === "assistant" && (this._chatBusy || (ci && ci.value))) return;
     this._render();
     if (this._tab === "now" && Date.now() - this._seriesAt > 300000) this._loadSeries();
+    if (this._tab === "now") this._energy().then(() => this._tab === "now" && this._paintSplit()).catch(() => {});
     if (this._tab === "ev" && Date.now() - (this._evAt || 0) > 300000) this._loadEv();
     if (this._tab === "plan" && Date.now() - (this._earnAt || 0) > 120000) this._loadEarn();
     if ((this._tab === "battery" || this._tab === "analytics") && Date.now() - ((this._moreAt || {})[this._tab] || 0) > 300000) this._loadMore(this._tab);
@@ -207,6 +213,7 @@ class CortexStudio extends HTMLElement {
         <div class="brand"><img class="logo" src="/cortex_static/icon.svg" alt="" width="40" height="40"><div><h1>Cortex</h1><div class="sub" id="greet"></div></div></div>
         <nav id="tabs" aria-label="Sections"></nav>
         <div class="tools"><span id="clock" class="clock"></span>
+          <button class="ib" id="chatbtn" aria-label="Ask Cortex" title="Ask Cortex">${icon("chat")}</button>
           <button class="ib" id="bell" aria-label="Alerts" title="Alerts">${icon("bell")}<i class="badge" id="badge" hidden></i></button>
           <button class="ib" id="theme" aria-label="Switch theme"></button></div>
       </header>
@@ -220,6 +227,7 @@ class CortexStudio extends HTMLElement {
     nav.innerHTML = TABS.map(([k, l, ic]) => `<button data-tab="${k}" aria-label="${l}">${icon(ic)}<span>${l}</span></button>`).join("");
     nav.querySelectorAll("button").forEach(b => b.onclick = () => this._go(b.dataset.tab));
     this._root.querySelector("#bell").onclick = () => this._go("house");
+    this._root.querySelector("#chatbtn").onclick = () => { this._go("assistant"); const i = this._root.querySelector("#chatin"); if (i) i.focus(); };
     this._root.querySelector("#theme").onclick = () => {
       const next = { auto: "light", light: "dark", dark: "auto" }[this._themePref()];
       try { localStorage.setItem("cortex-studio-theme", next); } catch (e) { /* ignore */ }
@@ -242,6 +250,7 @@ class CortexStudio extends HTMLElement {
     try { localStorage.setItem("cortex-studio-tab", tab); } catch (e) { /* ignore */ }
     this._render();
     if (tab === "now" && !this._series) this._loadSeries();
+    if (tab === "now") this._energy().then(() => this._tab === "now" && this._paintSplit()).catch(() => {});
     if (tab === "ev" && Date.now() - (this._evAt || 0) > 300000) this._loadEv();
     if (tab === "plan" && Date.now() - (this._earnAt || 0) > 120000) this._loadEarn();
     if ((tab === "battery" || tab === "analytics") && Date.now() - ((this._moreAt || {})[tab] || 0) > 300000) this._loadMore(tab);
@@ -258,9 +267,9 @@ class CortexStudio extends HTMLElement {
     const alerts = (d.health || []).length + ((d.security || { ok: true }).ok ? 0 : ((d.security.issues || []).length || 1)), bd = r.querySelector("#badge");
     bd.hidden = !alerts; bd.textContent = alerts > 9 ? "9+" : String(alerts || "");
     const view = r.querySelector("#view");
-    view.innerHTML = ({ now: () => this._viewNow(), ev: () => this._viewEv(), battery: () => this._viewBattery(), analytics: () => this._viewAnalytics(), plan: () => this._viewPlan(), house: () => this._viewHouse(), assistant: () => this._viewAssistant() })[this._tab]();
+    view.innerHTML = ({ now: () => this._viewNow(), ev: () => this._viewEv(), battery: () => this._viewBattery(), analytics: () => this._viewAnalytics(), plan: () => this._viewPlan(), house: () => this._viewHouse(), assistant: () => this._viewAssistant(), settings: () => this._viewSettings() })[this._tab]();
     view.querySelectorAll("[data-go]").forEach(b => b.onclick = () => this._go(b.dataset.go));
-    ({ now: () => { this._paintLive(); this._paintChart(); }, ev: () => { this._wireEv(); this._paintEv(); }, battery: () => { this._battWidgets(); this._paintMore("battery"); this._wireCtl(); }, analytics: () => this._paintMore("analytics"), plan: () => { this._wirePlan(); this._wireExtras(); this._paintEarn(); }, house: () => this._wireHouse(), assistant: () => this._wireAssistant() })[this._tab]();
+    ({ now: () => { this._paintLive(); this._paintChart(); }, ev: () => { this._wireEv(); this._paintEv(); }, battery: () => { this._battWidgets(); this._paintMore("battery"); this._wireCtl(); }, analytics: () => this._paintMore("analytics"), plan: () => { this._wirePlan(); this._wireExtras(); this._paintEarn(); }, house: () => this._wireHouse(), assistant: () => { this._wireChat(); this._wireAssistant(); }, settings: () => this._wireSettings() })[this._tab]();
   }
   /** Write HTML only when it changed, so animations and focus survive the 1.5 s live refresh. */
   _paintTo(sel, html) {
@@ -284,6 +293,8 @@ class CortexStudio extends HTMLElement {
     const d = this._data, sec = d.security || { ok: true, issues: [] }, last = ((d.autopilot || {}).decisions || [])[0];
     if ((d.health || []).length) return { tone: "warn", ic: "bell", title: d.health.length > 1 ? `${d.health.length} things need attention` : "Needs attention", text: d.health[0] + (d.health.length > 1 ? ` and ${d.health.length - 1} more` : ""), go: "house" };
     if (!sec.ok) return { tone: "warn", ic: "bell", title: "Security", text: (sec.issues || [])[0] || "Check doors and locks", go: "house" };
+    const tip = (d.advice || []).find(t => t.level !== "info");
+    if (tip) return { tone: tip.level === "warn" ? "warn" : "act", ic: tip.level === "warn" ? "bell" : "bolt", title: tip.text, text: tip.why || "Cortex suggests", go: "now" };
     if (last) return { tone: "ok", ic: "spark", title: `Autopilot: ${last.window === "topup" ? "top-up" : "evening export"} ${last.do ? "go" : "hold"}`, text: last.reason || "", go: "plan" };
     return { tone: "ok", ic: "check", title: "All systems normal", text: "Nothing needs your attention right now.", go: null };
   }
@@ -321,8 +332,9 @@ class CortexStudio extends HTMLElement {
         <div class="nextline" id="nextline"></div><div class="prog"><i id="np"></i></div></div>
       <div class="card wide"><div class="chead"><h2>Last 24 hours</h2><span class="legend"><b style="color:${C.solar}">●</b> Solar <b style="color:${C.home}">●</b> Home <b style="color:${C.grid}">●</b> Grid <b style="color:${C.batt}">●</b> Battery %</span></div>
         <div id="chart" class="chart"><div class="muted">Loading history…</div></div></div>
+      <div class="card w8"><div class="chead"><h2>Where energy went today</h2>${go("analytics", "Open analytics")}</div><div id="mix"></div></div>
       <div class="card w4"><div class="chead"><h2>Solar</h2>${go("analytics", "Open analytics")}</div><div id="sol"></div></div>
-      <div class="card w4"><div class="chead"><h2>Where energy went</h2>${go("analytics", "Open analytics")}</div><div id="mix"></div></div>
+      <div class="card w8"><div class="chead"><h2>Cortex suggests</h2>${go("assistant", "Ask Cortex")}</div>${this._adviceHtml()}</div>
       <div class="card w4"><div class="chead"><h2>Solar shortfall</h2>${go("plan", "Open plan")}</div><div id="short"></div></div>
       <div class="card wide"><div class="chead"><h2>Energy storage</h2>${go("battery", "Open battery")}</div>
         <div class="estore"><div class="esub"><div data-bhost="house"></div></div><div class="esub"><div data-bhost="ev"></div></div></div>
@@ -354,7 +366,7 @@ class CortexStudio extends HTMLElement {
   _paintVisuals() {
     const r = this._root, e = this._data.energy, d = this._data, m = this._money();
     this._paintTo("#sol", solarBars(m.gen, e.pv_today, e.pv_tomorrow, e.low_solar, e.solar_day));
-    this._paintTo("#mix", mixBar(m.self, m.exp, m.imp));
+    if (this._en) this._paintSplit(); else this._paintTo("#mix", mixBar(m.self, m.exp, m.imp));
     this._paintTo("#short", shortGauge(e.pv_shortfall));
     // time to the next rate change
     const now = Date.now(), next = new Date(e.next_change).getTime(), sch = d.schedule || [];
@@ -466,15 +478,7 @@ class CortexStudio extends HTMLElement {
         <input type="range" id="ev-target" min="20" max="100" step="1" value="${this._evTarget ?? 80}" class="slider">
         <div class="seg" style="margin:8px 0">${[60, 80, 90, 100].map(v => `<button data-tgt="${v}">${v}%</button>`).join("")}</div>
         <div id="ev-plan"></div></div>
-      <div class="card w6"><h2>Controls</h2>
-        <div class="row"><span>Start charging now</span><button id="ev-go">Start</button></div>
-        <div class="row"><span>Refresh car data</span><button id="ev-poll">Poll</button></div>
-        <label class="row"><span>Charge to full</span><input type="checkbox" class="sw" data-sw="full"></label>
-        <label class="row"><span>Schedule</span><input type="checkbox" class="sw" data-sw="sched"></label>
-        <label class="row"><span>Repeat daily</span><input type="checkbox" class="sw" data-sw="daily"></label>
-        <div class="row"><span>Window</span><span><input type="time" id="ev-start"> – <input type="time" id="ev-end"></span></div>
-        <div class="seg" style="margin-top:8px"><button id="ev-cheap" title="Set the schedule to the cheapest hours">Cheapest hours</button><button id="ev-sun" title="Set the schedule to 10:00–14:00 shoulder">Shoulder 10–14</button></div>
-        <div class="muted" id="ev-ctlmsg" style="margin-top:6px"></div></div>
+      ${this._evCtlCard()}
       <div class="card wide"><h2>Last 24 hours <span class="legend"><b style="color:${C.ev}">■</b> charge level <b style="color:${C.solar}">━</b> power</span></h2>
         <div class="chart"><svg id="ev-chart" viewBox="0 0 900 220" preserveAspectRatio="none"></svg></div></div>
       <div class="card wide"><h2>Tesla Wall Connector <span id="wc-state" class="pill"></span></h2>
@@ -484,6 +488,17 @@ class CortexStudio extends HTMLElement {
     </section>`;
   }
 
+  _evCtlCard() {
+    return `<div class="card w6"><h2>EV charging controls</h2>
+        <div class="row"><span>Start charging now</span><button id="ev-go">Start</button></div>
+        <div class="row"><span>Refresh car data</span><button id="ev-poll">Poll</button></div>
+        <label class="row"><span>Charge to full</span><input type="checkbox" class="sw" data-sw="full"></label>
+        <label class="row"><span>Schedule</span><input type="checkbox" class="sw" data-sw="sched"></label>
+        <label class="row"><span>Repeat daily</span><input type="checkbox" class="sw" data-sw="daily"></label>
+        <div class="row"><span>Window</span><span><input type="time" id="ev-start"> – <input type="time" id="ev-end"></span></div>
+        <div class="seg" style="margin-top:8px"><button id="ev-cheap" title="Set the schedule to the cheapest hours">Cheapest hours</button><button id="ev-sun" title="Set the schedule to 10:00–14:00 shoulder">Shoulder 10–14</button></div>
+        <div class="muted" id="ev-ctlmsg" style="margin-top:6px"></div></div>`;
+  }
   _wireEv() {
     const q = s => this._root.querySelector(s);
     const call = async (dom, svc, data) => {
@@ -493,6 +508,11 @@ class CortexStudio extends HTMLElement {
     const slider = q("#ev-target");
     slider.oninput = () => { this._evTarget = Number(slider.value); this._paintEv(); };
     this._root.querySelectorAll("[data-tgt]").forEach(b => b.onclick = () => { this._evTarget = Number(b.dataset.tgt); slider.value = this._evTarget; this._paintEv(); });
+    this._wireEvCtl(call);
+  }
+  _wireEvCtl(call) {
+    const q = s => this._root.querySelector(s);
+    if (!call) call = (dom, svc, data) => this._hass.callService(dom, svc, data).then(() => { const m = q("#ev-ctlmsg"); if (m) m.textContent = ""; }, e => { const m = q("#ev-ctlmsg"); if (m) m.textContent = "Failed: " + (e.message || e); });
     q("#ev-go").onclick = () => call("button", "press", { entity_id: EV.go });
     q("#ev-poll").onclick = () => call("button", "press", { entity_id: EV.poll });
     this._root.querySelectorAll("[data-sw]").forEach(c => c.onchange = () =>
@@ -547,12 +567,7 @@ class CortexStudio extends HTMLElement {
       <div class="row"><span>You save by waiting</span><b>$${fx(pl.costNow - pl.costCheap, 2)}</b></div>
       <div class="row"><span>Solar covers right now</span><b>${solarPct}%</b></div>
       <div class="hbar" style="grid-template-columns:1fr"><div><i style="width:${solarPct}%;background:${C.solar}"></i></div></div>`;
-    // controls (skip while the user is editing)
-    this._root.querySelectorAll("[data-sw]").forEach(c => { c.checked = on(EV[c.dataset.sw]); });
-    const hm = id => ((st(id) || {}).state || "").slice(0, 5);
-    const s1 = q("#ev-start"), s2 = q("#ev-end");
-    if (this._root.activeElement !== s1) s1.value = hm(EV.start);
-    if (this._root.activeElement !== s2) s2.value = hm(EV.end);
+    this._paintEvCtl();
     // wall connector
     const wc = st(EV.wcStatus), veh = on("binary_sensor.tesla_wall_connector_vehicle_connected");
     const wp = q("#wc-state"); wp.textContent = wc ? wc.state.replace(/_/g, " ") : "–"; wp.style.setProperty("--pc", veh ? C.shoulder : "#8a8279");
@@ -562,6 +577,17 @@ class CortexStudio extends HTMLElement {
     EV.wcA.forEach((id, i) => { const a = this._num(id) ?? 0; q(`[data-a="${i}"]`).style.width = Math.min(a / 32 * 100, 100) + "%"; q(`[data-a="${i}"]`).style.background = C.ev; q(`[data-av="${i}"]`).textContent = fx(a, 0); });
     EV.wcT.forEach(([, id], i) => { const t = this._num(id) ?? 0; q(`[data-t="${i}"]`).style.width = Math.min(t / 90 * 100, 100) + "%"; q(`[data-t="${i}"]`).style.background = t > 70 ? C.peak : t > 55 ? C.off_peak : C.shoulder; q(`[data-tv="${i}"]`).textContent = fx(t, 0); });
     this._paintEvChart();
+  }
+
+  _paintEvCtl() {
+    const q = s => this._root.querySelector(s), st = id => this._hass.states[id], on = id => st(id) && st(id).state === "on";
+    if (!q("#ev-start")) return;
+    // controls (skip while the user is editing)
+    this._root.querySelectorAll("[data-sw]").forEach(c => { c.checked = on(EV[c.dataset.sw]); });
+    const hm = id => ((st(id) || {}).state || "").slice(0, 5);
+    const s1 = q("#ev-start"), s2 = q("#ev-end");
+    if (this._root.activeElement !== s1) s1.value = hm(EV.start);
+    if (this._root.activeElement !== s2) s2.value = hm(EV.end);
   }
 
   _paintEvChart() {
@@ -837,6 +863,211 @@ class CortexStudio extends HTMLElement {
     });
   }
 
+  // ---- ADVICE, SOLAR SPLIT --------------------------------------------
+  _adviceHtml() {
+    const tips = this._data.advice || [];
+    if (!tips.length) return '<div class="muted">No tips right now.</div>';
+    const ic = { warn: "bell", act: "bolt", info: "spark" };
+    return `<div class="tips">${tips.map(t => `<div class="tip-row ${t.level}"><span class="tic">${icon(ic[t.level] || "spark")}</span><div><b>${esc(t.text)}</b>${t.why ? `<span>${esc(t.why)}</span>` : ""}</div></div>`).join("")}</div>
+      <div class="muted" style="margin-top:10px">Instant checks, no AI needed. <button class="ghost" data-go="assistant">Ask Cortex ↗</button></div>`;
+  }
+  /** Today's energy split by path, rebuilt hour by hour from the meter counters. */
+  _splitToday() {
+    const c = this._enCompute(); if (!c || !c.hrs.length) return null;
+    const key = tzParts(Date.now(), this._en.tz).key, o = { s2h: 0, s2b: 0, s2g: 0, b2h: 0, b2g: 0, g2h: 0, g2b: 0 };
+    c.hrs.filter(h => h.key === key).forEach(h => {
+      const used = h.used, s2h = Math.min(h.pv, used), r = h.pv - s2h, s2b = Math.min(r, h.chg), s2g = Math.min(r - s2b, h.exp);
+      const b2h = Math.min(h.dis, used - s2h), b2g = Math.max(Math.min(h.dis - b2h, h.exp - s2g), 0);
+      o.s2h += s2h; o.s2b += s2b; o.s2g += s2g; o.b2h += b2h; o.b2g += b2g;
+      o.g2h += Math.max(used - s2h - b2h, 0); o.g2b += Math.max(h.chg - s2b, 0);
+    });
+    return o;
+  }
+  _paintSplit() {
+    const sp = this._splitToday();
+    this._paintTo("#mix", sp ? sankeySvg(sp) : '<div class="muted">Loading today\'s split…</div>');
+  }
+
+  // ---- PLAN COMPARISON -------------------------------------------------
+  _planCompare(c, keys, n) {
+    const hrs = c.hrs.filter(h => keys.has(h.key)), r = c.rates;
+    const cur = { id: "current", name: "Current plan (AGL)", current: true, supply: r.supply, cost: h => [tariffAt(h, r).imp, tariffAt(h, r).fit] };
+    const mine = (this._data.plans || []).map(p => ({ ...p, cost: h => [planRate(p.import, p.import_default, h), planRate(p.fit, p.fit_default, h)] }));
+    const rows = [cur, ...mine].map(p => {
+      let imp = 0, exp = 0;
+      hrs.forEach(h => { const [a, b] = p.cost(h); imp += h.imp * a / 100; exp += h.exp * b / 100; });
+      const supply = (p.supply || 0) / 100 * n, total = imp - exp + supply;
+      return { ...p, imp, exp, supply, total, month: total / n * 30 };
+    }).sort((a, b) => a.total - b.total);
+    const base = rows.find(x => x.current), mx = Math.max(...rows.map(x => Math.abs(x.month)), 1);
+    const $ = v => (v < 0 ? "−$" : "$") + Math.abs(v).toFixed(2);
+    return `<div class="card wide"><div class="chead"><h2>Plan comparison <span class="muted">your real usage, last ${n} day${n === 1 ? "" : "s"}</span></h2><button class="ghost" data-go="settings">Edit plans ↗</button></div>
+      ${rows.map((x, i) => `<div class="pc ${x.current ? "cur" : ""}"><div class="pcn"><b>${esc(x.name)}</b>${i === 0 ? '<span class="pill" style="--pc:' + C.shoulder + '">cheapest</span>' : ""}${x.current ? '<span class="pill" style="--pc:' + C.grid + '">now</span>' : ""}
+          <span class="muted">${$(x.imp)} bought · ${$(x.exp)} earned · ${$(x.supply)} supply</span></div>
+        <div class="pcb"><i style="width:${Math.max(Math.abs(x.month) / mx * 100, 2)}%;background:${x.current ? C.grid : i === 0 ? C.shoulder : C.off_peak}"></i></div>
+        <div class="pcv"><b>${$(x.month)}</b><span class="muted">/month</span>${x.current ? "" : `<span class="${x.total < base.total ? "ok" : "bad"}">${x.total < base.total ? "saves " : "costs "}${$(Math.abs(base.month - x.month))}</span>`}</div></div>`).join("")}
+      <div class="muted" style="margin-top:8px">${mine.length ? "Replays each hour you actually bought and sold. A different plan could also change how you would run the battery, so treat this as a guide." : "Add the rates from another retailer's offer in Settings to see what it would have cost you."}</div></div>`;
+  }
+
+  // ---- SETTINGS -------------------------------------------------------
+  _viewSettings() {
+    const d = this._data, st = d.settings || {};
+    return `<section class="grid">
+      <div class="card wide sethead"><div><h2>Settings</h2><div class="muted">Control your devices and how Cortex runs them. Changes apply straight away.</div></div>
+        <nav class="seg jump">${[["set-battery", "Battery"], ["set-ev", "EV"], ["set-devices", "Devices"], ["set-auto", "Automations"], ["set-plans", "Plans"], ["set-ai", "AI"]].map(([id, l]) => `<button data-jump="${id}">${l}</button>`).join("")}</nav></div>
+      <div id="set-battery" style="display:contents">${this._ctlCards()}</div>
+      <div id="set-ev" style="display:contents">${this._evCtlCard()}
+        <div class="card w6"><h2>EV status</h2><div data-bhost="ev"></div></div></div>
+      <div class="card wide" id="set-devices"><div class="chead"><h2>Devices</h2><span class="muted">Energy hardware Cortex reads and controls</span></div><div id="devs"><div class="muted">Loading devices…</div></div></div>
+      <div id="set-auto" style="display:contents">${this._sysCards()}</div>
+      <div class="card wide" id="set-plans"><div class="chead"><h2>Plans to compare</h2><button id="pl-add" class="ghost">+ Add plan</button></div><div id="plans"></div>
+        <div class="row"><span class="muted">Rates in cents per kWh, supply in cents per day. Bands are hours from–to; anything outside a band uses the default.</span><button id="pl-save">Save plans</button></div><div class="toast" id="pl-msg"></div></div>
+      <div class="card wide" id="set-ai"><h2>AI and chat</h2>
+        <div class="row"><span>Conversation agent for chat and Autopilot</span><select id="set-agent"><option value="">Home Assistant default</option></select></div>
+        <div class="row"><span>AI calls allowed per hour</span><div class="nstep"><input type="number" id="set-aph" min="0" max="120" step="1" value="${st.ai_per_hour ?? 12}"></div></div>
+        <div class="row"><span>More options (speakers, quiet hours, sensors)</span><a class="lnk" href="/config/integrations/integration/cortex" target="_top">Open integration ↗</a></div>
+        <div class="toast" id="set-msg"></div></div>
+    </section>`;
+  }
+  _wireSettings() {
+    const r = this._root, q = s => r.querySelector(s), d = this._data;
+    r.querySelectorAll("[data-jump]").forEach(b => b.onclick = () => { const el = q("#" + b.dataset.jump); const t = el && (el.firstElementChild || el); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); });
+    this._wireCtl(); this._wireEvCtl(); this._paintEvCtl(); this._wireExtras(); this._battWidgets();
+    this._loadDevices();
+    // plans
+    this._plansDraft = this._plansDraft || JSON.parse(JSON.stringify(d.plans || []));
+    this._paintPlans();
+    q("#pl-add").onclick = () => { this._plansDraft.push({ id: "p" + Date.now().toString(36), name: "New plan", supply: 110, import_default: 30, import: [{ from: 10, to: 14, rate: 15, days: "all" }], fit_default: 5, fit: [] }); this._paintPlans(); };
+    q("#pl-save").onclick = async () => {
+      const m = q("#pl-msg"), show = (t, bad) => { m.textContent = t; m.className = "toast show" + (bad ? " bad" : ""); };
+      try { const x = await this._hass.callWS({ type: "cortex/plans_save", plans: this._plansDraft }); this._data.plans = x.plans; show("Saved. Compare them on the Analytics tab."); }
+      catch (e) { show("Failed: " + (e.message || e.code), true); }
+    };
+    // AI settings
+    const msg = (t, bad) => { const m = q("#set-msg"); m.textContent = t; m.className = "toast show" + (bad ? " bad" : ""); };
+    const save = async opts => { try { await this._hass.callWS({ type: "cortex/set_options", options: opts }); msg("Saved. Cortex is reloading…"); setTimeout(() => this._load(), 3500); } catch (e) { msg("Failed: " + (e.message || e.code), true); } };
+    this._agents().then(list => {
+      const sel = q("#set-agent"); if (!sel) return;
+      sel.innerHTML = '<option value="">Home Assistant default</option>' + list.map(a => `<option value="${esc(a.id)}"${a.id === (d.settings || {}).agent ? " selected" : ""}>${esc(a.name)}</option>`).join("");
+      sel.onchange = () => save({ conversation_agent: sel.value });
+    });
+    q("#set-aph").onchange = e => { const v = parseInt(e.target.value, 10); if (!Number.isNaN(v)) save({ ai_per_hour: v }); };
+  }
+  _paintPlans() {
+    const el = this._root.querySelector("#plans"); if (!el) return;
+    const P = this._plansDraft;
+    const band = (pi, kind, b, bi) => `<div class="band"><input type="number" min="0" max="23" value="${b.from}" data-b="${pi}:${kind}:${bi}:from" aria-label="From hour"><span>–</span><input type="number" min="1" max="24" value="${b.to}" data-b="${pi}:${kind}:${bi}:to" aria-label="To hour">
+      <input type="number" step="0.01" value="${b.rate}" data-b="${pi}:${kind}:${bi}:rate" aria-label="Rate"><span class="muted">c</span>
+      <select data-b="${pi}:${kind}:${bi}:days">${["all", "weekday", "weekend"].map(x => `<option${x === (b.days || "all") ? " selected" : ""}>${x}</option>`).join("")}</select>
+      <button class="ghost" data-bdel="${pi}:${kind}:${bi}" aria-label="Remove band">✕</button></div>`;
+    el.innerHTML = P.length ? P.map((p, i) => `<div class="plan"><div class="planh"><input value="${esc(p.name)}" data-p="${i}:name" aria-label="Plan name" class="pname"><button class="ghost" data-pdel="${i}">Delete</button></div>
+      <div class="pgrid"><label>Supply <input type="number" step="0.01" value="${p.supply}" data-p="${i}:supply"> c/day</label>
+        <label>Import default <input type="number" step="0.01" value="${p.import_default}" data-p="${i}:import_default"> c</label>
+        <label>Feed-in default <input type="number" step="0.01" value="${p.fit_default}" data-p="${i}:fit_default"> c</label></div>
+      <div class="bands"><h3>Import bands <button class="ghost" data-badd="${i}:import">+ band</button></h3>${(p.import || []).map((b, j) => band(i, "import", b, j)).join("") || '<div class="muted">Flat rate.</div>'}</div>
+      <div class="bands"><h3>Feed-in bands <button class="ghost" data-badd="${i}:fit">+ band</button></h3>${(p.fit || []).map((b, j) => band(i, "fit", b, j)).join("") || '<div class="muted">Flat rate.</div>'}</div></div>`).join("")
+      : '<div class="muted">No plans yet. Add one with the rates from a retailer\'s offer (GloBird, Amber, another AGL plan…).</div>';
+    const num = v => (v === "" ? 0 : Number(v));
+    el.querySelectorAll("[data-p]").forEach(i => i.onchange = () => { const [pi, k] = i.dataset.p.split(":"); P[pi][k] = k === "name" ? i.value : num(i.value); });
+    el.querySelectorAll("[data-b]").forEach(i => i.onchange = () => { const [pi, kind, bi, k] = i.dataset.b.split(":"); P[pi][kind][bi][k] = k === "days" ? i.value : num(i.value); });
+    el.querySelectorAll("[data-pdel]").forEach(b => b.onclick = () => { P.splice(Number(b.dataset.pdel), 1); this._paintPlans(); });
+    el.querySelectorAll("[data-badd]").forEach(b => b.onclick = () => { const [pi, kind] = b.dataset.badd.split(":"); (P[pi][kind] = P[pi][kind] || []).push({ from: 16, to: 20, rate: 40, days: "weekday" }); this._paintPlans(); });
+    el.querySelectorAll("[data-bdel]").forEach(b => b.onclick = () => { const [pi, kind, bi] = b.dataset.bdel.split(":"); P[pi][kind].splice(Number(bi), 1); this._paintPlans(); });
+  }
+  async _loadDevices() {
+    if (!this._devs || Date.now() - this._devs.at > 120000) {
+      try {
+        const [devs, ents] = await Promise.all([this._hass.callWS({ type: "config/device_registry/list" }), this._hass.callWS({ type: "config/entity_registry/list" })]);
+        this._devs = { at: Date.now(), devs, ents };
+      } catch (e) { const el = this._root.querySelector("#devs"); if (el) el.innerHTML = '<div class="muted">Device list needs an admin user.</div>'; return; }
+    }
+    this._paintDevices();
+  }
+  _paintDevices() {
+    const el = this._root.querySelector("#devs"); if (!el || !this._devs) return;
+    const { devs, ents } = this._devs, s = this._data.studio || {}, ignore = new Set((this._data.settings || {}).health_ignore || []);
+    const known = new Set([s.pv, s.grid, s.battery, s.ev, s.soc, s.ev_soc, s.day_pv, s.day_load, s.day_export, s.day_import, ...Object.values(EV).flat().filter(x => typeof x === "string"),
+      ...E.bt.map(x => x[1]), ...E.health.map(x => x[1]), (this._data.control || {}).mode_entity].filter(Boolean));
+    const byDev = {}; ents.forEach(e => { if (e.device_id && !e.disabled_by) (byDev[e.device_id] = byDev[e.device_id] || []).push(e.entity_id); });
+    const energy = /neovolt|sungrow|tesla|byd|alpha|byte.?watt|solcast|forecast\.solar|wall connector/i;
+    const list = devs.filter(dv => (byDev[dv.id] || []).some(id => known.has(id)) || energy.test(`${dv.manufacturer || ""} ${dv.model || ""} ${dv.name || ""}`))
+      .map(dv => {
+        const ids = byDev[dv.id] || [], sts = ids.map(id => this._hass.states[id]).filter(Boolean);
+        const down = sts.filter(x => x.state === "unavailable").length, last = Math.max(0, ...sts.map(x => +new Date(x.last_updated)));
+        return { dv, ids, down, total: sts.length, last, watched: ids.length && !ids.every(id => ignore.has(id)) };
+      }).sort((a, b) => (b.down > 0) - (a.down > 0) || (a.dv.name_by_user || a.dv.name || "").localeCompare(b.dv.name_by_user || b.dv.name || ""));
+    const ago = t => { if (!t) return "–"; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " h ago" : Math.round(m / 1440) + " d ago"; };
+    el.innerHTML = list.length ? `<div class="devs">${list.map(x => `<div class="dev">
+        <span class="dst ${x.total === 0 ? "" : x.down === x.total ? "off" : x.down ? "part" : "on"}" title="${x.down ? x.down + " of " + x.total + " unavailable" : "online"}"></span>
+        <div class="dn"><b>${esc(x.dv.name_by_user || x.dv.name || "Device")}</b><span class="muted">${esc([x.dv.manufacturer, x.dv.model].filter(Boolean).join(" · "))}</span></div>
+        <div class="dm"><span>${x.total} entities${x.down ? ` · <b class="bad">${x.down} offline</b>` : ""}</span><span class="muted">updated ${ago(x.last)}</span></div>
+        <label class="dw" title="Report this device in house health">Health ${this._toggle(`data-watch="${x.dv.id}"`, x.watched)}</label>
+        <a class="lnk" href="/config/devices/device/${x.dv.id}" target="_top" aria-label="Open in Home Assistant">${icon("arrow")}</a></div>`).join("")}</div>
+      <div class="toast" id="dev-msg"></div>` : '<div class="muted">No energy devices found.</div>';
+    el.querySelectorAll("[data-watch]").forEach(t => t.onchange = async () => {
+      const ids = byDev[t.dataset.watch] || [], set = new Set(ignore);
+      ids.forEach(id => (t.checked ? set.delete(id) : set.add(id)));
+      const m = el.querySelector("#dev-msg");
+      try { await this._hass.callWS({ type: "cortex/set_options", options: { health_ignore: [...set] } }); m.textContent = t.checked ? "House health watches it again." : "House health will ignore it."; m.className = "toast show"; setTimeout(() => this._load(), 3500); }
+      catch (e) { m.textContent = "Failed: " + (e.message || e.code); m.className = "toast show bad"; }
+    });
+  }
+
+  // ---- CHAT -----------------------------------------------------------
+  async _agents() {
+    if (this._agentList) return this._agentList;
+    try { const r = await this._hass.callWS({ type: "conversation/agent/list", language: this._hass.language }); this._agentList = (r.agents || []).map(a => ({ id: a.id, name: a.name })); }
+    catch (e) { this._agentList = []; }
+    return this._agentList;
+  }
+  _chatState() {
+    if (!this._chat) { try { this._chat = JSON.parse(sessionStorage.getItem("cortex-chat") || "null"); } catch (e) { /* ignore */ } }
+    if (!this._chat) this._chat = { msgs: [], cid: null };
+    return this._chat;
+  }
+  _chatCard() {
+    const prompts = ["What should I do with energy right now?", "Start exporting the battery", "Why did the battery top up today?", "How much did solar save me today?", "Remind me at 9pm to put the bins out"];
+    return `<div class="card wide chat"><div class="chead"><h2>${icon("spark")} Ask Cortex</h2><div class="chtools"><select id="chat-agent" aria-label="Agent"></select><button class="ghost" id="chat-new">New chat</button></div></div>
+      <div class="msgs" id="msgs" aria-live="polite"></div>
+      <div class="qp">${prompts.map(p => `<button class="chip" data-qp="${esc(p)}">${esc(p)}</button>`).join("")}</div>
+      <form class="chatf" id="chatf"><input id="chatin" autocomplete="off" placeholder="Ask anything, or tell Cortex what to do…" aria-label="Message"><button type="submit" aria-label="Send" id="chatsend">${icon("send")}</button></form></div>`;
+  }
+  _paintChat() {
+    const el = this._root.querySelector("#msgs"); if (!el) return;
+    const c = this._chatState(), fmt = t => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
+    el.innerHTML = c.msgs.length ? c.msgs.map(m => `<div class="msg ${m.who}${m.err ? " err" : ""}">${fmt(m.text)}</div>`).join("") + (this._chatBusy ? '<div class="msg ai typing"><i></i><i></i><i></i></div>' : "")
+      : `<div class="empty">${icon("spark")}<b>Ask about your energy, house or reminders.</b><span>Cortex can check the battery, start an export, set reminders and run routines. With Home Assistant's Assist turned on for your agent, it can control any exposed device.</span></div>`;
+    el.scrollTop = el.scrollHeight;
+  }
+  _wireChat() {
+    const r = this._root, q = s => r.querySelector(s), c = this._chatState();
+    this._agents().then(list => {
+      const sel = q("#chat-agent"); if (!sel) return;
+      let pick = null; try { pick = localStorage.getItem("cortex-chat-agent"); } catch (e) { /* ignore */ }
+      const def = pick ?? ((this._data.settings || {}).agent || "");
+      sel.innerHTML = '<option value="">Default agent</option>' + list.map(a => `<option value="${esc(a.id)}"${a.id === def ? " selected" : ""}>${esc(a.name)}</option>`).join("");
+      sel.onchange = () => { try { localStorage.setItem("cortex-chat-agent", sel.value); } catch (e) { /* ignore */ } c.cid = null; };
+    });
+    const keep = () => { try { sessionStorage.setItem("cortex-chat", JSON.stringify({ msgs: c.msgs.slice(-40), cid: c.cid })); } catch (e) { /* ignore */ } };
+    const send = async text => {
+      text = (text || "").trim(); if (!text || this._chatBusy) return;
+      c.msgs.push({ who: "me", text }); this._chatBusy = true; this._paintChat(); keep();
+      const sel = q("#chat-agent"), agent = sel ? sel.value : "";
+      try {
+        const res = await this._hass.callWS({ type: "conversation/process", text, conversation_id: c.cid || undefined, agent_id: agent || undefined, language: this._hass.language });
+        c.cid = res.conversation_id || c.cid;
+        const sp = ((res.response || {}).speech || {}).plain || {};
+        c.msgs.push({ who: "ai", text: sp.speech || "Done.", err: (res.response || {}).response_type === "error" });
+      } catch (e) { c.msgs.push({ who: "ai", text: "Couldn't reach the agent: " + (e.message || e.code), err: true }); }
+      this._chatBusy = false; this._paintChat(); keep();
+      if (/export|top.?up|charg|stop|battery|autopilot/i.test(text)) setTimeout(() => this._load(), 2500);
+    };
+    q("#chatf").onsubmit = e => { e.preventDefault(); const i = q("#chatin"); const t = i.value; i.value = ""; send(t); };
+    r.querySelectorAll("[data-qp]").forEach(b => b.onclick = () => send(b.dataset.qp));
+    q("#chat-new").onclick = () => { c.msgs = []; c.cid = null; keep(); this._paintChat(); };
+    this._paintChat();
+  }
+
   // ---- ANALYTICS -------------------------------------------------------
   _viewAnalytics() {
     const todays = [["Solar generated", AN.pv, C.solar], ["Exported", AN.exp, C.shoulder], ["Imported", AN.imp, C.peak], ["Used", AN.load, C.home],
@@ -878,6 +1109,7 @@ class CortexStudio extends HTMLElement {
         ${T("Avg cost / day", $(net / n), C.off_peak, "incl. supply")}</div>
       <div class="row" style="margin-top:8px"><span class="muted">Best solar: <b>${bd(best("pv"), "pv", " kWh")}</b></span><span class="muted">Most imported: <b>${bd(best("imp"), "imp", " kWh")}</b></span><span class="muted">Most saved: <b>${best("saved") ? dayLabel(best("saved").key, true) + " · " + $(best("saved").saved) : "–"}</b></span></div>
       <div class="muted">Costs use your Plan rates by hour (public holidays treated as normal days). Today updates live.</div></div>
+      ${this._planCompare(c, keys, n)}
       <div class="card wide"><h2>Daily energy (kWh)</h2>${barChart(lbl, [{ name: "Solar", color: C.solar, data: days.map(d => d.pv) }, { name: "Used", color: C.home, data: days.map(d => d.used) },
         { name: "Imported", color: C.grid, data: days.map(d => d.imp) }, { name: "Exported", color: C.shoulder, data: days.map(d => d.exp) }], { w: 1100, h: 230 })}</div>
       <div class="card w6"><h2>Daily money ($)</h2>${barChart(lbl, [{ name: "Import cost", color: C.peak, data: days.map(d => d.cImp) }, { name: "Export earned", color: C.shoulder, data: days.map(d => d.cExp) },
@@ -941,7 +1173,10 @@ class CortexStudio extends HTMLElement {
         <div class="row"><span>20–10 Off peak</span><span><b>${v("input_number.agl_plan_off_peak")}c</b> ${h >= 20 || h < 10 ? '<b class="ok">◀ now</b>' : ""}</span></div>
         <div class="row"><span>FiT 07–08 / 17–21</span><span><b>${v("input_number.agl_plan_fit_morning")}c / ${v("input_number.agl_plan_fit_evening")}c</b></span></div>
         <div class="muted">Supply ${v("input_number.agl_plan_supply_charge")} c/day · ${high ? "high" : "low"} season.</div></div>
-      <div class="card w6"><h2>Automations</h2>${E.autos.map(id => { const st = this._st(id); return st ? `<label class="row"><span>${esc(st.attributes.friendly_name || id)}</span><input type="checkbox" class="sw" data-auto="${id}" ${st.state === "on" ? "checked" : ""}></label>` : ""; }).join("") || '<div class="muted">None found.</div>'}</div>
+`;
+  }
+  _sysCards() {
+    return `<div class="card w6"><h2>Automations</h2>${E.autos.map(id => { const st = this._st(id); return st ? `<label class="row"><span>${esc(st.attributes.friendly_name || id)}</span><input type="checkbox" class="sw" data-auto="${id}" ${st.state === "on" ? "checked" : ""}></label>` : ""; }).join("") || '<div class="muted">None found.</div>'}</div>
       <div class="card w6"><h2>System settings <span class="muted">edit a value, press Enter</span></h2>${E.nums.map(([l, id]) => { const st = this._st(id); return st ? `<div class="row"><span>${esc(l)}</span><input type="number" class="num" data-num="${id}" value="${esc(st.state)}" step="${st.attributes.step || "any"}" min="${st.attributes.min ?? ""}" max="${st.attributes.max ?? ""}"></div>` : ""; }).join("")}</div>`;
   }
   _wireExtras() {
@@ -1102,6 +1337,7 @@ class CortexStudio extends HTMLElement {
       <span><button data-run="${esc(r.name)}">Run</button> <button class="ghost" data-delr="${esc(r.name)}">✕</button></span></div>`, "No routines. Ask the assistant to make one, or accept a suggestion.");
     const speech = this._list((d.speech || []).slice(0, 8), s => `<div class="row"><span>${esc(s.text)}</span><span class="muted">${s.time.slice(11, 16)} ${s.spoken ? "🔊" : "🔇 " + esc(s.reason || "")}</span></div>`, "Nothing said yet.");
     return `<section class="grid">
+      ${this._chatCard()}
       <div class="card wide"><h2>Memory (${d.memories.length})</h2>
         <div class="row"><input id="mtext" placeholder="Something worth remembering" style="flex:1"><select id="mcat">${d.categories.map(c => `<option>${esc(c)}</option>`).join("")}</select><button id="madd">Add</button></div>${mem}</div>
       <div class="card w6"><h2>Reminders</h2>${rem}<h2 style="margin-top:12px">Watches</h2>${wat}</div>
@@ -1133,10 +1369,43 @@ class CortexStudio extends HTMLElement {
   }
 }
 
+/** Rate for an hour from a plan's bands (first match wins), else the default. */
+function planRate(bands, def, h) {
+  for (const b of bands || []) {
+    const dayOk = !b.days || b.days === "all" || (b.days === "weekday") === !!h.biz;
+    const inH = b.from <= b.to ? h.hour >= b.from && h.hour < b.to : h.hour >= b.from || h.hour < b.to;
+    if (dayOk && inH) return b.rate;
+  }
+  return def;
+}
+/** Sankey of today's energy: sources on the left, destinations on the right. */
+function sankeySvg(o) {
+  const L = [["solar", "Solar", C.solar, o.s2h + o.s2b + o.s2g], ["batt", "Battery", C.batt, o.b2h + o.b2g], ["grid", "Grid", C.grid, o.g2h + o.g2b]];
+  const R = [["home", "Home", C.home, o.s2h + o.b2h + o.g2h], ["batt", "Battery", C.batt, o.s2b + o.g2b], ["grid", "Grid", C.grid, o.s2g + o.b2g]];
+  const links = [["solar", "home", o.s2h], ["solar", "batt", o.s2b], ["solar", "grid", o.s2g], ["batt", "home", o.b2h], ["batt", "grid", o.b2g], ["grid", "home", o.g2h], ["grid", "batt", o.g2b]];
+  const sum = a => a.reduce((t, x) => t + x[3], 0), tot = Math.max(sum(L), sum(R));
+  if (tot < 0.05) return '<div class="muted">No energy recorded yet today.</div>';
+  const W = 560, H = 250, gap = 16, x0 = 150, x1 = W - 150, k = (H - 20 - gap * 2) / tot;
+  const place = arr => { let y = 10; const out = {}; arr.forEach(([id, , , v]) => { const h = v > 0.01 ? Math.max(v * k, 3) : 0; out[id] = { y, h, off: 0, v }; if (h) y += h + gap; }); return out; };
+  const lp = place(L), rp = place(R);
+  const ribbons = links.filter(l => l[2] > 0.01).map(([a, b, v]) => {
+    const w = Math.max(v * k, 1.5), s = lp[a], t = rp[b], sy = s.y + s.off, ty = t.y + t.off, xm = (x0 + x1) / 2;
+    s.off += w; t.off += w;
+    const col = L.find(x => x[0] === a)[2];
+    return `<path d="M${x0} ${sy.toFixed(1)}C${xm} ${sy.toFixed(1)} ${xm} ${ty.toFixed(1)} ${x1} ${ty.toFixed(1)}L${x1} ${(ty + w).toFixed(1)}C${xm} ${(ty + w).toFixed(1)} ${xm} ${(sy + w).toFixed(1)} ${x0} ${(sy + w).toFixed(1)}Z" fill="${col}" class="rib"><title>${a} → ${b}: ${fx(v, 1)} kWh</title></path>`;
+  }).join("");
+  const nodes = (arr, pos, left) => arr.filter(([id]) => pos[id].h).map(([id, name, col]) => {
+    const p = pos[id], x = left ? x0 - 10 : x1, tx = left ? x0 - 18 : x1 + 18, a = left ? "end" : "start", cy = p.y + p.h / 2;
+    return `<rect x="${x}" y="${p.y}" width="10" height="${p.h}" rx="4" fill="${col}"/><text x="${tx}" y="${cy - 1}" text-anchor="${a}" class="sk1">${name}</text><text x="${tx}" y="${cy + 14}" text-anchor="${a}" class="sk2">${fx(p.v, 1)} kWh</text>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" class="sankey" role="img" aria-label="Today's energy flows">${ribbons}${nodes(L, lp, true)}${nodes(R, rp, false)}</svg>
+    <div class="skfoot"><span><b>${fx(o.s2h + o.s2b + o.s2g, 1)}</b> kWh solar · <b>${Math.round((o.s2h + o.s2b) / Math.max(o.s2h + o.s2b + o.s2g, 0.01) * 100)}%</b> kept at home</span><span><b>${fx(o.g2h + o.g2b, 1)}</b> kWh bought · <b>${fx(o.s2g + o.b2g, 1)}</b> kWh sold</span></div>`;
+}
+
 // ---- generic charts ------------------------------------------------------
 function lineChart(series, o = {}) {
   const W = o.w || 520, H = o.h || 200, L = 40, R = 12, T = 10, B = 22;
-  const all = series.flatMap(s => s.data.filter(v => v !== null));
+  const all = series.flatMap(s => s.data.filter(v => v != null && !Number.isNaN(v)));
   if (!all.length) return `<div class="muted" style="padding:20px">No data yet.</div>`;
   const lo = o.min ?? Math.min(0, ...all), hi = o.max ?? (Math.max(...all, 1) * 1.08), n = series[0].data.length;
   const x = i => L + (i / Math.max(n - 1, 1)) * (W - L - R), y = v => T + (1 - (v - lo) / (hi - lo || 1)) * (H - T - B);
@@ -1145,7 +1414,7 @@ function lineChart(series, o = {}) {
   let lab = "";
   if (o.labels) { const st = Math.max(1, Math.ceil(n / 8)); o.labels.forEach((t, i) => { if (i % st === 0) lab += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle" class="ax">${esc(t)}</text>`; }); }
   else if (o.start) for (let k = 0; k <= 6; k++) { const t = new Date(o.start.getTime() + (o.end - o.start) * k / 6); lab += `<text x="${x(k / 6 * (n - 1))}" y="${H - 6}" text-anchor="middle" class="ax">${o.days ? t.toLocaleDateString([], { weekday: "short" }) : t.getHours() + ":00"}</text>`; }
-  const path = (d, step) => d.map((v, i) => v === null ? "" : (i && d[i - 1] !== null ? (step ? `H${x(i).toFixed(1)}V` : "L") : "M") + (step && i && d[i - 1] !== null ? y(v).toFixed(1) : x(i).toFixed(1) + " " + y(v).toFixed(1))).join("");
+  const path = (d, step) => d.map((v, i) => v == null || Number.isNaN(v) ? "" : (i && d[i - 1] != null && !Number.isNaN(d[i - 1]) ? (step ? `H${x(i).toFixed(1)}V` : "L") : "M") + (step && i && d[i - 1] != null ? y(v).toFixed(1) : x(i).toFixed(1) + " " + y(v).toFixed(1))).join("");
   const body = series.map(s => {
     const d = path(s.data, o.step);
     const area = s.area ? `<path d="${d} L${x(n - 1)} ${y(Math.max(lo, 0))} L${x(0)} ${y(Math.max(lo, 0))} Z" fill="${s.color}" opacity=".16"/>` : "";
@@ -1428,7 +1697,7 @@ nav#tabs button.on{background:var(--surface);color:var(--text);box-shadow:var(--
 .ib{position:relative;width:42px;height:42px;padding:0;border-radius:50%;background:var(--surface);color:var(--text);border:1px solid var(--line);display:grid;place-items:center;box-shadow:var(--shadow)}
 .ib .auto{position:absolute;right:-2px;bottom:-2px;font:700 9px/14px var(--ff);width:14px;height:14px;border-radius:50%;background:var(--o);color:var(--text-primary-color);text-align:center;font-style:normal}
 .badge{position:absolute;top:-3px;right:-3px;min-width:18px;height:18px;border-radius:9px;background:var(--bad);color:#fff;font:700 11px/18px var(--ff);text-align:center;padding:0 4px;font-style:normal}.badge[hidden]{display:none}
-@media (max-width:1180px){nav#tabs button span{display:none}nav#tabs button.on span{display:inline}.clock{display:none}}
+@media (max-width:1440px){nav#tabs button span{display:none}nav#tabs button.on span{display:inline}.clock{display:none}}
 @media (max-width:760px){
   .gdate{display:none}.chead{flex-wrap:wrap}.chead h2{white-space:nowrap}.legend{font-size:12px;gap:8px}
   :host{padding:14px 14px 104px}.top{margin-bottom:16px}.brand h1{font-size:18px}
@@ -1628,6 +1897,49 @@ button.pill{min-height:0;font:650 12.5px/1 var(--ff);padding:5px 12px}
 .bimk{position:absolute;inset:0;pointer-events:none}.bimk i{position:absolute;opacity:.9}
 .battmeta{display:flex;flex-direction:column;align-items:center;text-align:center;font-size:13px;gap:2px}
 .battmeta b{font-size:15px}.bbig{font-size:36px;font-weight:700;line-height:1.1;color:var(--bc);letter-spacing:-.02em}
+
+/* ---- v0.15: advice, sankey, plans, settings, chat ---- */
+.tips{display:flex;flex-direction:column;gap:10px}
+.tip-row{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:16px;background:var(--surface2)}
+.tip-row b{display:block;font-weight:600;font-size:14px;line-height:1.4}.tip-row span{font-size:12.5px;color:var(--muted)}
+.tic{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;flex:none;background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--muted)}.tic .ic{width:18px;height:18px}
+.tip-row.act .tic{background:color-mix(in srgb,var(--o) 16%,transparent);color:var(--o)}.tip-row.warn .tic{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.tip-row.warn{box-shadow:inset 3px 0 0 var(--warn)}.tip-row.act{box-shadow:inset 3px 0 0 var(--o)}
+.sankey{width:100%;display:block}.rib{opacity:.55;transition:opacity .2s}.rib:hover{opacity:.85}
+.sk1{font:600 13px var(--ff);fill:var(--text)}.sk2{font:500 12px var(--ff);fill:var(--muted)}
+.skfoot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:8px}.skfoot b{color:var(--text)}
+.pc{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto;gap:16px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}.pc:last-of-type{border-bottom:0}
+.pc.cur .pcn b{color:var(--text)}.pcn{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;min-width:0}.pcn .muted{flex-basis:100%;font-size:12.5px}
+.pcb{height:12px;background:var(--surface2);border-radius:6px;overflow:hidden}.pcb i{display:block;height:100%;border-radius:6px}
+.pcv{display:flex;flex-direction:column;align-items:flex-end;min-width:110px}.pcv b{font-size:18px}.pcv .ok,.pcv .bad{font-size:12.5px;font-weight:600}
+@media (max-width:720px){.pc{grid-template-columns:1fr auto}.pcb{grid-column:1/-1;grid-row:2}}
+.sethead{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}.sethead h2{margin-bottom:4px}
+.jump{flex-wrap:wrap}
+.devs{display:flex;flex-direction:column}
+.dev{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto;gap:14px;align-items:center;padding:12px 4px;border-bottom:1px solid var(--line)}.dev:last-child{border-bottom:0}
+.dst{width:10px;height:10px;border-radius:50%;background:var(--muted)}.dst.on{background:var(--good)}.dst.part{background:var(--warn)}.dst.off{background:var(--bad)}
+.dn,.dm{display:flex;flex-direction:column;min-width:0}.dn b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dm{align-items:flex-end;font-size:13px}
+.dw{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+a.lnk{color:var(--o-deep);font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:4px}a.lnk .ic{width:18px;height:18px}
+:host([data-theme=dark]) a.lnk{color:var(--o)}
+@media (max-width:720px){.dev{grid-template-columns:auto minmax(0,1fr) auto;row-gap:6px}.dm{grid-column:2;align-items:flex-start}.dw{grid-column:2/4}}
+.plan{padding:14px 16px;border-radius:20px;background:var(--surface2);margin-bottom:12px}
+.planh{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px}.pname{font-weight:700;font-size:15px;flex:1;max-width:340px;background:var(--surface)}
+.pgrid{display:flex;flex-wrap:wrap;gap:10px 22px;margin-bottom:6px}.pgrid label{display:flex;align-items:center;gap:8px;font-size:13.5px}
+.plan input[type=number]{width:84px;background:var(--surface);min-height:36px;padding:6px 10px}.plan select{background:var(--surface);min-height:36px;padding:6px 10px}
+.bands h3{margin:12px 0 6px}.band{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0}.band input[type=number]{width:64px}
+.chat{display:flex;flex-direction:column;gap:12px}.chat h2 .ic{color:var(--o)}
+.chtools{display:flex;gap:8px;align-items:center}.chtools select{min-height:36px;padding:6px 10px;max-width:220px}
+.msgs{display:flex;flex-direction:column;gap:10px;max-height:420px;min-height:160px;overflow:auto;padding:4px 2px;scroll-behavior:smooth}
+.msg{max-width:78%;padding:11px 15px;border-radius:20px;font-size:14.5px;line-height:1.45;white-space:normal;word-wrap:break-word}
+.msg.me{align-self:flex-end;background:var(--o-deep);color:var(--text-primary-color);border-bottom-right-radius:6px}
+.msg.ai{align-self:flex-start;background:var(--surface2);border-bottom-left-radius:6px}.msg.err{box-shadow:inset 3px 0 0 var(--bad)}
+.typing{display:flex;gap:5px;padding:14px 16px}.typing i{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:blink 1.2s infinite}.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+.empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;margin:auto;max-width:460px;padding:20px;color:var(--muted);font-size:13.5px}.empty .ic{width:30px;height:30px;color:var(--o)}.empty b{color:var(--text);font-size:15px}
+.qp{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.qp .chip{border:1px solid var(--line);cursor:pointer;white-space:nowrap;min-height:34px;font:500 13px var(--ff);color:var(--text);background:var(--surface2);padding:7px 14px}.qp .chip:hover{background:var(--surface3);filter:none}
+.chatf{display:flex;gap:8px}.chatf input{flex:1;min-height:48px;border-radius:24px;padding:12px 18px;font-size:15px}
+.chatf button{width:48px;height:48px;padding:0;display:grid;place-items:center;flex:none}
+@media (max-width:720px){.msg{max-width:90%}.chtools select{max-width:150px}}
 
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.001s!important;animation-iteration-count:1!important;transition-duration:.001s!important}}
 `;
