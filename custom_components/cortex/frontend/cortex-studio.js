@@ -732,7 +732,7 @@ class CortexStudio extends HTMLElement {
     if (this._enP) return this._enP;
     this._enP = (async () => {
       const tz = (this._hass.config && this._hass.config.time_zone) || undefined, s = (this._data && this._data.studio) || {};
-      const ids = { pv: s.day_pv || AN.pv, imp: s.day_import || AN.imp, exp: s.day_export || AN.exp, chg: AN.chg, dis: AN.dis, load: s.day_load || AN.load };
+      const ids = { pv: s.day_pv || AN.pv, imp: s.day_import || AN.imp, exp: s.day_export || AN.exp, chg: AN.chg, dis: AN.dis, load: s.day_load || AN.load, ev: AN.evKwh };
       const start = new Date(Date.now() - 32 * 86400000).toISOString();
       const ws = extra => this._hass.callWS({ type: "recorder/statistics_during_period", start_time: start, ...extra }).catch(() => ({}));
       const [hr, dayP, evD] = await Promise.all([
@@ -740,25 +740,30 @@ class CortexStudio extends HTMLElement {
         ws({ statistic_ids: Object.values(AN_POWER), period: "day", types: ["mean", "min", "max"] }),
         ws({ statistic_ids: [AN.evKwh], period: "day", types: ["change"] })]);
       const hours = new Map();
+      let evLast;
       Object.keys(ids).forEach(k => {
-        const rows = (hr[ids[k]] || []).slice().sort((a, b) => new Date(a.start) - new Date(b.start)), last = {};
+        const rows = (hr[ids[k]] || []).slice().sort((a, b) => new Date(a.start) - new Date(b.start)), last = {}, life = k === "ev";
+        let prevLife;
         rows.forEach(r => {
           const t = +new Date(r.start), v = r.state;
           if (v === null || v === undefined) return;
           const p = tzParts(t, tz), prev = last[p.key];
-          let d = prev === undefined ? v : v - prev;
+          // daily counters reset at midnight; the wall connector's counter is lifetime, so diff against the previous hour
+          let d = life ? (prevLife === undefined ? 0 : v - prevLife) : prev === undefined ? v : v - prev;
+          if (life) { prevLife = v; if (d < 0) d = 0; }
           if (d < 0) d = v;           // counter reset
           if (d > 40) d = 0;          // implausible hour: glitch
           last[p.key] = v;
           let h = hours.get(t);
-          if (!h) { h = { t, ...p, pv: 0, imp: 0, exp: 0, chg: 0, dis: 0, load: 0 }; hours.set(t, h); }
+          if (!h) { h = { t, ...p, pv: 0, imp: 0, exp: 0, chg: 0, dis: 0, load: 0, ev: 0 }; hours.set(t, h); }
           h[k] = d;
         });
+        if (life) evLast = prevLife;
       });
       const byDay = (res, id, f) => { const m = {}; (res[id] || []).forEach(r => { m[tzParts(+new Date(r.start), tz).key] = f(r); }); return m; };
       const power = {};
       Object.entries(AN_POWER).forEach(([k, id]) => { power[k] = byDay(dayP, id, r => r); });
-      this._en = { at: Date.now(), tz, ids, hours: [...hours.values()].sort((a, b) => a.t - b.t), power, ev: byDay(evD, AN.evKwh, r => r.change) };
+      this._en = { at: Date.now(), tz, ids, evLast, hours: [...hours.values()].sort((a, b) => a.t - b.t), power, ev: byDay(evD, AN.evKwh, r => r.change) };
       this._enP = null;
       return this._en;
     })();
@@ -773,10 +778,16 @@ class CortexStudio extends HTMLElement {
       const have = hrs.filter(h => h.key === pc.key).reduce((a, h) => a + h[k], 0);
       if (live > have + 0.005) {
         let h = hrs.find(x => x.t === cur);
-        if (!h) { h = { t: cur, ...pc, pv: 0, imp: 0, exp: 0, chg: 0, dis: 0, load: 0 }; hrs.push(h); }
+        if (!h) { h = { t: cur, ...pc, pv: 0, imp: 0, exp: 0, chg: 0, dis: 0, load: 0, ev: 0 }; hrs.push(h); }
         h[k] += live - have;
       }
     });
+    const evNow = this._num(AN.evKwh);
+    if (evNow !== null && en.evLast !== undefined && evNow > en.evLast && evNow - en.evLast < 30) {
+      let h = hrs.find(x => x.t === cur);
+      if (!h) { h = { t: cur, ...pc, pv: 0, imp: 0, exp: 0, chg: 0, dis: 0, load: 0, ev: 0 }; hrs.push(h); }
+      h.ev = (h.ev || 0) + evNow - en.evLast;
+    }
     const days = new Map();
     hrs.forEach(h => {
       const t = tariffAt(h, r); h.per = t.per; h.rate = t.imp; h.fit = t.fit;
@@ -955,18 +966,24 @@ class CortexStudio extends HTMLElement {
   /** Today's energy split by path, rebuilt hour by hour from the meter counters. */
   _splitToday() {
     const c = this._enCompute(); if (!c || !c.hrs.length) return null;
-    const key = tzParts(Date.now(), this._en.tz).key, o = { s2h: 0, s2b: 0, s2g: 0, b2h: 0, b2g: 0, g2h: 0, g2b: 0 };
+    const key = tzParts(Date.now(), this._en.tz).key, o = { s2h: 0, s2e: 0, s2b: 0, s2g: 0, b2h: 0, b2e: 0, b2g: 0, g2h: 0, g2e: 0, g2b: 0 };
+    const m = (a, b) => Math.max(Math.min(a, b), 0);
     c.hrs.filter(h => h.key === key).forEach(h => {
-      const used = h.used, s2h = Math.min(h.pv, used), r = h.pv - s2h, s2b = Math.min(r, h.chg), s2g = Math.min(r - s2b, h.exp);
-      const b2h = Math.min(h.dis, used - s2h), b2g = Math.max(Math.min(h.dis - b2h, h.exp - s2g), 0);
-      o.s2h += s2h; o.s2b += s2b; o.s2g += s2g; o.b2h += b2h; o.b2g += b2g;
-      o.g2h += Math.max(used - s2h - b2h, 0); o.g2b += Math.max(h.chg - s2b, 0);
+      // The house meter includes the car, so split it: the EV takes its own share and the rest is the house.
+      const ev = Math.min(h.ev || 0, h.used), house = Math.max(h.used - ev, 0);
+      let sol = h.pv;
+      const s2h = m(sol, house); sol -= s2h; const s2e = m(sol, ev); sol -= s2e; const s2b = m(sol, h.chg); sol -= s2b; const s2g = m(sol, h.exp);
+      let bat = h.dis;
+      const b2h = m(bat, house - s2h); bat -= b2h; const b2e = m(bat, ev - s2e); bat -= b2e; const b2g = m(bat, h.exp - s2g);
+      o.s2h += s2h; o.s2e += s2e; o.s2b += s2b; o.s2g += s2g; o.b2h += b2h; o.b2e += b2e; o.b2g += b2g;
+      o.g2h += Math.max(house - s2h - b2h, 0); o.g2e += Math.max(ev - s2e - b2e, 0); o.g2b += Math.max(h.chg - s2b, 0);
     });
     return o;
   }
   _paintSplit() {
     const sp = this._splitToday();
-    this._paintTo("#mix", sp ? sankeySvg(sp) : '<div class="muted">Loading today\'s split…</div>');
+    this._paintTo("#mix", sp ? sankeySvg(sp, this.clientWidth < 640) : '<div class="muted">Loading today\'s split…</div>');
+    wireSankey(this._root);
   }
 
   // ---- PLAN COMPARISON -------------------------------------------------
@@ -1547,28 +1564,49 @@ function planRate(bands, def, h) {
   }
   return def;
 }
-/** Sankey of today's energy: sources on the left, destinations on the right. */
-function sankeySvg(o) {
-  const L = [["solar", "Solar", C.solar, o.s2h + o.s2b + o.s2g], ["batt", "Battery", C.batt, o.b2h + o.b2g], ["grid", "Grid", C.grid, o.g2h + o.g2b]];
-  const R = [["home", "Home", C.home, o.s2h + o.b2h + o.g2h], ["batt", "Battery", C.batt, o.s2b + o.g2b], ["grid", "Grid", C.grid, o.s2g + o.b2g]];
-  const links = [["solar", "home", o.s2h], ["solar", "batt", o.s2b], ["solar", "grid", o.s2g], ["batt", "home", o.b2h], ["batt", "grid", o.b2g], ["grid", "home", o.g2h], ["grid", "batt", o.g2b]];
-  const sum = a => a.reduce((t, x) => t + x[3], 0), tot = Math.max(sum(L), sum(R));
+/** Sankey of today's energy: sources on the left (solar, battery, grid), destinations on the right (house, EV, battery, grid). */
+let _skid = 0;
+function sankeySvg(o, compact = false) {
+  const S = [["solar", "Solar", C.solar, "sun"], ["batt", "Battery", C.batt, "battery"], ["grid", "Grid", C.grid, "grid"]];
+  const T = [["home", "House", C.home, "home"], ["ev", "EV", C.ev, "car"], ["batt", "Battery", C.batt, "battery"], ["grid", "Grid", C.grid, "grid"]];
+  const L = [["solar", "home", o.s2h], ["solar", "ev", o.s2e], ["solar", "batt", o.s2b], ["solar", "grid", o.s2g], ["batt", "home", o.b2h], ["batt", "ev", o.b2e], ["batt", "grid", o.b2g], ["grid", "home", o.g2h], ["grid", "ev", o.g2e], ["grid", "batt", o.g2b]].filter(l => l[2] > 0.05);
+  const tot = L.reduce((a, l) => a + l[2], 0);
   if (tot < 0.05) return '<div class="muted">No energy recorded yet today.</div>';
-  const W = 560, H = 250, gap = 16, x0 = 150, x1 = W - 150, k = (H - 20 - gap * 2) / tot;
-  const place = arr => { let y = 10; const out = {}; arr.forEach(([id, , , v]) => { const h = v > 0.01 ? Math.max(v * k, 3) : 0; out[id] = { y, h, off: 0, v }; if (h) y += h + gap; }); return out; };
-  const lp = place(L), rp = place(R);
-  const ribbons = links.filter(l => l[2] > 0.01).map(([a, b, v]) => {
-    const w = Math.max(v * k, 1.5), s = lp[a], t = rp[b], sy = s.y + s.off, ty = t.y + t.off, xm = (x0 + x1) / 2;
-    s.off += w; t.off += w;
-    const col = L.find(x => x[0] === a)[2];
-    return `<path d="M${x0} ${sy.toFixed(1)}C${xm} ${sy.toFixed(1)} ${xm} ${ty.toFixed(1)} ${x1} ${ty.toFixed(1)}L${x1} ${(ty + w).toFixed(1)}C${xm} ${(ty + w).toFixed(1)} ${xm} ${(sy + w).toFixed(1)} ${x0} ${(sy + w).toFixed(1)}Z" fill="${col}" class="rib"><title>${a} → ${b}: ${fx(v, 1)} kWh</title></path>`;
+  const out = id => L.filter(l => l[0] === id).reduce((a, l) => a + l[2], 0), inn = id => L.filter(l => l[1] === id).reduce((a, l) => a + l[2], 0);
+  const W = compact ? 400 : 640, H = compact ? 320 : 300, gap = 18, nw = compact ? 10 : 12, x0 = compact ? 96 : 150, x1 = W - x0, uid = "sk" + (++_skid);
+  const left = S.filter(n => out(n[0]) > 0.05), right = T.filter(n => inn(n[0]) > 0.05);
+  const k = Math.min((H - 16 - gap * (left.length - 1)) / tot, (H - 16 - gap * (right.length - 1)) / tot);
+  const place = (arr, f) => { const used = arr.reduce((a, n) => a + Math.max(f(n[0]) * k, 4), 0) + gap * (arr.length - 1); let y = (H - used) / 2; const p = {}; arr.forEach(n => { const h = Math.max(f(n[0]) * k, 4); p[n[0]] = { y, h, off: 0, v: f(n[0]) }; y += h + gap; }); return p; };
+  const lp = place(left, out), rp = place(right, inn), col = id => (S.find(n => n[0] === id) || T.find(n => n[0] === id))[2];
+  const defs = [], ribs = L.map(([a, b, v], i) => {
+    const w = v * k, s = lp[a], t = rp[b], sy = s.y + s.off, ty = t.y + t.off, xm = (x0 + x1) / 2; s.off += w; t.off += w;
+    defs.push(`<linearGradient id="${uid}g${i}" x1="0" x2="1"><stop offset="0" stop-color="${col(a)}"/><stop offset="1" stop-color="${col(b)}"/></linearGradient>`);
+    const lab = w >= 16 ? `<text x="${xm}" y="${(sy + ty) / 2 + w / 2 + 4}" text-anchor="middle" class="skv">${fx(v, 1)}</text>` : "";
+    return `<g class="rib" data-a="${a}" data-b="${b}"><path d="M${x0} ${sy.toFixed(1)}C${xm} ${sy.toFixed(1)} ${xm} ${ty.toFixed(1)} ${x1} ${ty.toFixed(1)}L${x1} ${(ty + w).toFixed(1)}C${xm} ${(ty + w).toFixed(1)} ${xm} ${(sy + w).toFixed(1)} ${x0} ${(sy + w).toFixed(1)}Z" fill="url(#${uid}g${i})"><title>${a === "batt" ? "Battery" : a[0].toUpperCase() + a.slice(1)} → ${b === "home" ? "House" : b === "ev" ? "EV" : b === "batt" ? "Battery" : "Grid"}: ${fx(v, 1)} kWh (${Math.round(v / tot * 100)}%)</title></path>${lab}</g>`;
   }).join("");
-  const nodes = (arr, pos, left) => arr.filter(([id]) => pos[id].h).map(([id, name, col]) => {
-    const p = pos[id], x = left ? x0 - 10 : x1, tx = left ? x0 - 18 : x1 + 18, a = left ? "end" : "start", cy = p.y + p.h / 2;
-    return `<rect x="${x}" y="${p.y}" width="10" height="${p.h}" rx="4" fill="${col}"/><text x="${tx}" y="${cy - 1}" text-anchor="${a}" class="sk1">${name}</text><text x="${tx}" y="${cy + 14}" text-anchor="${a}" class="sk2">${fx(p.v, 1)} kWh</text>`;
-  }).join("");
-  return `<svg viewBox="0 0 ${W} ${H}" class="sankey" role="img" aria-label="Today's energy flows">${ribbons}${nodes(L, lp, true)}${nodes(R, rp, false)}</svg>
-    <div class="skfoot"><span><b>${fx(o.s2h + o.s2b + o.s2g, 1)}</b> kWh solar · <b>${Math.round((o.s2h + o.s2b) / Math.max(o.s2h + o.s2b + o.s2g, 0.01) * 100)}%</b> kept at home</span><span><b>${fx(o.g2h + o.g2b, 1)}</b> kWh bought · <b>${fx(o.s2g + o.b2g, 1)}</b> kWh sold</span></div>`;
+  const node = (n, p, isLeft) => {
+    const [id, name, c, ic] = n, x = isLeft ? x0 - nw : x1, tx = isLeft ? x0 - nw - (compact ? 6 : 12) : x1 + nw + (compact ? 6 : 12), a = isLeft ? "end" : "start", cy = p.y + p.h / 2, ix = isLeft ? tx - 18 : tx;
+    return `<g class="sknode" data-n="${id}" data-side="${isLeft ? "l" : "r"}"><rect x="${x}" y="${p.y}" width="${nw}" height="${p.h}" rx="5" fill="${c}"/>
+      ${compact ? "" : `<g transform="translate(${ix} ${cy - 22}) scale(.75)" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[ic]}</g>`}
+      <text x="${compact ? tx : isLeft ? tx - 24 : tx + 24}" y="${cy - 8}" text-anchor="${a}" class="sk1">${name}</text>
+      <text x="${tx}" y="${cy + 10}" text-anchor="${a}" class="sk2">${fx(p.v, 1)} kWh${compact ? "" : ` · ${Math.round(p.v / tot * 100)}%`}</text></g>`;
+  };
+  const solar = out("solar"), kept = o.s2h + o.s2e + o.s2b, ev = inn("ev"), evGreen = o.s2e + o.b2e, houseIn = inn("home") + ev, fromGrid = o.g2h + o.g2e;
+  const stat = (v, l) => `<div><b>${v}</b><span>${l}</span></div>`;
+  return `<svg viewBox="0 0 ${W} ${H}" class="sankey" role="img" aria-label="Today's energy flows"><defs>${defs.join("")}</defs>${ribs}${left.map(n => node(n, lp[n[0]], true)).join("")}${right.map(n => node(n, rp[n[0]], false)).join("")}</svg>
+    <div class="skstats">${stat(solar > 0.05 ? Math.round(kept / solar * 100) + "%" : "–", "of solar kept at home")}${stat(houseIn > 0.05 ? Math.round((1 - fromGrid / houseIn) * 100) + "%" : "–", "self-sufficient")}
+      ${ev > 0.05 ? stat(Math.round(evGreen / ev * 100) + "%", `EV from solar and battery (${fx(ev, 1)} kWh)`) : ""}${stat(fx(o.s2g + o.b2g, 1) + " kWh", "sold to the grid")}</div>`;
+}
+function wireSankey(root) {
+  root.querySelectorAll(".sankey").forEach(svg => {
+    const nodes = svg.querySelectorAll(".sknode"), ribs = svg.querySelectorAll(".rib");
+    const clear = () => { ribs.forEach(r => r.classList.remove("dim", "hi")); };
+    nodes.forEach(n => {
+      n.onmouseenter = () => { const id = n.dataset.n, side = n.dataset.side; ribs.forEach(r => { const on = side === "l" ? r.dataset.a === id : r.dataset.b === id; r.classList.toggle("hi", on); r.classList.toggle("dim", !on); }); };
+      n.onmouseleave = clear;
+    });
+    ribs.forEach(r => { r.onmouseenter = () => ribs.forEach(x => { x.classList.toggle("hi", x === r); x.classList.toggle("dim", x !== r); }); r.onmouseleave = clear; });
+  });
 }
 
 // ---- generic charts ------------------------------------------------------
@@ -2106,8 +2144,9 @@ textarea{font:500 14px/1.45 var(--ff);color:var(--text);background:var(--surface
 .tic{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;flex:none;background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--muted)}.tic .ic{width:18px;height:18px}
 .tip-row.act .tic{background:color-mix(in srgb,var(--o) 16%,transparent);color:var(--o)}.tip-row.warn .tic{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
 .tip-row.warn{box-shadow:inset 3px 0 0 var(--warn)}.tip-row.act{box-shadow:inset 3px 0 0 var(--o)}
-.sankey{width:100%;display:block}.rib{opacity:.55;transition:opacity .2s}.rib:hover{opacity:.85}
-.sk1{font:600 13px var(--ff);fill:var(--text)}.sk2{font:500 12px var(--ff);fill:var(--muted)}
+.sankey{width:100%;display:block}.rib path{opacity:.5;transition:opacity .2s}.rib.hi path{opacity:.9}.rib.dim path{opacity:.12}.rib.dim .skv{opacity:0}
+.sknode{cursor:default}.sk1{font:650 13.5px var(--ff);fill:var(--text)}.sk2{font:500 12px var(--ff);fill:var(--muted)}.skv{font:700 11.5px var(--ff);fill:var(--text);pointer-events:none;paint-order:stroke;stroke:var(--surface);stroke-width:3px;stroke-opacity:.7}
+.skstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-top:12px}.skstats div{background:var(--surface2);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column}.skstats b{font-size:18px}.skstats span{font-size:12px;color:var(--muted)}
 .skfoot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:8px}.skfoot b{color:var(--text)}
 .pc{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto;gap:16px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}.pc:last-of-type{border-bottom:0}
 .pc.cur .pcn b{color:var(--text)}.pcn{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;min-width:0}.pcn .muted{flex-basis:100%;font-size:12.5px}
