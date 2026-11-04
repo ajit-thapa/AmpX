@@ -450,3 +450,22 @@ async def test_ev_first_export_guard(hass: HomeAssistant):
     hass.states.async_set(o["dispatch_mode"], "Force Discharge")
     hass.states.async_set(o["studio_ev"], "0", {"unit_of_measurement": "kW"})
     assert await en.ev_guard(evening) is None
+
+
+async def test_health_skips_energy_counters_and_does_not_repeat(hass: HomeAssistant):
+    async_mock_service(hass, "notify", "send_message")
+    brain = await _setup(hass)
+    pushes = []
+    async def push(text, title="Cortex"):
+        pushes.append(text)
+        return True
+    brain.speaker.push = push
+    # a utility meter that inherited the battery device class must never count as a low battery
+    hass.states.async_set("sensor.neovolt_online_pv_export_after_consumption", "9.2",
+                          {"device_class": "battery", "unit_of_measurement": "%", "friendly_name": "Neovolt Online PV Export after consumption"})
+    hass.states.async_set("sensor.door_battery", "9", {"device_class": "battery", "unit_of_measurement": "%", "friendly_name": "Door"})
+    assert await brain.run_health() == ["Door battery at 9%"]
+    assert len(pushes) == 1
+    hass.states.async_set("sensor.door_battery", "8", {"device_class": "battery", "unit_of_measurement": "%", "friendly_name": "Door"})
+    assert await brain.run_health() == ["Door battery at 8%"]
+    assert len(pushes) == 1  # same issue, new number: no second alert

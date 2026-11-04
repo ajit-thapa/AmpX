@@ -6,6 +6,7 @@ from collections import deque
 from collections.abc import Callable
 from datetime import datetime, timedelta
 import logging
+import re
 from typing import Any
 import uuid
 
@@ -77,6 +78,8 @@ SOURCE_KEYS = (
     CONF_EV_TARGET, CONF_HOLIDAYS,
 )
 LOW_BATTERY = 15
+# Sensors that borrow the battery device class but are energy counters or settings, not a device battery
+NOT_A_BATTERY = re.compile(r"export|import|consumption|consumed|feed.?in|generated|charged|discharged|energy|kwh|_today|cutoff|minimum soc|reserve|target", re.I)
 OFFLINE_AFTER = timedelta(minutes=30)  # a restart or a Wi-Fi blip is not a fault
 VOICE_STATES = {"listening", "processing", "responding"}
 
@@ -558,7 +561,8 @@ class Cortex:
             dc = state.attributes.get("device_class")
             if domain == "binary_sensor" and dc == "battery" and state.state == "on":
                 issues.append(f"{name} has a low battery")
-            elif domain == "sensor" and dc == "battery" and state.attributes.get("unit_of_measurement") == "%":
+            elif (domain == "sensor" and dc == "battery" and state.attributes.get("unit_of_measurement") == "%"
+                  and not NOT_A_BATTERY.search(f"{state.entity_id} {name}")):
                 try:
                     if float(state.state) < LOW_BATTERY:
                         issues.append(f"{name} battery at {float(state.state):.0f}%")
@@ -585,8 +589,11 @@ class Cortex:
             else:
                 issues.append(f"{len(offline)} devices are offline: {', '.join(offline[:3])} and {len(offline) - 3} more")
         self.health = sorted(issues)
-        fresh = {i for i in issues if "Update available" not in i} - self._known_issues
-        self._known_issues = {i for i in issues if "Update available" not in i}
+        # Compare without numbers so "battery at 12%" then "battery at 11%" is one issue, not a new alert each run.
+        key = lambda i: re.sub(r"\d+(\.\d+)?", "#", i)  # noqa: E731
+        current = {key(i): i for i in issues if "Update available" not in i}
+        fresh = {txt for k, txt in current.items() if k not in self._known_issues}
+        self._known_issues = set(current)
         if fresh:
             await self.speaker.push("; ".join(sorted(fresh)), title="Cortex house health")
         self.notify_update()
