@@ -106,6 +106,7 @@ SECTIONS: dict[str, dict[str, Any]] = {
         CONF_EXPORT_MIN_SOC: _num(0, 100, 1, "%"),
         CONF_EV_PRIORITY: sel.BooleanSelector(),
         CONF_BATT_MAX_KW: _num(1, 50, 0.1, "kW"),
+        CONF_EV_TRICKLE_KW: _num(0, 2, 0.05, "kW"),
         CONF_EXPORT_FLOOR: _num(0, 100, 1, "%"),
         CONF_AUTO_TOPUP: sel.BooleanSelector(),
         CONF_AUTO_EXPORT: sel.BooleanSelector(),

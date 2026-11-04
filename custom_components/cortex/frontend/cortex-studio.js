@@ -804,7 +804,7 @@ class CortexStudio extends HTMLElement {
       <div class="ctl2">
         <div><h3>Limits <span class="muted">used by timers, Autopilot and manual dispatch</span></h3>
           ${slider("export_kw", "Export power", 0.5, 10, 0.5, "kW")}${slider("export_floor", "Export floor, battery stops at", 10, 90, 1, "%")}${slider("topup_kw", "Top-up power", 0.5, 10, 0.5, "kW")}
-          <div class="evfirst"><label class="row"><span><b>EV first</b><span class="muted">While the EV charges, the battery feeds the car first and only exports enough to cover the daily supply charge.</span></span>${this._toggle(`data-optev="1"`, c.ev_priority)}</label>
+          <div class="evfirst"><label class="row"><span><b>EV first</b><span class="muted">While the EV charges, the battery feeds the car first. It exports until the daily supply charge is covered, then only ${Math.round((c.ev_trickle_kw ?? 0.2) * 1000)} W to cover the inverter.</span></span>${this._toggle(`data-optev="1"`, c.ev_priority)}</label>
             <div class="row"><span class="muted">Supply charge today</span><b>$${fx(d.energy.export_earned, 2)} earned · ${d.energy.supply_left > 0 ? "$" + fx(d.energy.supply_left, 2) + " to go" : "covered ✓"}</b></div>
             ${d.energy.ev_guard ? `<div class="evnote">${icon("car")}<span>${esc(d.energy.ev_guard)}</span></div>` : ""}</div></div>
         <div>${manual ? manualPane : autoPane}</div></div>

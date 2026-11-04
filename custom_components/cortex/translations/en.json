@@ -67,6 +67,7 @@
           "export_min_soc": "Only export above",
           "ev_priority": "EV first: while the EV charges, export only enough to cover the daily supply charge",
           "battery_max_kw": "Battery maximum output",
+          "ev_trickle_kw": "EV first: keep exporting this much after the supply charge is covered",
           "export_floor_soc": "Export down to",
           "auto_topup": "Run the grid top-up automatically",
           "auto_export": "Run the evening export automatically",

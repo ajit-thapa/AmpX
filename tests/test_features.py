@@ -434,13 +434,18 @@ async def test_ev_first_export_guard(hass: HomeAssistant):
     # not covered yet: raise battery output so it covers EV + house + export, capped at the battery maximum
     assert await en.ev_guard(evening) == "adjusted"
     assert ("number", "set_value", {"entity_id": o["dispatch_power"], "value": 10.0}) in sent
-    # covered: export stops, battery left for the EV
+    # covered: keep the battery on the EV and house, exporting only the 200 W trickle
     hass.states.async_set(o["studio_day_export"], "8.5")
     en.track_export(evening)
     assert en.supply_left() == 0
-    assert await en.ev_guard(evening) == "stopped"
-    assert ("select", "select_option", {"entity_id": o["dispatch_mode"], "option": "Normal"}) in sent
-    assert "Supply charge covered" in en.ev_guard_note
+    hass.states.async_set(o["dispatch_power"], "10")
+    assert await en.ev_guard(evening) == "trickle"
+    # house load = pv + grid - batt = 0 - 1 + 9 = 8 kW total, EV 7.2, house 0.8 -> 7.2 + 0.8 + 0.2
+    assert ("number", "set_value", {"entity_id": o["dispatch_power"], "value": 8.2}) in sent
+    assert not any(x.get("option") == "Normal" for _, _, x in sent)
+    assert "supply charge covered" in en.ev_guard_note and "200 W" in en.ev_guard_note
+    hass.states.async_set(o["dispatch_power"], "8.2")
+    assert await en.ev_guard(evening) == "ok"
     # EV not charging: guard stays out of the way
     hass.states.async_set(o["dispatch_mode"], "Force Discharge")
     hass.states.async_set(o["studio_ev"], "0", {"unit_of_measurement": "kW"})

@@ -15,6 +15,7 @@ from .const import (
     CONF_BATT_MAX_KW,
     CONF_BATTERY_KWH,
     CONF_EV_PRIORITY,
+    CONF_EV_TRICKLE_KW,
     CONF_ST_DAY_EXPORT,
     CONF_CHARGE_TARGET,
     CONF_DISCHARGE_TARGET,
@@ -222,8 +223,9 @@ class EnergyBrain:
         return max(self.plan().supply_charge - self.earned["cents"], 0.0) / 100
 
     async def ev_guard(self, now: datetime | None = None) -> str | None:
-        """While the EV charges during a forced export, keep the battery feeding the car first
-        and stop exporting once the day's supply charge is covered."""
+        """While the EV charges during a forced export, keep the battery feeding the car first.
+        Export at the set power until the day's supply charge is covered, then only a trickle
+        (default 200 W) so the inverter's own use never comes from the grid."""
         now = now or dt_util.now()
         o = self.brain.opts
         if not o.get(CONF_EV_PRIORITY):
@@ -236,23 +238,25 @@ class EnergyBrain:
         ev = live["ev"]
         if ev < 0.5:
             return None
-        if self.supply_left() <= 0.004:
-            await self.stop("Force Discharge")
-            self.brain.autopilot.active = None
+        home = max(live["load"] - ev, 0.0)
+        covered = self.supply_left() <= 0.004
+        extra = float(o.get(CONF_EV_TRICKLE_KW) or 0.0) if covered else float(o[CONF_EXPORT_KW])
+        want = round(min(float(o.get(CONF_BATT_MAX_KW) or 10.0), ev + home + extra), 1)
+        if covered and self.earned.get("covered") != self.earned["day"]:
+            self.earned["covered"] = self.earned["day"]
             msg = (f"Supply charge covered (${self.plan().supply_charge / 100:.2f} earned). "
-                   "Export stopped so the battery powers the EV.")
-            self.ev_guard_note = msg
+                   f"Battery now powers the EV, exporting just {extra * 1000:.0f} W.")
             self.brain.log("energy", msg)
             await self.brain.speaker.push(msg, title="Cortex energy")
-            return "stopped"
-        home = max(live["load"] - ev, 0.0)
-        want = min(float(o.get(CONF_BATT_MAX_KW) or 10.0), ev + home + float(o[CONF_EXPORT_KW]))
+        self.ev_guard_note = (
+            f"EV first: supply charge covered. Battery {want:.1f} kW covers the EV ({ev:.1f} kW) and house, "
+            f"exporting about {extra * 1000:.0f} W." if covered else
+            f"EV first: battery {want:.1f} kW covers the EV ({ev:.1f} kW) and house, "
+            f"exporting the rest until ${self.supply_left():.2f} supply is covered.")
         power = self._num(CONF_POWER)
-        if power is None or abs(power - want) >= 0.3:
-            await self._set("number", "set_value", CONF_POWER, value=round(want, 1))
-            self.ev_guard_note = (f"EV first: battery {want:.1f} kW covers the EV ({ev:.1f} kW) and house, "
-                                  f"exporting the rest until ${self.supply_left():.2f} supply is covered.")
-            return "adjusted"
+        if power is None or abs(power - want) >= 0.1:
+            await self._set("number", "set_value", CONF_POWER, value=want)
+            return "trickle" if covered else "adjusted"
         return "ok"
 
     # ---- actions --------------------------------------------------------
