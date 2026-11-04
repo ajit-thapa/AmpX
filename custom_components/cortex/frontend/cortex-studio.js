@@ -1151,7 +1151,8 @@ class CortexStudio extends HTMLElement {
       ["Battery charged", AN.chg, C.batt], ["Battery discharged", AN.dis, "#7e57c2"], ["Battery level", "sensor.neovolt_online_soc", C.batt]];
     return `<section class="grid">
       <div class="card wide"><h2>Today</h2><div class="stats">${todays.map(([l, id, c]) => this._tile(l, id, c)).join("")}</div>
-        <div class="row" style="margin-top:8px"><span>${esc((this._st("sensor.daily_summary") || {}).state || "")}</span><span class="muted">Best appliance time: <b>${esc((this._st("sensor.best_time_to_run_appliances") || {}).state || "–")}</b></span></div></div>
+        <div class="sumchips">${String((this._st("sensor.daily_summary") || {}).state || "").split(/\s*[·|]\s*/).filter(Boolean).map(t => `<span class="chip">${esc(t)}</span>`).join("")}
+          <span class="chip best">⏰ Best appliance time: <b>${esc((this._st("sensor.best_time_to_run_appliances") || {}).state || "–")}</b></span></div></div>
       <div id="an-body" style="display:contents"><div class="card wide muted">Loading analytics…</div></div>
     </section>`;
   }
@@ -1977,6 +1978,7 @@ button.pill{min-height:0;font:650 12.5px/1 var(--ff);padding:5px 12px}
 
 .evfirst{margin-top:6px;padding:4px 14px;border-radius:16px;background:var(--surface2)}.evfirst .row>span:first-child{display:flex;flex-direction:column;gap:2px;max-width:80%}
 .evnote{display:flex;gap:10px;align-items:center;padding:8px 0 10px;font-size:13px}.evnote .ic{color:var(--o)}
+.sumchips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.sumchips .chip{color:var(--text);font-weight:500;font-size:13px;padding:6px 12px}.sumchips .chip.best{background:color-mix(in srgb,var(--o) 12%,transparent)}
 /* ---- v0.16: assistant options ---- */
 .pcats{flex-wrap:wrap;align-self:flex-start}.pcats button{padding:6px 12px;min-height:32px;font-size:13px}
 .chipw{display:inline-flex;align-items:center;flex:none}.chipw .x{min-height:28px;padding:2px 6px;margin-left:-4px}
