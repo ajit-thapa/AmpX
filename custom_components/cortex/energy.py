@@ -12,7 +12,10 @@ from homeassistant.util import dt as dt_util
 
 from . import tariff
 from .const import (
+    CONF_BATT_MAX_KW,
     CONF_BATTERY_KWH,
+    CONF_EV_PRIORITY,
+    CONF_ST_DAY_EXPORT,
     CONF_CHARGE_TARGET,
     CONF_DISCHARGE_TARGET,
     CONF_DURATION,
@@ -57,6 +60,9 @@ class EnergyBrain:
     def __init__(self, hass: HomeAssistant, brain: Cortex) -> None:
         self.hass = hass
         self.brain = brain
+        # Today's export earnings, built minute by minute from the export counter at the rate of the moment.
+        self.earned: dict[str, Any] = {"day": None, "cents": 0.0, "last": None}
+        self.ev_guard_note: str | None = None
 
     # ---- inputs ---------------------------------------------------------
     def plan(self) -> tariff.Plan:
@@ -156,6 +162,9 @@ class EnergyBrain:
             "ev_plugged": plugged,
             "low_solar": float(o[CONF_LOW_SOLAR]),
         }
+        data["export_earned"] = round(self.earned["cents"] / 100, 2)
+        data["supply_left"] = round(self.supply_left(), 2)
+        data["ev_guard"] = self.ev_guard_note
         data["storage_summary"] = self._storage_summary(data, bat_kwh, ev_kwh)
         data["summary"] = self._summary(data)
         return data
@@ -190,6 +199,61 @@ class EnergyBrain:
             parts.append(f"battery {d['battery_soc']:.0f}%")
         parts.append(f"daily charge ${d['daily_charge']:.2f}")
         return " | ".join(parts)[:255]
+
+    # ---- export earnings and the EV-first guard --------------------------
+    def track_export(self, now: datetime | None = None) -> float:
+        """Add the kWh exported since the last call at the current feed-in rate. Returns cents earned today."""
+        now = now or dt_util.now()
+        day = now.date().isoformat()
+        kwh = self._num(CONF_ST_DAY_EXPORT)
+        e = self.earned
+        if e["day"] != day:
+            e.update(day=day, cents=0.0, last=None)
+            self.ev_guard_note = None
+        if kwh is not None:
+            last = e["last"]
+            if last is not None and 0 <= kwh - last < 5:
+                e["cents"] += (kwh - last) * tariff.feed_in_rate(now, self.plan())
+            e["last"] = kwh
+        return e["cents"]
+
+    def supply_left(self) -> float:
+        """Dollars of today's supply charge not yet covered by exports."""
+        return max(self.plan().supply_charge - self.earned["cents"], 0.0) / 100
+
+    async def ev_guard(self, now: datetime | None = None) -> str | None:
+        """While the EV charges during a forced export, keep the battery feeding the car first
+        and stop exporting once the day's supply charge is covered."""
+        now = now or dt_util.now()
+        o = self.brain.opts
+        if not o.get(CONF_EV_PRIORITY):
+            return None
+        mode_id = o.get(CONF_MODE)
+        state = self.hass.states.get(mode_id) if mode_id else None
+        if state is None or state.state != "Force Discharge":
+            return None
+        live = self.brain.live_flows()
+        ev = live["ev"]
+        if ev < 0.5:
+            return None
+        if self.supply_left() <= 0.004:
+            await self.stop("Force Discharge")
+            self.brain.autopilot.active = None
+            msg = (f"Supply charge covered (${self.plan().supply_charge / 100:.2f} earned). "
+                   "Export stopped so the battery powers the EV.")
+            self.ev_guard_note = msg
+            self.brain.log("energy", msg)
+            await self.brain.speaker.push(msg, title="Cortex energy")
+            return "stopped"
+        home = max(live["load"] - ev, 0.0)
+        want = min(float(o.get(CONF_BATT_MAX_KW) or 10.0), ev + home + float(o[CONF_EXPORT_KW]))
+        power = self._num(CONF_POWER)
+        if power is None or abs(power - want) >= 0.3:
+            await self._set("number", "set_value", CONF_POWER, value=round(want, 1))
+            self.ev_guard_note = (f"EV first: battery {want:.1f} kW covers the EV ({ev:.1f} kW) and house, "
+                                  f"exporting the rest until ${self.supply_left():.2f} supply is covered.")
+            return "adjusted"
+        return "ok"
 
     # ---- actions --------------------------------------------------------
     async def _set(self, domain: str, service: str, key: str, **data: Any) -> bool:

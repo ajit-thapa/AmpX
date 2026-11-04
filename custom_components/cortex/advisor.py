@@ -70,6 +70,11 @@ def tips(s: dict[str, Any], live: dict[str, float], now: datetime, *, mode: str 
         add(ACT, f"Battery is full and {-grid:.1f} kW is going to the grid for {fit:.0f}c. Run the dishwasher, laundry or EV now.",
             "that energy is almost free")
 
+    # EV first: exporting only to cover the supply charge
+    if s.get("ev_guard") and ev > 0.5:
+        left = s.get("supply_left")
+        add(INFO, s["ev_guard"], f"${left:.2f} of the supply charge left to earn" if left else "supply charge covered")
+
     # Evening feed-in window
     if fit >= 20 and hands_off and usable and usable > 5 and grid > -0.5:
         add(INFO, f"Feed-in pays {fit:.0f}c now and the battery has {usable:.0f} kWh usable. Export from the Battery tab if you want.",

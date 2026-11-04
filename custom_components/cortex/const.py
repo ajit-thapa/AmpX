@@ -86,6 +86,8 @@ CONF_LOW_SOLAR = "low_solar_kwh"
 CONF_TOPUP_KW = "topup_kw"
 CONF_EXPORT_KW = "export_kw"
 CONF_EXPORT_MIN_SOC = "export_min_soc"
+CONF_EV_PRIORITY = "ev_priority"  # while the EV charges, export only enough to cover the supply charge
+CONF_BATT_MAX_KW = "battery_max_kw"  # most the battery can deliver at once
 CONF_EXPORT_FLOOR = "export_floor_soc"
 CONF_AUTO_TOPUP = "auto_topup"
 CONF_AUTO_EXPORT = "auto_export"
@@ -163,6 +165,8 @@ DEFAULTS: dict[str, object] = {
     CONF_TOPUP_KW: 5.0,
     CONF_EXPORT_KW: 7.0,
     CONF_EXPORT_MIN_SOC: 35.0,
+    CONF_EV_PRIORITY: True,
+    CONF_BATT_MAX_KW: 10.0,
     CONF_EXPORT_FLOOR: 30.0,
     CONF_AUTO_TOPUP: False,
     CONF_AUTO_EXPORT: False,

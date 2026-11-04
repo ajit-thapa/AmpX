@@ -803,7 +803,10 @@ class CortexStudio extends HTMLElement {
       <div class="mtiles">${tiles}</div>
       <div class="ctl2">
         <div><h3>Limits <span class="muted">used by timers, Autopilot and manual dispatch</span></h3>
-          ${slider("export_kw", "Export power", 0.5, 10, 0.5, "kW")}${slider("export_floor", "Export floor, battery stops at", 10, 90, 1, "%")}${slider("topup_kw", "Top-up power", 0.5, 10, 0.5, "kW")}</div>
+          ${slider("export_kw", "Export power", 0.5, 10, 0.5, "kW")}${slider("export_floor", "Export floor, battery stops at", 10, 90, 1, "%")}${slider("topup_kw", "Top-up power", 0.5, 10, 0.5, "kW")}
+          <div class="evfirst"><label class="row"><span><b>EV first</b><span class="muted">While the EV charges, the battery feeds the car first and only exports enough to cover the daily supply charge.</span></span>${this._toggle(`data-optev="1"`, c.ev_priority)}</label>
+            <div class="row"><span class="muted">Supply charge today</span><b>$${fx(d.energy.export_earned, 2)} earned · ${d.energy.supply_left > 0 ? "$" + fx(d.energy.supply_left, 2) + " to go" : "covered ✓"}</b></div>
+            ${d.energy.ev_guard ? `<div class="evnote">${icon("car")}<span>${esc(d.energy.ev_guard)}</span></div>` : ""}</div></div>
         <div>${manual ? manualPane : autoPane}</div></div>
       <div class="toast" id="ctl-msg"></div></div>
       ${this._neoCard(manual, mode)}`;
@@ -842,6 +845,7 @@ class CortexStudio extends HTMLElement {
       i.onchange = () => { const v = parseFloat(i.value); if (!Number.isNaN(v)) save({ [key[i.dataset.opt]]: v }); };
     });
     r.querySelectorAll("[data-optb]").forEach(i => i.onchange = () => save({ autopilot_use_ai: i.checked }));
+    r.querySelectorAll("[data-optev]").forEach(i => i.onchange = () => save({ ev_priority: i.checked }));
     const act = async (action, extra) => { msg("Sending…"); try { const x = await this._hass.callWS({ type: "cortex/action", action, ...extra }); msg(typeof x.result === "string" ? x.result : "Done"); } catch (e) { msg("Failed: " + (e.message || e.code), true); } setTimeout(() => this._load(), 1500); };
     const val = k => parseFloat((q(`[data-opt="${k}"]`) || {}).value);
     const click = (id, fn) => { const el = q(id); if (el) el.onclick = fn; };
@@ -1971,6 +1975,8 @@ button.pill{min-height:0;font:650 12.5px/1 var(--ff);padding:5px 12px}
 .battmeta{display:flex;flex-direction:column;align-items:center;text-align:center;font-size:13px;gap:2px}
 .battmeta b{font-size:15px}.bbig{font-size:36px;font-weight:700;line-height:1.1;color:var(--bc);letter-spacing:-.02em}
 
+.evfirst{margin-top:6px;padding:4px 14px;border-radius:16px;background:var(--surface2)}.evfirst .row>span:first-child{display:flex;flex-direction:column;gap:2px;max-width:80%}
+.evnote{display:flex;gap:10px;align-items:center;padding:8px 0 10px;font-size:13px}.evnote .ic{color:var(--o)}
 /* ---- v0.16: assistant options ---- */
 .pcats{flex-wrap:wrap;align-self:flex-start}.pcats button{padding:6px 12px;min-height:32px;font-size:13px}
 .chipw{display:inline-flex;align-items:center;flex:none}.chipw .x{min-height:28px;padding:2px 6px;margin-left:-4px}

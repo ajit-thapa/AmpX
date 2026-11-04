@@ -23,6 +23,8 @@ from .const import (
     CONF_AUTO_EXPORT,
     CONF_AUTO_TOPUP,
     CONF_EXPORT_FLOOR,
+    CONF_BATT_MAX_KW,
+    CONF_EV_PRIORITY,
     CONF_EXPORT_KW,
     CONF_HEALTH_IGNORE,
     CONF_TOPUP_KW,
@@ -122,6 +124,8 @@ async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
                 "export_kw": float(brain.opts[CONF_EXPORT_KW]),
                 "export_floor": float(brain.opts[CONF_EXPORT_FLOOR]),
                 "mode_entity": brain.opts.get("dispatch_mode"),
+                "ev_priority": bool(brain.opts.get(CONF_EV_PRIORITY)),
+                "batt_max_kw": float(brain.opts.get(CONF_BATT_MAX_KW) or 10),
             },
             "autopilot": {
                 "mode": brain.autopilot.mode,
@@ -220,6 +224,8 @@ CONTROL_OPTIONS = {
     CONF_AGENT: vol.Any(None, "", str),
     CONF_AI_PER_HOUR: vol.All(vol.Coerce(int), vol.Range(min=0, max=120)),
     CONF_AS_STYLE: vol.In(AS_STYLES),
+    CONF_EV_PRIORITY: bool,
+    CONF_BATT_MAX_KW: vol.All(vol.Coerce(float), vol.Range(min=1, max=50)),
     CONF_AS_NOTES: vol.All(str, vol.Length(max=600)),
 }
 

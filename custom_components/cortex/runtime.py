@@ -143,6 +143,8 @@ class Cortex:
         self.watches = list(data.get("watches", []))
         self.reminders = list(data.get("reminders", []))
         self.plans = list(data.get("plans", []))
+        if isinstance(data.get("export_day"), dict):
+            self.energy.earned.update(data["export_day"])
         saved = data.get("features", {})
         for feature in self.features:
             feature.load(saved.get(feature.name))
@@ -203,6 +205,7 @@ class Cortex:
             "watches": self.watches,
             "reminders": self.reminders,
             "plans": self.plans,
+            "export_day": self.energy.earned,
             "features": {f.name: f.dump() for f in self.features},
         }
 
@@ -220,6 +223,8 @@ class Cortex:
         self.watches = list(data.get("watches", []))
         self.reminders = list(data.get("reminders", []))
         self.plans = list(data.get("plans", []))
+        if isinstance(data.get("export_day"), dict):
+            self.energy.earned.update(data["export_day"])
         saved = data.get("features", {})
         for feature in self.features:
             feature.load(saved.get(feature.name))
@@ -338,6 +343,13 @@ class Cortex:
         async_dispatcher_send(self.hass, f"{SIGNAL_UPDATE}_{self.entry.entry_id}")
 
     async def _tick_minute(self, _now: datetime) -> None:
+        before = self.energy.earned["cents"]
+        if self.energy.track_export() != before:
+            self.save()
+        try:
+            await self.energy.ev_guard()
+        except Exception as err:  # noqa: BLE001 - a failed guard must not stop the minute tick
+            _LOGGER.warning("EV-first export guard failed: %s", err)
         self.refresh()
 
     # ---- memory ---------------------------------------------------------

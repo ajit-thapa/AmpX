@@ -65,6 +65,8 @@
           "topup_kw": "Top-up power",
           "export_kw": "Export power",
           "export_min_soc": "Only export above",
+          "ev_priority": "EV first: while the EV charges, export only enough to cover the daily supply charge",
+          "battery_max_kw": "Battery maximum output",
           "export_floor_soc": "Export down to",
           "auto_topup": "Run the grid top-up automatically",
           "auto_export": "Run the evening export automatically",
