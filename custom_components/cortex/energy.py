@@ -293,7 +293,8 @@ class EnergyBrain:
             await self.brain.speaker.push(
                 f"Grid top-up started: solar short by {short} kWh."
                 if short is not None
-                else "Grid top-up started."
+                else "Grid top-up started.",
+                title="Cortex energy",
             )
         if ok:
             self.brain.record("energy_actions")
@@ -319,7 +320,7 @@ class EnergyBrain:
         )
         if ok:
             await self.brain.speaker.push(
-                f"Evening export started at {plan.fit_evening:g}c/kWh."
+                f"Evening export started at {plan.fit_evening:g}c/kWh.", title="Cortex energy"
             )
         if ok:
             self.brain.record("energy_actions")

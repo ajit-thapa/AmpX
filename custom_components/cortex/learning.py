@@ -230,7 +230,7 @@ class Learning(Feature):
             for record in added[:2]:
                 await self.brain.speaker.push(
                     f"{record['text']} Automate it? Open Cortex or call cortex.accept_suggestion with id {record['id']}.",
-                    title="Cortex noticed a pattern",
+                    title="Cortex suggestion: noticed a pattern",
                 )
             self.brain.record("suggestions", len(added))
             self.brain.log("learning", f"{len(added)} new suggestion(s)")

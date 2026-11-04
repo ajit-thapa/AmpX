@@ -469,3 +469,14 @@ async def test_health_skips_energy_counters_and_does_not_repeat(hass: HomeAssist
     hass.states.async_set("sensor.door_battery", "8", {"device_class": "battery", "unit_of_measurement": "%", "friendly_name": "Door"})
     assert await brain.run_health() == ["Door battery at 8%"]
     assert len(pushes) == 1  # same issue, new number: no second alert
+
+
+async def test_push_categories_can_be_muted_and_are_logged(hass: HomeAssistant):
+    sent = async_mock_service(hass, "notify", "mobile_app_phone")
+    entry_brain = await _setup(hass, notify="notify.mobile_app_phone", mute_push=["health"])
+    sp = entry_brain.speaker
+    assert sp.category("Cortex house health") == "health" and sp.category("Cortex autopilot") == "autopilot"
+    assert await sp.push("Door battery at 9%", title="Cortex house health") is False
+    assert await sp.push("Export started", title="Cortex energy") is True
+    assert [p["category"] for p in sp.push_log] == ["energy", "health"]
+    assert sp.push_log[1]["muted"] and sp.push_log[0]["sent"] and len(sent) == 1

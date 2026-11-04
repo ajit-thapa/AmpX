@@ -29,6 +29,8 @@ CONF_AUTO_BACKUP = "auto_backup"
 CONF_AI_TASK = "ai_task"
 CONF_AI_PER_HOUR = "ai_per_hour"
 CONF_AS_STYLE = "assistant_style"  # brief | normal | detailed
+CONF_MUTE_PUSH = "mute_push"  # notification categories that are not pushed to the phone
+PUSH_CATEGORIES = ("health", "autopilot", "energy", "routines", "suggestions", "speech")
 CONF_AS_NOTES = "assistant_notes"  # the household's own standing instructions for the assistant
 AS_STYLES = ("brief", "normal", "detailed")
 
@@ -119,6 +121,7 @@ DEFAULTS: dict[str, object] = {
     CONF_AI_PER_HOUR: 12,
     CONF_AS_STYLE: "brief",
     CONF_AS_NOTES: "",
+    CONF_MUTE_PUSH: [],
     CONF_NIGHT_WATCH: True,
     CONF_NIGHT_START: "23:00:00",
     CONF_NIGHT_END: "06:00:00",

@@ -12,7 +12,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er
 from homeassistant.util import dt as dt_util
 
-from .const import CONF_MOTION, CONF_NOTIFY, CONF_SPEAKERS, CONF_TTS_ENGINE, EVENT_SPOKEN
+from .const import CONF_MOTION, CONF_MUTE_PUSH, CONF_NOTIFY, CONF_SPEAKERS, CONF_TTS_ENGINE, EVENT_SPOKEN
 from .gate import SpeechGate
 
 if TYPE_CHECKING:
@@ -31,6 +31,7 @@ class Speaker:
         self.brain = brain
         self.gate = gate
         self.log: deque[dict] = deque(maxlen=50)
+        self.push_log: deque[dict] = deque(maxlen=40)
         self._voice: tuple[object, str] | None = None
 
     def _area_of(self, entity_id: str) -> str | None:
@@ -141,9 +142,22 @@ class Speaker:
         except HomeAssistantError as err:
             _LOGGER.warning("Could not speak on %s: %s", entity_id, err)
 
+    @staticmethod
+    def category(title: str) -> str:
+        t = title.lower()
+        for key, cat in (("health", "health"), ("autopilot", "autopilot"), ("energy", "energy"),
+                         ("routine", "routines"), ("suggest", "suggestions")):
+            if key in t:
+                return cat
+        return "speech"
+
     async def push(self, text: str, title: str = "Cortex") -> bool:
+        cat = self.category(title)
+        muted = cat in (self.brain.opts.get(CONF_MUTE_PUSH) or [])
+        entry = {"time": dt_util.now().isoformat(timespec="seconds"), "title": title, "text": text, "category": cat, "sent": False, "muted": muted}
+        self.push_log.appendleft(entry)
         target = self.brain.opts.get(CONF_NOTIFY)
-        if not target:
+        if not target or muted:
             return False
         try:
             if self.hass.states.get(target) is not None:
@@ -161,4 +175,5 @@ class Speaker:
         except HomeAssistantError as err:
             _LOGGER.warning("Push failed: %s", err)
             return False
+        entry["sent"] = True
         return True

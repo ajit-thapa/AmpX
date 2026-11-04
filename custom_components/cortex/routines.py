@@ -155,7 +155,7 @@ class Routines(Feature):
             record = await speaker.say(step["say"], urgent=step.get("urgent", False))
             return "spoke" if record["spoken"] else f"silent ({record['reason']})"
         if "push" in step:
-            return "pushed" if await speaker.push(step["push"]) else "push failed"
+            return "pushed" if await speaker.push(step["push"], title="Cortex routine") else "push failed"
         if "delay" in step:
             await asyncio.sleep(step["delay"])
             return f"waited {step['delay']}s"

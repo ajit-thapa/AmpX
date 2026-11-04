@@ -85,7 +85,16 @@ function tariffAt(h, r) {
   return { per, imp, fit };
 }
 const dayLabel = (key, long) => long ? key.slice(8) + "/" + key.slice(5, 7) : new Date(key + "T12:00").toLocaleDateString([], { weekday: "short" });
-const TABS = [["now", "Now", "bolt"], ["ev", "EV", "car"], ["battery", "Battery", "battery"], ["plan", "Plan", "plan"], ["analytics", "Analytics", "chart"], ["house", "Home", "home"], ["assistant", "Assistant", "spark"], ["settings", "Settings", "gear"]];
+const TABS = [["now", "Now", "bolt"], ["energy", "Energy", "chart"], ["devices", "Devices", "battery"], ["house", "House", "home"], ["assistant", "Assistant", "spark"]];
+// Second level: one home for each thing, so nothing is shown twice.
+const SUBS = {
+  energy: [["today", "Today"], ["plan", "Plan"], ["history", "History"], ["compare", "Compare plans"]],
+  devices: [["battery", "Battery"], ["ev", "EV"], ["charger", "Charger"], ["all", "All devices"]],
+  assistant: [["memory", "Memory"], ["reminders", "Reminders"], ["routines", "Routines"], ["suggestions", "Suggestions"], ["tools", "Tools"]],
+};
+// Old tab names (links, saved state) and where they live now
+const ALIAS = { ev: ["devices", "ev"], battery: ["devices", "battery"], plan: ["energy", "plan"], analytics: ["energy", "history"], history: ["energy", "history"] };
+const PUSH_CATS = [["health", "House health"], ["autopilot", "Autopilot"], ["energy", "Battery and export"], ["routines", "Routines"], ["suggestions", "Suggestions"], ["speech", "Urgent announcements"]];
 const BG_PATHS = ["/local/simple_dreams_light.jpg", "/local/images/simple_dreams_light.jpg", "/local/backgrounds/simple_dreams_light.jpg", "/local/cortex/simple_dreams_light.jpg"];
 const CAT_ICON = { fact: "📌", preference: "⭐", person: "👤", place: "📍", routine: "🔁", note: "📝" };
 
@@ -95,9 +104,11 @@ const fx = (v, n = 1) => (v === null || v === undefined || Number.isNaN(v) ? "�
 class CortexStudio extends HTMLElement {
   constructor() {
     super();
-    try { this._tab = localStorage.getItem("cortex-studio-tab") || "now"; } catch (e) { this._tab = "now"; }
-    if (this._tab === "history") this._tab = "analytics";
-    if (!TABS.some(t => t[0] === this._tab)) this._tab = "now";
+    let t = "now", sub = {};
+    try { t = localStorage.getItem("cortex-studio-tab") || "now"; sub = JSON.parse(localStorage.getItem("cortex-studio-sub") || "{}"); } catch (e) { /* ignore */ }
+    this._sub = sub && typeof sub === "object" ? sub : {};
+    if (ALIAS[t]) { this._sub[ALIAS[t][0]] = ALIAS[t][1]; t = ALIAS[t][0]; }
+    this._tab = TABS.some(x => x[0] === t) || t === "settings" ? t : "now";
     this._series = null;
     this._seriesAt = 0;
   }
@@ -108,15 +119,10 @@ class CortexStudio extends HTMLElement {
       this._build();
       this._load();
       this._timer = setInterval(() => this._load(), 30000);
-    } else if (this._data && this._tab === "now" && Date.now() - (this._lastPaint || 0) > 1500) {
+    } else if (this._data && Date.now() - (this._lastPaint || 0) > 1500) {
       this._lastPaint = Date.now();
-      this._paintLive();
-    } else if (this._data && this._tab === "battery" && Date.now() - (this._lastPaint || 0) > 1500) {
-      this._lastPaint = Date.now();
-      this._battWidgets();
-    } else if (this._data && this._tab === "ev" && Date.now() - (this._lastPaint || 0) > 1500) {
-      this._lastPaint = Date.now();
-      this._paintEv();
+      ({ now: () => this._paintLive(), "devices/battery": () => this._battWidgets(), "devices/ev": () => this._paintEv(), "devices/charger": () => this._paintWc(),
+         "energy/today": () => this._paintVisuals() })[this._key()]?.();
     }
   }
   set narrow(v) { this._narrow = v; }
@@ -136,12 +142,25 @@ class CortexStudio extends HTMLElement {
     if (this._tab === "assistant" && mt && mt.value) return;
     const ci = this._root.querySelector("#chatin");
     if (this._tab === "assistant" && (this._chatBusy || (ci && ci.value))) return;
+    if (this._key() === "energy/compare" && this._root.querySelector("#plans input:focus, #plans select:focus")) return;
     this._render();
-    if (this._tab === "now" && Date.now() - this._seriesAt > 300000) this._loadSeries();
-    if (this._tab === "now") this._energy().then(() => this._tab === "now" && this._paintSplit()).catch(() => {});
-    if (this._tab === "ev" && Date.now() - (this._evAt || 0) > 300000) this._loadEv();
-    if (this._tab === "plan" && Date.now() - (this._earnAt || 0) > 120000) this._loadEarn();
-    if ((this._tab === "battery" || this._tab === "analytics") && Date.now() - ((this._moreAt || {})[this._tab] || 0) > 300000) this._loadMore(this._tab);
+    this._fetchFor(false);
+  }
+  /** Current view: "now", "house", "settings" or "tab/sub". */
+  _key() { const subs = SUBS[this._tab]; return subs ? `${this._tab}/${this._subOf(this._tab)}` : this._tab; }
+  _subOf(tab) { const subs = SUBS[tab] || []; const s = this._sub[tab]; return subs.some(x => x[0] === s) ? s : (subs[0] || [])[0]; }
+  /** Load the slower data a view needs (history, statistics), at most every few minutes. */
+  _fetchFor(entering) {
+    const k = this._key(), stale = (at, ms) => Date.now() - (at || 0) > ms, more = this._moreAt || {};
+    if (k === "energy/today") {
+      if (entering ? !this._series : stale(this._seriesAt, 300000)) this._loadSeries();
+      this._energy().then(() => this._key() === "energy/today" && this._paintSplit()).catch(() => {});
+    }
+    if (k === "energy/plan" && stale(this._earnAt, 120000)) this._loadEarn();
+    if (k === "energy/history" && stale(more.analytics, 300000)) this._loadMore("analytics");
+    if (k === "energy/compare") this._energy().then(() => this._key() === "energy/compare" && this._paintCompare()).catch(() => {});
+    if (k === "devices/battery" && stale(more.battery, 300000)) this._loadMore("battery");
+    if (k === "devices/ev" && stale(this._evAt, 300000)) this._loadEv();
   }
 
   _kw(id, invert = false) {
@@ -202,7 +221,7 @@ class CortexStudio extends HTMLElement {
       const load = pv.map((p, i) => (p === null ? null : Math.max(p + (grid[i] ?? 0) - (batt[i] ?? 0), 0)));
       this._series = { start, end, pv, grid, batt, ev, soc, load };
       this._seriesAt = Date.now();
-      if (this._tab === "now") this._paintChart();
+      if (this._key() === "energy/today") this._paintChart();
     } catch (e) { /* history is optional */ }
   }
 
@@ -217,8 +236,10 @@ class CortexStudio extends HTMLElement {
         <div class="tools"><span id="clock" class="clock"></span>
           <button class="ib" id="chatbtn" aria-label="Ask Cortex" title="Ask Cortex">${icon("chat")}</button>
           <button class="ib" id="bell" aria-label="Alerts" title="Alerts">${icon("bell")}<i class="badge" id="badge" hidden></i></button>
-          <button class="ib" id="theme" aria-label="Switch theme"></button></div>
+          <button class="ib" id="theme" aria-label="Switch theme"></button>
+          <button class="ib" id="gear" aria-label="Settings" title="Settings">${icon("gear")}</button></div>
       </header>
+      <div class="drawer" id="drawer" hidden><div class="dback" id="dback"></div><aside role="dialog" aria-label="Alerts and notifications"><div class="dhead"><h2>${icon("bell")} Alerts</h2><button class="ghost" id="dclose" aria-label="Close">✕</button></div><div id="dbody"></div></aside></div>
       <main id="view" aria-live="polite"><div class="grid"><div class="card wide skel"></div><div class="card w8 skel tall"></div><div class="card w4 skel tall"></div></div></main>`;
     // Optional photo from HA local storage (/config/www). First path that loads wins.
     const bg = this._root.querySelector(".bg");
@@ -228,7 +249,10 @@ class CortexStudio extends HTMLElement {
     const nav = this._root.querySelector("#tabs");
     nav.innerHTML = TABS.map(([k, l, ic]) => `<button data-tab="${k}" aria-label="${l}">${icon(ic)}<span>${l}</span></button>`).join("");
     nav.querySelectorAll("button").forEach(b => b.onclick = () => this._go(b.dataset.tab));
-    this._root.querySelector("#bell").onclick = () => this._go("house");
+    const dr = this._root.querySelector("#drawer"), openD = v => { dr.hidden = !v; if (v) this._paintDrawer(); };
+    this._root.querySelector("#bell").onclick = () => openD(dr.hidden);
+    this._root.querySelector("#dback").onclick = this._root.querySelector("#dclose").onclick = () => openD(false);
+    this._root.querySelector("#gear").onclick = () => this._go("settings");
     this._root.querySelector("#chatbtn").onclick = () => { this._go("assistant"); const i = this._root.querySelector("#chatin"); if (i) i.focus(); };
     this._root.querySelector("#theme").onclick = () => {
       const next = { auto: "light", light: "dark", dark: "auto" }[this._themePref()];
@@ -237,7 +261,7 @@ class CortexStudio extends HTMLElement {
     };
     this._applyTheme();
     this._w = 0;
-    if (window.ResizeObserver) { this._ro = new ResizeObserver(() => { const w = this.clientWidth; if (Math.abs(w - this._w) > 24) { this._w = w; if (this._tab === "now") { this._paintChart(); this._paintLive(); } } }); this._ro.observe(this); }
+    if (window.ResizeObserver) { this._ro = new ResizeObserver(() => { const w = this.clientWidth; if (Math.abs(w - this._w) > 24) { this._w = w; if (this._tab === "now") this._paintLive(); if (this._key() === "energy/today") this._paintChart(); } }); this._ro.observe(this); }
   }
   _themePref() { try { return localStorage.getItem("cortex-studio-theme") || "auto"; } catch (e) { return "auto"; } }
   _applyTheme() {
@@ -247,31 +271,64 @@ class CortexStudio extends HTMLElement {
     const b = this._root && this._root.querySelector("#theme");
     if (b) { b.innerHTML = icon(dark ? "sun" : "moon") + (pref === "auto" ? '<i class="auto">A</i>' : ""); b.title = "Theme: " + pref; b.setAttribute("aria-label", "Theme: " + pref + ". Click to change"); }
   }
-  _go(tab) {
+  _go(tab, sub) {
+    if (ALIAS[tab]) [tab, sub] = ALIAS[tab];
+    if (tab.includes("/")) [tab, sub] = tab.split("/");
     this._tab = tab;
-    try { localStorage.setItem("cortex-studio-tab", tab); } catch (e) { /* ignore */ }
+    if (sub) this._sub[tab] = sub;
+    try { localStorage.setItem("cortex-studio-tab", tab); localStorage.setItem("cortex-studio-sub", JSON.stringify(this._sub)); } catch (e) { /* ignore */ }
     this._render();
-    if (tab === "now" && !this._series) this._loadSeries();
-    if (tab === "now") this._energy().then(() => this._tab === "now" && this._paintSplit()).catch(() => {});
-    if (tab === "ev" && Date.now() - (this._evAt || 0) > 300000) this._loadEv();
-    if (tab === "plan" && Date.now() - (this._earnAt || 0) > 120000) this._loadEarn();
-    if ((tab === "battery" || tab === "analytics") && Date.now() - ((this._moreAt || {})[tab] || 0) > 300000) this._loadMore(tab);
+    this._fetchFor(true);
+    try { this._root.querySelector("#view").scrollIntoView({ block: "start" }); } catch (e) { /* ignore */ }
   }
 
   _render() {
     const d = this._data; if (!d) return;
     this._pc = {};
     const r = this._root;
+    r.querySelector("#gear").classList.toggle("on", this._tab === "settings");
     r.querySelectorAll("#tabs button").forEach(b => { b.classList.toggle("on", b.dataset.tab === this._tab); if (b.dataset.tab === this._tab) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
     const now = new Date(), h = now.getHours();
     r.querySelector("#clock").textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     r.querySelector("#greet").innerHTML = `${h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"}<span class="gdate"> · ${now.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" })}</span>`;
     const alerts = (d.health || []).length + ((d.security || { ok: true }).ok ? 0 : ((d.security.issues || []).length || 1)), bd = r.querySelector("#badge");
     bd.hidden = !alerts; bd.textContent = alerts > 9 ? "9+" : String(alerts || "");
-    const view = r.querySelector("#view");
-    view.innerHTML = ({ now: () => this._viewNow(), ev: () => this._viewEv(), battery: () => this._viewBattery(), analytics: () => this._viewAnalytics(), plan: () => this._viewPlan(), house: () => this._viewHouse(), assistant: () => this._viewAssistant(), settings: () => this._viewSettings() })[this._tab]();
+    const view = r.querySelector("#view"), k = this._key(), subs = SUBS[this._tab];
+    const views = {
+      now: () => this._viewNow(), house: () => this._viewHouse(), settings: () => this._viewSettings(),
+      "energy/today": () => this._viewToday(), "energy/plan": () => this._viewPlan(), "energy/history": () => this._viewAnalytics(), "energy/compare": () => this._viewCompare(),
+      "devices/battery": () => this._viewBattery(), "devices/ev": () => this._viewEv(), "devices/charger": () => this._viewCharger(), "devices/all": () => this._viewDevices(),
+    };
+    const sn = subs && this._tab !== "assistant" ? `<nav class="subnav" aria-label="${esc(this._tab)} sections">${subs.map(([s2, l]) => `<button data-sub="${s2}" class="${this._subOf(this._tab) === s2 ? "on" : ""}">${l}</button>`).join("")}</nav>` : "";
+    view.innerHTML = sn + (this._tab === "assistant" ? this._viewAssistant() : views[k]());
+    view.querySelectorAll("[data-sub]").forEach(b => b.onclick = () => this._go(this._tab, b.dataset.sub));
     view.querySelectorAll("[data-go]").forEach(b => b.onclick = () => this._go(b.dataset.go));
-    ({ now: () => { this._paintLive(); this._paintChart(); }, ev: () => { this._wireEv(); this._paintEv(); }, battery: () => { this._battWidgets(); this._paintMore("battery"); this._wireCtl(); }, analytics: () => this._paintMore("analytics"), plan: () => { this._wirePlan(); this._wireExtras(); this._paintEarn(); }, house: () => this._wireHouse(), assistant: () => { this._wireChat(); this._wireAssistant(); }, settings: () => this._wireSettings() })[this._tab]();
+    const wires = {
+      now: () => this._paintLive(), house: () => this._wireHouse(), settings: () => this._wireSettings(),
+      "energy/today": () => { this._paintVisuals(); this._paintChart(); if (this._en) this._paintSplit(); },
+      "energy/plan": () => { this._wirePlan(); this._paintEarn(); },
+      "energy/history": () => this._paintMore("analytics"),
+      "energy/compare": () => { this._wirePlans(); if (this._en) this._paintCompare(); },
+      "devices/battery": () => { this._battWidgets(); this._paintMore("battery"); this._wireCtl(); },
+      "devices/ev": () => { this._wireEv(); this._paintEv(); },
+      "devices/charger": () => this._paintWc(),
+      "devices/all": () => { this._wireExtras(); this._loadDevices(); },
+    };
+    if (this._tab === "assistant") { this._wireChat(); this._wireAssistant(); } else wires[k]();
+  }
+  _paintDrawer() {
+    const d = this._data, el = this._root.querySelector("#dbody"); if (!el || !d) return;
+    const sec = d.security || { ok: true, issues: [] }, issues = [...(sec.ok ? [] : sec.issues || []), ...(d.health || [])];
+    const muted = new Set(d.mute_push || []), cat = Object.fromEntries(PUSH_CATS);
+    const ago = t => { const m = Math.round((Date.now() - new Date(t)) / 60000); return m < 1 ? "now" : m < 60 ? m + "m" : m < 1440 ? Math.round(m / 60) + "h" : Math.round(m / 1440) + "d"; };
+    el.innerHTML = `<h3>Needs attention</h3>${issues.length ? issues.map(i => `<div class="ditem warn">${icon("bell")}<span>${esc(i)}</span></div>`).join("") : `<div class="ditem ok">${icon("check")}<span>All clear</span></div>`}
+      <h3>Recent notifications</h3>${(d.pushes || []).length ? d.pushes.slice(0, 25).map(p => `<div class="ditem"><span class="pill" style="--pc:${p.muted ? "#8a8279" : C.grid}">${esc(cat[p.category] || p.category)}</span><span class="dt">${esc(p.text)}</span><span class="muted">${ago(p.time)}${p.muted ? " · muted" : p.sent ? "" : " · not sent"}</span></div>`).join("") : '<div class="muted">Nothing yet.</div>'}
+      <h3>Push to my phone</h3><div class="dchips">${PUSH_CATS.map(([k, l]) => `<button class="chip ${muted.has(k) ? "" : "on"}" data-dmute="${k}">${muted.has(k) ? "🔕" : "🔔"} ${l}</button>`).join("")}</div>
+      <div class="toast" id="d-msg"></div>`;
+    el.querySelectorAll("[data-dmute]").forEach(b => b.onclick = () => {
+      const set = new Set(d.mute_push || []); set.has(b.dataset.dmute) ? set.delete(b.dataset.dmute) : set.add(b.dataset.dmute);
+      d.mute_push = [...set]; this._paintDrawer(); this._saveOpts({ mute_push: d.mute_push }, "#d-msg");
+    });
   }
   /** Write HTML only when it changed, so animations and focus survive the 1.5 s live refresh. */
   _paintTo(sel, html) {
@@ -332,15 +389,22 @@ class CortexStudio extends HTMLElement {
         <div class="ribbon" title="Import rate by hour">${hours}</div>
         <div class="ticks"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>
         <div class="nextline" id="nextline"></div><div class="prog"><i id="np"></i></div></div>
+      <div class="card wide"><div class="chead"><h2>Cortex suggests</h2><button class="ghost" data-go="energy/today">Today's energy ↗</button></div>${this._adviceHtml()}</div>
+    </section>`;
+  }
+
+  _viewToday() {
+    const sum = String((this._st("sensor.daily_summary") || {}).state || "").split(/\s*[·|]\s*/).filter(Boolean);
+    const go = (t, label) => `<button class="go" data-go="${t}" aria-label="${label}">${icon("arrow")}</button>`;
+    return `<section class="grid">
+      ${sum.length ? `<div class="card wide"><div class="sumchips" style="margin:0">${sum.map(t => `<span class="chip">${esc(t)}</span>`).join("")}
+        <span class="chip best">⏰ Best appliance time: <b>${esc((this._st("sensor.best_time_to_run_appliances") || {}).state || "–")}</b></span></div></div>` : ""}
       <div class="card wide"><div class="chead"><h2>Last 24 hours</h2><span class="legend"><b style="color:${C.solar}">●</b> Solar <b style="color:${C.home}">●</b> Home <b style="color:${C.grid}">●</b> Grid <b style="color:${C.batt}">●</b> Battery %</span></div>
         <div id="chart" class="chart"><div class="muted">Loading history…</div></div></div>
-      <div class="card w8"><div class="chead"><h2>Where energy went today</h2>${go("analytics", "Open analytics")}</div><div id="mix"></div></div>
-      <div class="card w4"><div class="chead"><h2>Solar</h2>${go("analytics", "Open analytics")}</div><div id="sol"></div></div>
-      <div class="card w8"><div class="chead"><h2>Cortex suggests</h2>${go("assistant", "Ask Cortex")}</div>${this._adviceHtml()}</div>
-      <div class="card w4"><div class="chead"><h2>Solar shortfall</h2>${go("plan", "Open plan")}</div><div id="short"></div></div>
-      <div class="card wide"><div class="chead"><h2>Energy storage</h2>${go("battery", "Open battery")}</div>
-        <div class="estore"><div class="esub"><div data-bhost="house"></div></div><div class="esub"><div data-bhost="ev"></div></div></div>
-        <div class="muted" style="margin-top:10px">${esc(e.storage_summary || "")}</div></div>
+      <div class="card w8"><div class="chead"><h2>Where energy went today</h2>${go("energy/history", "History")}</div><div id="mix"></div></div>
+      ${this._moneyCard("w4")}
+      <div class="card w8"><div class="chead"><h2>Solar vs forecast</h2></div><div class="solrow"><div id="sol"></div><div id="short"></div></div></div>
+      <div class="card w4"><div class="chead"><h2>Energy storage</h2>${go("devices/battery", "Battery")}</div><div class="estore one"><div class="esub"><div data-bhost="house"></div></div><div class="esub"><div data-bhost="ev"></div></div></div></div>
     </section>`;
   }
 
@@ -370,6 +434,7 @@ class CortexStudio extends HTMLElement {
     this._paintTo("#sol", solarBars(m.gen, e.pv_today, e.pv_tomorrow, e.low_solar, e.solar_day));
     if (this._en) this._paintSplit(); else this._paintTo("#mix", mixBar(m.self, m.exp, m.imp));
     this._paintTo("#short", shortGauge(e.pv_shortfall));
+    if (r.querySelector("[data-bhost]")) this._battWidgets();
     // time to the next rate change
     const now = Date.now(), next = new Date(e.next_change).getTime(), sch = d.schedule || [];
     let h = d.hour, cur = (sch.find(x => x.hour === h) || {}).import, back = 0;
@@ -447,7 +512,7 @@ class CortexStudio extends HTMLElement {
         return out;
       };
       this._evSeries = { start, end, soc: rs(EV.soc), power: rs(EV.power) };
-      if (this._tab === "ev") this._paintEv();
+      if (this._key() === "devices/ev") this._paintEv();
     } catch (e) { /* optional */ }
   }
 
@@ -465,8 +530,6 @@ class CortexStudio extends HTMLElement {
   }
 
   _viewEv() {
-    const wcA = EV.wcA.map((id, i) => `<div class="phase"><span>${"ABC"[i]}</span><div><i data-a="${i}"></i></div><b data-av="${i}">–</b></div>`).join("");
-    const temps = EV.wcT.map(([n], i) => `<div class="phase"><span>${n}</span><div><i data-t="${i}"></i></div><b data-tv="${i}">–</b></div>`).join("");
     return `<section class="grid">
       <div class="card evhero wide"><div class="stage">
           <div class="carbox"><div class="carpic"><img src="${EV.img}" alt="BYD Sealion 7" onerror="this.style.display='none'">${carOverlay()}</div>
@@ -483,13 +546,19 @@ class CortexStudio extends HTMLElement {
       ${this._evCtlCard()}
       <div class="card wide"><h2>Last 24 hours <span class="legend"><b style="color:${C.ev}">■</b> charge level <b style="color:${C.solar}">━</b> power</span></h2>
         <div class="chart"><svg id="ev-chart" viewBox="0 0 900 220" preserveAspectRatio="none"></svg></div></div>
+    </section>`;
+  }
+
+  _viewCharger() {
+    const wcA = EV.wcA.map((id, i) => `<div class="phase"><span>${"ABC"[i]}</span><div><i data-a="${i}"></i></div><b data-av="${i}">–</b></div>`).join("");
+    const temps = EV.wcT.map(([n], i) => `<div class="phase"><span>${n}</span><div><i data-t="${i}"></i></div><b data-tv="${i}">–</b></div>`).join("");
+    return `<section class="grid">
       <div class="card wide"><h2>Tesla Wall Connector <span id="wc-state" class="pill"></span></h2>
         <div class="stats" id="wc-stats"></div>
         <div class="muted" style="margin-top:10px">Phase current (A)</div>${wcA}
         <div class="muted" style="margin-top:10px">Temperature (°C)</div>${temps}</div>
     </section>`;
   }
-
   _evCtlCard() {
     return `<div class="card w6"><h2>EV charging controls</h2>
         <div class="row"><span>Start charging now</span><button id="ev-go">Start</button></div>
@@ -570,6 +639,12 @@ class CortexStudio extends HTMLElement {
       <div class="row"><span>Solar covers right now</span><b>${solarPct}%</b></div>
       <div class="hbar" style="grid-template-columns:1fr"><div><i style="width:${solarPct}%;background:${C.solar}"></i></div></div>`;
     this._paintEvCtl();
+    this._paintEvChart();
+  }
+
+  _paintWc() {
+    const q = s => this._root.querySelector(s), st = id => this._hass.states[id], on = id => st(id) && st(id).state === "on";
+    if (!q("#wc-state")) return;
     // wall connector
     const wc = st(EV.wcStatus), veh = on("binary_sensor.tesla_wall_connector_vehicle_connected");
     const wp = q("#wc-state"); wp.textContent = wc ? wc.state.replace(/_/g, " ") : "–"; wp.style.setProperty("--pc", veh ? C.shoulder : "#8a8279");
@@ -578,9 +653,7 @@ class CortexStudio extends HTMLElement {
       .map(([l, v]) => `<div class="stat" style="border-color:${C.ev}"><span class="muted">${l}</span><b>${v}</b></div>`).join("");
     EV.wcA.forEach((id, i) => { const a = this._num(id) ?? 0; q(`[data-a="${i}"]`).style.width = Math.min(a / 32 * 100, 100) + "%"; q(`[data-a="${i}"]`).style.background = C.ev; q(`[data-av="${i}"]`).textContent = fx(a, 0); });
     EV.wcT.forEach(([, id], i) => { const t = this._num(id) ?? 0; q(`[data-t="${i}"]`).style.width = Math.min(t / 90 * 100, 100) + "%"; q(`[data-t="${i}"]`).style.background = t > 70 ? C.peak : t > 55 ? C.off_peak : C.shoulder; q(`[data-tv="${i}"]`).textContent = fx(t, 0); });
-    this._paintEvChart();
   }
-
   _paintEvCtl() {
     const q = s => this._root.querySelector(s), st = id => this._hass.states[id], on = id => st(id) && st(id).state === "on";
     if (!q("#ev-start")) return;
@@ -626,7 +699,7 @@ class CortexStudio extends HTMLElement {
       const kw = f.ev;
       battSet(ev, { pct: soc, charging: chg || kw > 0.05, plugged: !!this._data.energy.ev_plugged || (this._hass.states[EV.plug] || {}).state === "on",
         sub: `${fx(soc === null ? null : soc * cap / 100, 1)} of ${fx(cap, 0)} kWh · ` + (chg || kw > 0.05 ? "⚡ charging " + fx(kw) + " kW" : (this._data.energy.ev_plugged ? "plugged in" : "unplugged")),
-        marks: [{ pct: this._tab === "ev" && this._evTarget !== undefined ? this._evTarget : this._num("input_number.byd_target_soc"), color: C.home, label: "Target" }] });
+        marks: [{ pct: this._key() === "devices/ev" && this._evTarget !== undefined ? this._evTarget : this._num("input_number.byd_target_soc"), color: C.home, label: "Target" }] });
     }
   }
 
@@ -745,7 +818,7 @@ class CortexStudio extends HTMLElement {
       this._an = { sol, rate };
     }
     this._moreAt = { ...(this._moreAt || {}), [tab]: Date.now() };
-    if (this._tab === tab) this._paintMore(tab);
+    if (this._key() === { battery: "devices/battery", analytics: "energy/history" }[tab]) this._paintMore(tab);
   }
 
   // ---- BATTERY ---------------------------------------------------------
@@ -754,15 +827,17 @@ class CortexStudio extends HTMLElement {
     const cap = this._num("input_number.system_battery_capacity") ?? 50;
     return `<section class="grid">
       ${this._ctlCards()}
-      <div class="card w4"><h2>Home ESS</h2><div data-bhost="house"></div>
-        <div class="stats" style="margin-top:12px">${E.life.map(([l, id]) => this._tile(l, id, C.batt)).join("")}</div></div>
-      <div class="card w4"><h2>Monitor</h2><div class="stats">${E.bt.map(([l, id]) => this._tile(l, id, C.batt)).join("")}</div></div>
-      <div class="card w4"><h2>System health</h2><div class="stats">${E.health.map(([l, id]) => {
-        const st = this._st(id), ok = st && /^(ok|normal|none|0)$/i.test(st.state);
-        return this._tile(l, id, st && (ok || !isNaN(parseFloat(st.state))) ? C.shoulder : C.peak); }).join("")}</div></div>
-      <div class="card wide"><h2>Power flows today (W)</h2><div id="bt-flows"></div></div>
-      <div class="card w6"><h2>Charge level, 48 h (%)</h2><div id="bt-soc"></div></div>
-      <div class="card w6"><h2>Cell temperatures, 24 h (°C)</h2><div id="bt-tmp"></div></div>
+      <div class="card w4"><h2>Home ESS</h2><div data-bhost="house"></div></div>
+      <div class="card w8"><h2>Charge level, 48 h (%)</h2><div id="bt-soc"></div></div>
+      <details class="card wide more"><summary><b>Battery details</b><span class="muted">cells, faults, lifetime totals, power flows, temperatures</span></summary>
+        <div class="grid inner">
+        <div class="card w6 flat"><h2>Monitor</h2><div class="stats">${E.bt.map(([l, id]) => this._tile(l, id, C.batt)).join("")}</div></div>
+        <div class="card w6 flat"><h2>System health</h2><div class="stats">${E.health.map(([l, id]) => {
+          const st = this._st(id), ok = st && /^(ok|normal|none|0)$/i.test(st.state);
+          return this._tile(l, id, st && (ok || !isNaN(parseFloat(st.state))) ? C.shoulder : C.peak); }).join("")}</div>
+          <div class="stats" style="margin-top:10px">${E.life.map(([l, id]) => this._tile(l, id, C.batt)).join("")}</div></div>
+        <div class="card wide flat"><h2>Power flows today (W)</h2><div id="bt-flows"></div></div>
+        <div class="card wide flat"><h2>Cell temperatures, 24 h (°C)</h2><div id="bt-tmp"></div></div></div></details>
     </section>`;
   }
 
@@ -907,57 +982,73 @@ class CortexStudio extends HTMLElement {
     }).sort((a, b) => a.total - b.total);
     const base = rows.find(x => x.current), mx = Math.max(...rows.map(x => Math.abs(x.month)), 1);
     const $ = v => (v < 0 ? "−$" : "$") + Math.abs(v).toFixed(2);
-    return `<div class="card wide"><div class="chead"><h2>Plan comparison <span class="muted">your real usage, last ${n} day${n === 1 ? "" : "s"}</span></h2><button class="ghost" data-go="settings">Edit plans ↗</button></div>
+    return `<div class="card wide"><div class="chead"><h2>Plan comparison <span class="muted">your real usage, last ${n} day${n === 1 ? "" : "s"}</span></h2><span class="seg">${[7, 14, 30].map(x => `<button data-cmpr="${x}" class="${x === (this._cmpRange || 30) ? "on" : ""}">${x}d</button>`).join("")}</span></div>
       ${rows.map((x, i) => `<div class="pc ${x.current ? "cur" : ""}"><div class="pcn"><b>${esc(x.name)}</b>${i === 0 ? '<span class="pill" style="--pc:' + C.shoulder + '">cheapest</span>' : ""}${x.current ? '<span class="pill" style="--pc:' + C.grid + '">now</span>' : ""}
           <span class="muted">${$(x.imp)} bought · ${$(x.exp)} earned · ${$(x.supply)} supply</span></div>
         <div class="pcb"><i style="width:${Math.max(Math.abs(x.month) / mx * 100, 2)}%;background:${x.current ? C.grid : i === 0 ? C.shoulder : C.off_peak}"></i></div>
         <div class="pcv"><b>${$(x.month)}</b><span class="muted">/month</span>${x.current ? "" : `<span class="${x.total < base.total ? "ok" : "bad"}">${x.total < base.total ? "saves " : "costs "}${$(Math.abs(base.month - x.month))}</span>`}</div></div>`).join("")}
-      <div class="muted" style="margin-top:8px">${mine.length ? "Replays each hour you actually bought and sold. A different plan could also change how you would run the battery, so treat this as a guide." : "Add the rates from another retailer's offer in Settings to see what it would have cost you."}</div></div>`;
+      <div class="muted" style="margin-top:8px">${mine.length ? "Replays each hour you actually bought and sold. A different plan could also change how you would run the battery, so treat this as a guide." : "Add the rates from another retailer's offer below to see what it would have cost you."}</div></div>`;
   }
 
-  // ---- SETTINGS -------------------------------------------------------
-  _viewSettings() {
-    const d = this._data, st = d.settings || {};
-    return `<section class="grid">
-      <div class="card wide sethead"><div><h2>Settings</h2><div class="muted">Control your devices and how Cortex runs them. Changes apply straight away.</div></div>
-        <nav class="seg jump">${[["set-battery", "Battery"], ["set-ev", "EV"], ["set-devices", "Devices"], ["set-auto", "Automations"], ["set-plans", "Plans"], ["set-ai", "AI"]].map(([id, l]) => `<button data-jump="${id}">${l}</button>`).join("")}</nav></div>
-      <div id="set-battery" style="display:contents">${this._ctlCards()}</div>
-      <div id="set-ev" style="display:contents">${this._evCtlCard()}
-        <div class="card w6"><h2>EV status</h2><div data-bhost="ev"></div></div></div>
-      <div class="card wide" id="set-devices"><div class="chead"><h2>Devices</h2><span class="muted">Energy hardware Cortex reads and controls</span></div><div id="devs"><div class="muted">Loading devices…</div></div></div>
-      <div id="set-auto" style="display:contents">${this._sysCards()}</div>
-      <div class="card wide" id="set-plans"><div class="chead"><h2>Plans to compare</h2><button id="pl-add" class="ghost">+ Add plan</button></div><div id="plans"></div>
-        <div class="row"><span class="muted">Rates in cents per kWh, supply in cents per day. Bands are hours from–to; anything outside a band uses the default.</span><button id="pl-save">Save plans</button></div><div class="toast" id="pl-msg"></div></div>
-      <div class="card wide" id="set-ai"><h2>AI and chat</h2>
-        <div class="row"><span>Answer style</span><span class="seg" id="set-style">${[["brief", "Brief"], ["normal", "Normal"], ["detailed", "Detailed"]].map(([k, l]) => `<button data-style="${k}" class="${(st.style || "brief") === k ? "on" : ""}">${l}</button>`).join("")}</span></div>
-        <div class="row col"><span>Household instructions <span class="muted">Cortex follows these in every chat, e.g. "Call me Ajit. Use 24-hour time. Never start the dishwasher after 22:00."</span></span>
-          <textarea id="set-notes" maxlength="600" rows="3" placeholder="Anything the assistant should always know or do">${esc(st.notes || "")}</textarea>
-          <div class="rowend"><span class="muted" id="notes-n">${(st.notes || "").length}/600</span><button id="set-notes-save">Save instructions</button></div></div>
-        <div class="row"><span>Speakers for announcements</span><b class="${st.speakers ? "ok" : "bad"}">${st.speakers ? "set up" : "none chosen"}</b></div>
-        <div class="row"><span>Camera vision (AI Task)</span><b class="${st.ai_task ? "ok" : "bad"}">${st.ai_task ? "set up" : "not set up"}</b></div>
-        <div class="row"><span>Conversation agent for chat and Autopilot</span><select id="set-agent"><option value="">Home Assistant default</option></select></div>
-        <div class="row"><span>AI calls allowed per hour</span><div class="nstep"><input type="number" id="set-aph" min="0" max="120" step="1" value="${st.ai_per_hour ?? 12}"></div></div>
-        <div class="row"><span>More options (speakers, quiet hours, sensors)</span><a class="lnk" href="/config/integrations/integration/cortex" target="_top">Open integration ↗</a></div>
-        <div class="toast" id="set-msg"></div></div>
-    </section>`;
+  // ---- COMPARE PLANS ----------------------------------------------------
+  _viewCompare() {
+    return `<section class="grid"><div id="cmp" style="display:contents"><div class="card wide muted">Loading your usage…</div></div>
+      <div class="card wide"><div class="chead"><h2>Your plans</h2><button id="pl-add" class="ghost">+ Add plan</button></div><div id="plans"></div>
+        <div class="row"><span class="muted">Rates in cents per kWh, supply in cents per day. Bands are hours from–to; anything outside a band uses the default.</span><button id="pl-save">Save plans</button></div><div class="toast" id="pl-msg"></div></div></section>`;
   }
-  _wireSettings() {
-    const r = this._root, q = s => r.querySelector(s), d = this._data;
-    r.querySelectorAll("[data-jump]").forEach(b => b.onclick = () => { const el = q("#" + b.dataset.jump); const t = el && (el.firstElementChild || el); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); });
-    this._wireCtl(); this._wireEvCtl(); this._paintEvCtl(); this._wireExtras(); this._battWidgets();
-    this._loadDevices();
-    // plans
-    this._plansDraft = this._plansDraft || JSON.parse(JSON.stringify(d.plans || []));
+  _paintCompare() {
+    const el = this._root.querySelector("#cmp"), c = this._enCompute(); if (!el) return;
+    if (!c || !c.days.length) { el.innerHTML = '<div class="card wide muted">No statistics yet.</div>'; return; }
+    const days = c.days.slice(-(this._cmpRange || 30)), keys = new Set(days.map(d => d.key));
+    el.innerHTML = this._planCompare(c, keys, days.length);
+    el.querySelectorAll("[data-cmpr]").forEach(b => b.onclick = () => { this._cmpRange = Number(b.dataset.cmpr); this._paintCompare(); });
+  }
+  _wirePlans() {
+    const q = s => this._root.querySelector(s);
+    this._plansDraft = this._plansDraft || JSON.parse(JSON.stringify(this._data.plans || []));
     this._paintPlans();
     q("#pl-add").onclick = () => { this._plansDraft.push({ id: "p" + Date.now().toString(36), name: "New plan", supply: 110, import_default: 30, import: [{ from: 10, to: 14, rate: 15, days: "all" }], fit_default: 5, fit: [] }); this._paintPlans(); };
     q("#pl-save").onclick = async () => {
       const m = q("#pl-msg"), show = (t, bad) => { m.textContent = t; m.className = "toast show" + (bad ? " bad" : ""); };
-      try { const x = await this._hass.callWS({ type: "cortex/plans_save", plans: this._plansDraft }); this._data.plans = x.plans; show("Saved. Compare them on the Analytics tab."); }
+      try { const x = await this._hass.callWS({ type: "cortex/plans_save", plans: this._plansDraft }); this._data.plans = x.plans; show("Saved."); this._paintCompare(); }
       catch (e) { show("Failed: " + (e.message || e.code), true); }
     };
-    // AI settings
-    const msg = (t, bad) => { const m = q("#set-msg"); m.textContent = t; m.className = "toast show" + (bad ? " bad" : ""); };
-    const save = async opts => { try { await this._hass.callWS({ type: "cortex/set_options", options: opts }); msg("Saved. Cortex is reloading…"); setTimeout(() => this._load(), 3500); } catch (e) { msg("Failed: " + (e.message || e.code), true); } };
+  }
+
+  // ---- DEVICES (all) ---------------------------------------------------------
+  _viewDevices() {
+    return `<section class="grid">
+      <div class="card wide"><div class="chead"><h2>Devices</h2><span class="muted">Energy hardware Cortex reads and controls</span></div><div id="devs"><div class="muted">Loading devices…</div></div></div>
+      ${this._sysCards()}
+    </section>`;
+  }
+
+  // ---- SETTINGS (gear) ---------------------------------------------------------
+  _viewSettings() {
+    const st = this._data.settings || {}, muted = new Set(this._data.mute_push || []);
+    return `<section class="grid">
+      <div class="card wide sethead"><div><h2>Settings</h2><div class="muted">How Cortex behaves. Device controls live under Devices; plans under Energy → Compare plans.</div></div>
+        <a class="lnk" href="/config/integrations/integration/cortex" target="_top">All integration options ↗</a></div>
+      <div class="card w6"><h2>AI and chat</h2>
+        <div class="row"><span>Answer style</span><span class="seg" id="set-style">${[["brief", "Brief"], ["normal", "Normal"], ["detailed", "Detailed"]].map(([k, l]) => `<button data-style="${k}" class="${(st.style || "brief") === k ? "on" : ""}">${l}</button>`).join("")}</span></div>
+        <div class="row col"><span>Household instructions <span class="muted">followed in every chat, e.g. "Call me Ajit. Use 24-hour time."</span></span>
+          <textarea id="set-notes" maxlength="600" rows="3" placeholder="Anything the assistant should always know or do">${esc(st.notes || "")}</textarea>
+          <div class="rowend"><span class="muted" id="notes-n">${(st.notes || "").length}/600</span><button id="set-notes-save">Save</button></div></div>
+        <div class="row"><span>Conversation agent</span><select id="set-agent"><option value="">Home Assistant default</option></select></div>
+        <div class="row"><span>AI calls allowed per hour</span><div class="nstep"><input type="number" id="set-aph" min="0" max="120" step="1" value="${st.ai_per_hour ?? 12}"></div></div>
+        <div class="row"><span>Speakers</span><b class="${st.speakers ? "ok" : "bad"}">${st.speakers ? "set up" : "none chosen"}</b></div>
+        <div class="row"><span>Camera vision (AI Task)</span><b class="${st.ai_task ? "ok" : "bad"}">${st.ai_task ? "set up" : "not set up"}</b></div></div>
+      <div class="card w6"><h2>Phone notifications</h2><div class="muted" style="margin-bottom:6px">Choose what Cortex pushes to your phone. Everything is still listed under the bell.</div>
+        ${PUSH_CATS.map(([k, l]) => `<label class="row"><span>${l}</span>${this._toggle(`data-mute="${k}"`, !muted.has(k))}</label>`).join("")}</div>
+      <div class="toast wide" id="set-msg" style="grid-column:1/-1"></div>
+    </section>`;
+  }
+  _saveOpts(opts, msgSel = "#set-msg") {
+    const m = this._root.querySelector(msgSel), msg = (t, bad) => { if (m) { m.textContent = t; m.className = "toast show" + (bad ? " bad" : ""); } };
+    return this._hass.callWS({ type: "cortex/set_options", options: opts }).then(() => { msg("Saved. Cortex is reloading…"); setTimeout(() => this._load(), 3500); }, e => msg("Failed: " + (e.message || e.code), true));
+  }
+  _wireSettings() {
+    const r = this._root, q = s => r.querySelector(s), d = this._data, save = o => this._saveOpts(o);
     this._agents().then(list => {
       const sel = q("#set-agent"); if (!sel) return;
       sel.innerHTML = '<option value="">Home Assistant default</option>' + list.map(a => `<option value="${esc(a.id)}"${a.id === (d.settings || {}).agent ? " selected" : ""}>${esc(a.name)}</option>`).join("");
@@ -967,6 +1058,8 @@ class CortexStudio extends HTMLElement {
     const nt = q("#set-notes"); nt.oninput = () => { q("#notes-n").textContent = nt.value.length + "/600"; };
     q("#set-notes-save").onclick = () => save({ assistant_notes: nt.value.trim() });
     q("#set-aph").onchange = e => { const v = parseInt(e.target.value, 10); if (!Number.isNaN(v)) save({ ai_per_hour: v }); };
+    const muteSave = () => save({ mute_push: [...r.querySelectorAll("[data-mute]")].filter(i => !i.checked).map(i => i.dataset.mute) });
+    r.querySelectorAll("[data-mute]").forEach(i => i.onchange = muteSave);
   }
   _paintPlans() {
     const el = this._root.querySelector("#plans"); if (!el) return;
@@ -1147,14 +1240,7 @@ class CortexStudio extends HTMLElement {
 
   // ---- ANALYTICS -------------------------------------------------------
   _viewAnalytics() {
-    const todays = [["Solar generated", AN.pv, C.solar], ["Exported", AN.exp, C.shoulder], ["Imported", AN.imp, C.peak], ["Used", AN.load, C.home],
-      ["Battery charged", AN.chg, C.batt], ["Battery discharged", AN.dis, "#7e57c2"], ["Battery level", "sensor.neovolt_online_soc", C.batt]];
-    return `<section class="grid">
-      <div class="card wide"><h2>Today</h2><div class="stats">${todays.map(([l, id, c]) => this._tile(l, id, c)).join("")}</div>
-        <div class="sumchips">${String((this._st("sensor.daily_summary") || {}).state || "").split(/\s*[·|]\s*/).filter(Boolean).map(t => `<span class="chip">${esc(t)}</span>`).join("")}
-          <span class="chip best">⏰ Best appliance time: <b>${esc((this._st("sensor.best_time_to_run_appliances") || {}).state || "–")}</b></span></div></div>
-      <div id="an-body" style="display:contents"><div class="card wide muted">Loading analytics…</div></div>
-    </section>`;
+    return `<section class="grid"><div id="an-body" style="display:contents"><div class="card wide muted">Loading history…</div></div></section>`;
   }
   _anBody() {
     const c = this._enCompute();
@@ -1187,18 +1273,18 @@ class CortexStudio extends HTMLElement {
         ${T("Avg cost / day", $(net / n), C.off_peak, "incl. supply")}</div>
       <div class="row" style="margin-top:8px"><span class="muted">Best solar: <b>${bd(best("pv"), "pv", " kWh")}</b></span><span class="muted">Most imported: <b>${bd(best("imp"), "imp", " kWh")}</b></span><span class="muted">Most saved: <b>${best("saved") ? dayLabel(best("saved").key, true) + " · " + $(best("saved").saved) : "–"}</b></span></div>
       <div class="muted">Costs use your Plan rates by hour (public holidays treated as normal days). Today updates live.</div></div>
-      ${this._planCompare(c, keys, n)}
       <div class="card wide"><h2>Daily energy (kWh)</h2>${barChart(lbl, [{ name: "Solar", color: C.solar, data: days.map(d => d.pv) }, { name: "Used", color: C.home, data: days.map(d => d.used) },
         { name: "Imported", color: C.grid, data: days.map(d => d.imp) }, { name: "Exported", color: C.shoulder, data: days.map(d => d.exp) }], { w: 1100, h: 230 })}</div>
       <div class="card w6"><h2>Daily money ($)</h2>${barChart(lbl, [{ name: "Import cost", color: C.peak, data: days.map(d => d.cImp) }, { name: "Export earned", color: C.shoulder, data: days.map(d => d.cExp) },
         { name: "Saved vs no solar", color: C.solar, data: days.map(d => Math.max(d.saved, 0)) }], { unit: "$", dec: 2 })}</div>
-      <div class="card w6"><h2>Self-sufficiency & self-consumption (%)</h2>${chart([{ name: "Self-sufficiency", color: "#0f9d58", data: days.map(d => d.ss) }, { name: "Self-consumption", color: "#12b5cb", data: days.map(d => d.sc) }], { min: 0, max: 100 })}</div>
       <div class="card w6"><h2>Import by rate period</h2>${per.map(p => rowBar(p.name, p.color, p.kwh, p.cost, pk)).join("")}
         <div class="muted" style="margin-top:6px">Aim: shift peak use to battery; top up in the 10–14 shoulder.</div></div>
       <div class="card w6"><h2>Export earnings</h2>${rowBar("Evening FiT 17–21", C.shoulder, expEve, cExpEve, Math.max(exp, 0.1))}${rowBar("Other hours", C.off_peak, exp - expEve, cExp - cExpEve, Math.max(exp, 0.1))}
         <div class="row"><span>Average per exported kWh</span><b>${exp > 0 ? fx(cExp / exp * 100, 1) + "c" : "–"}</b></div></div>
       <div class="card wide"><h2>Typical day: average kWh per hour</h2>${lineChart([{ name: "Solar", color: C.solar, data: prof("pv"), area: true }, { name: "Used", color: C.home, data: prof("used") },
         { name: "Imported", color: C.grid, data: prof("imp") }, { name: "Exported", color: C.shoulder, data: prof("exp") }], { labels: Array.from({ length: 24 }, (_, h) => h + ":00"), min: 0, w: 1100, h: 220 })}</div>
+      <details class="card wide more"><summary><b>More charts</b><span class="muted">self-sufficiency, battery cycling and range, peak power, EV, solar vs forecast, rates, bills</span></summary><div class="grid inner">
+      <div class="card w6"><h2>Self-sufficiency & self-consumption (%)</h2>${chart([{ name: "Self-sufficiency", color: "#0f9d58", data: days.map(d => d.ss) }, { name: "Self-consumption", color: "#12b5cb", data: days.map(d => d.sc) }], { min: 0, max: 100 })}</div>
       <div class="card w6"><h2>Battery cycling (kWh/day)</h2>${barChart(lbl, [{ name: "Charged", color: C.batt, data: days.map(d => d.chg) }, { name: "Discharged", color: "#7e57c2", data: days.map(d => d.dis) }])}</div>
       <div class="card w6"><h2>Battery level range (%)</h2>${chart([{ name: "Max", color: C.shoulder, data: days.map(d => d.soc && d.soc.max) }, { name: "Average", color: C.batt, data: days.map(d => d.soc && d.soc.mean) },
         { name: "Min", color: C.off_peak, data: days.map(d => d.soc && d.soc.min) }], { min: 0, max: 100 })}</div>
@@ -1207,7 +1293,7 @@ class CortexStudio extends HTMLElement {
       <div class="card w6"><h2>EV charging (kWh/day)</h2>${barChart(lbl, [{ name: "Tesla wall connector", color: C.ev, data: evDays }])}</div>
       <div class="card wide"><h2>Solar production vs forecast, last 36 h (kW)</h2><div id="an-sol"></div></div>
       <div class="card w6"><h2>AGL rates 48h (c/kWh)</h2><div id="an-rate"></div></div>
-      <div class="card w6"><h2>Cost tracking</h2><div class="stats">${E.cost.map(([l, id]) => this._tile(l, id, C.off_peak)).join("")}</div></div>`;
+      <div class="card w6"><h2>Cost tracking</h2><div class="stats">${E.cost.map(([l, id]) => this._tile(l, id, C.off_peak)).join("")}</div></div></div></details>`;
   }
 
   _paintMore(tab) {
@@ -1233,18 +1319,24 @@ class CortexStudio extends HTMLElement {
   }
 
   // ---- PLAN extras: money, rate windows, automations, settings ---------
-  _planExtras() {
+  _moneyCard(cls = "") {
     const m = this._money(), exp = m.exp, imp = m.imp, p = m.p, f = m.f, self = m.self, net = m.net;
     const h = new Date().getHours(), bd = this._data.energy.business_day, high = this._data.energy.high_season;
     const v = id => fx(this._num(id), 2), now = (a, b) => (h >= a && h < b ? '<b class="ok">◀ now</b>' : "");
     const pk = high ? "input_number.agl_plan_high_season_peak" : "input_number.agl_plan_low_season_peak";
-    return `<div class="card"><h2>Money today</h2>
+    return `<div class="card ${cls}"><h2>Money today</h2>
         <div class="row"><span>Solar used on-site (${fx(self, 1)} kWh)</span><b>$${fx(self * p, 2)} avoided</b></div>
         <div class="row"><span>Exported (${fx(exp, 1)} kWh)</span><b>$${fx(exp * f, 2)} earned</b></div>
         <div class="row"><span>Imported (${fx(imp, 1)} kWh)</span><b>$${fx(imp * p, 2)} spent</b></div>
         <div class="row"><span><b>Net benefit</b></span><b class="${net >= 0 ? "ok" : "bad"}">$${fx(net, 2)}</b></div>
-        <div class="muted">Indicative: uses the current rate for all kWh.</div></div>
-      <div class="card"><h2>Rate windows</h2>
+        <div class="muted">Indicative: uses the current rate for all kWh.</div></div>`;
+  }
+  _rateCard() {
+    const m = this._money(), exp = m.exp, imp = m.imp, p = m.p, f = m.f, self = m.self, net = m.net;
+    const h = new Date().getHours(), bd = this._data.energy.business_day, high = this._data.energy.high_season;
+    const v = id => fx(this._num(id), 2), now = (a, b) => (h >= a && h < b ? '<b class="ok">◀ now</b>' : "");
+    const pk = high ? "input_number.agl_plan_high_season_peak" : "input_number.agl_plan_low_season_peak";
+    return `<div class="card w8"><h2>Rate windows</h2>
         <div class="row"><span>10–14 Shoulder</span><span><b>${v("input_number.agl_plan_shoulder")}c</b> ${now(10, 14)}</span></div>
         <div class="row"><span>14–16 Off peak</span><span><b>${v("input_number.agl_plan_off_peak")}c</b> ${now(14, 16)}</span></div>
         <div class="row"><span>16–20 ${bd ? "Peak" : "Off peak (no peak today)"}</span><span><b>${bd ? v(pk) : v("input_number.agl_plan_off_peak")}c</b> ${now(16, 20)}</span></div>
@@ -1253,6 +1345,7 @@ class CortexStudio extends HTMLElement {
         <div class="muted">Supply ${v("input_number.agl_plan_supply_charge")} c/day · ${high ? "high" : "low"} season.</div></div>
 `;
   }
+
   _sysCards() {
     return `<div class="card w6"><h2>Automations</h2>${E.autos.map(id => { const st = this._st(id); return st ? `<label class="row"><span>${esc(st.attributes.friendly_name || id)}</span><input type="checkbox" class="sw" data-auto="${id}" ${st.state === "on" ? "checked" : ""}></label>` : ""; }).join("") || '<div class="muted">None found.</div>'}</div>
       <div class="card w6"><h2>System settings <span class="muted">edit a value, press Enter</span></h2>${E.nums.map(([l, id]) => { const st = this._st(id); return st ? `<div class="row"><span>${esc(l)}</span><input type="number" class="num" data-num="${id}" value="${esc(st.state)}" step="${st.attributes.step || "any"}" min="${st.attributes.min ?? ""}" max="${st.attributes.max ?? ""}"></div>` : ""; }).join("")}</div>`;
@@ -1290,7 +1383,7 @@ class CortexStudio extends HTMLElement {
       prev = v;
     });
     this._earn = { buckets, kwh, earned };
-    if (this._tab === "plan") this._paintEarn();
+    if (this._key() === "energy/plan") this._paintEarn();
   }
   _paintEarn() {
     const el = this._root.querySelector("#earn"), d = this._data; if (!el || !d) return;
@@ -1337,11 +1430,7 @@ class CortexStudio extends HTMLElement {
       <div class="card wide"><h2>Today's rates <span class="legend"><b style="color:${C.shoulder}">■</b> shoulder <b style="color:${C.off_peak}">■</b> off-peak <b style="color:${C.peak}">■</b> peak <b style="color:#2e7d32">━</b> feed-in</span></h2>
         <div class="chart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${grid}${bars}
         <path d="${pts}" fill="none" stroke="#2e7d32" stroke-width="2.5"/>${labels}</svg></div></div>
-      <div class="card w6"><h2>Solar forecast</h2>${bar(pvT, "Today")}${bar(pvM, "Tomorrow")}
-        <div class="row"><span>Low-solar line</span><b>${fx(e.low_solar, 0)} kWh</b></div>
-        <div class="row"><span>Today is a</span><b style="color:${solarDay}">${esc(e.solar_day)} day</b></div>
-        <div class="row"><span>Shortfall vs need</span><b>${e.pv_shortfall === null ? "–" : fx(e.pv_shortfall, 1) + " kWh"}</b></div></div>
-      <div class="card w6"><h2>Evening export plan</h2><div id="earn"><div class="muted">Loading…</div></div></div>
+      <div class="card w8"><h2>Evening export plan</h2><div id="earn"><div class="muted">Loading…</div></div></div>
       <div class="card wide"><h2>Autopilot <span class="pill" style="--pc:${ap.mode === "auto" ? C.shoulder : ap.mode === "shadow" ? C.off_peak : "#8a8279"}">${esc(ap.mode)}</span>
         <span class="seg"><button id="ap-topup">Plan top-up</button><button id="ap-export">Plan export</button></span></h2>
         ${(ap.decisions || []).length ? ap.decisions.map(x => `<div class="row"><span><b>${x.window === "topup" ? "Top-up" : "Export"}</b> ${x.do ? "✅" : "⏸"} ${esc(x.reason)}
@@ -1349,12 +1438,12 @@ class CortexStudio extends HTMLElement {
           ${x.outcome ? `<br><span class="muted">${esc(x.outcome)}</span>` : ""}</span>
           <span class="muted">${esc(x.source)} · ${esc(x.result)} · ${(x.time || "").slice(5, 16).replace("T", " ")}</span></div>`).join("")
           : `<div class="muted">No decisions yet. Autopilot plans at the start of the shoulder window and the evening feed-in window.</div>`}</div>
-      <div class="card"><h2>Next change</h2>
+      <div class="card w4"><h2>Next change</h2>
         <div class="big">${esc(e.next_period.replace("_", " "))}</div>
         <div class="muted">at ${new Date(e.next_change).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}</div>
         <div class="row"><span>Business day</span><b>${e.business_day ? "yes" : "no (no peak)"}</b></div>
         <div class="row"><span>High season</span><b>${e.high_season ? "yes" : "no"}</b></div></div>
-      ${this._planExtras()}
+      ${this._rateCard()}
     </section>`;
   }
 
@@ -1414,20 +1503,22 @@ class CortexStudio extends HTMLElement {
     const rout = this._list(d.routines || [], r => `<div class="row"><span>${esc(r.name)} <span class="muted">${r.schedule ? "at " + esc(r.schedule.at) + " " + esc(r.schedule.days) : r.on_state ? "when " + esc(r.on_state.entity_id) + " is " + esc(r.on_state.to) : "on demand"}</span></span>
       <span><button data-run="${esc(r.name)}">Run</button> <button class="ghost" data-delr="${esc(r.name)}">✕</button></span></div>`, "No routines. Ask the assistant to make one, or accept a suggestion.");
     const speech = this._list((d.speech || []).slice(0, 8), s => `<div class="row"><span>${esc(s.text)}</span><span class="muted">${s.time.slice(11, 16)} ${s.spoken ? "🔊" : "🔇 " + esc(s.reason || "")}</span></div>`, "Nothing said yet.");
-    return `<section class="grid">
-      ${this._chatCard()}
-      <div class="card wide"><h2>Memory (${d.memories.length})</h2>
-        <div class="row"><input id="mtext" placeholder="Something worth remembering" style="flex:1"><select id="mcat">${d.categories.map(c => `<option>${esc(c)}</option>`).join("")}</select><button id="madd">Add</button></div>${mem}</div>
-      <div class="card w6"><h2>Reminders</h2>${rem}<h2 style="margin-top:12px">Watches</h2>${wat}</div>
-      <div class="card w6"><h2>Routines</h2>${rout}</div>
-      <div class="card wide"><h2>Suggestions</h2>${sug}</div>
-      <div class="card w6"><h2>Tools</h2>
+    const sub = this._subOf("assistant"), cards = {
+      memory: `<div class="card wide"><h2>Memory (${d.memories.length})</h2>
+        <div class="row"><input id="mtext" placeholder="Something worth remembering" style="flex:1"><select id="mcat">${d.categories.map(c => `<option>${esc(c)}</option>`).join("")}</select><button id="madd">Add</button></div>${mem}</div>`,
+      reminders: `<div class="card w6"><h2>Reminders</h2>${rem}</div><div class="card w6"><h2>Watches</h2>${wat}</div>`,
+      routines: `<div class="card wide"><h2>Routines</h2>${rout}</div>`,
+      suggestions: `<div class="card wide"><h2>Suggestions</h2>${sug}</div>`,
+      tools: `<div class="card w6"><h2>Tools</h2>
         <div class="row"><span>Backup now (${(d.backups || []).length} saved)</span><button id="backup">Back up</button></div>
         <div class="row"><span>Weekly report</span><button id="weekly">Say it now</button></div>
         <div class="row"><span>Speech ${d.hushed ? "hushed" : "active"}</span><button id="hush">${d.hushed ? "Unhush" : "Hush 1h"}</button></div>
         <div class="muted" id="hmsg"></div></div>
-      <div class="card w6"><h2>Recent speech</h2>${speech}</div>
-    </section>`;
+      <div class="card w6"><h2>Recent speech</h2>${speech}</div>`,
+    };
+    return `<section class="grid">${this._chatCard()}</section>
+      <nav class="subnav" style="margin-top:16px" aria-label="Assistant sections">${SUBS.assistant.map(([k, l]) => `<button data-sub="${k}" class="${sub === k ? "on" : ""}">${l}${k === "suggestions" && (d.suggestions || []).length ? ` <span class="cnt">${d.suggestions.length}</span>` : k === "reminders" && d.reminders.length ? ` <span class="cnt">${d.reminders.length}</span>` : ""}</button>`).join("")}</nav>
+      <section class="grid">${cards[sub]}</section>`;
   }
   _wireAssistant() {
     const r = this._root, click = (id, fn) => { const el = r.querySelector(id); if (el) el.onclick = fn; };
@@ -1775,7 +1866,7 @@ nav#tabs button.on{background:var(--surface);color:var(--text);box-shadow:var(--
 .ib{position:relative;width:42px;height:42px;padding:0;border-radius:50%;background:var(--surface);color:var(--text);border:1px solid var(--line);display:grid;place-items:center;box-shadow:var(--shadow)}
 .ib .auto{position:absolute;right:-2px;bottom:-2px;font:700 9px/14px var(--ff);width:14px;height:14px;border-radius:50%;background:var(--o);color:var(--text-primary-color);text-align:center;font-style:normal}
 .badge{position:absolute;top:-3px;right:-3px;min-width:18px;height:18px;border-radius:9px;background:var(--bad);color:#fff;font:700 11px/18px var(--ff);text-align:center;padding:0 4px;font-style:normal}.badge[hidden]{display:none}
-@media (max-width:1440px){nav#tabs button span{display:none}nav#tabs button.on span{display:inline}.clock{display:none}}
+@media (max-width:1100px){nav#tabs button span{display:none}nav#tabs button.on span{display:inline}.clock{display:none}}
 @media (max-width:760px){
   .gdate{display:none}.chead{flex-wrap:wrap}.chead h2{white-space:nowrap}.legend{font-size:12px;gap:8px}
   :host{padding:14px 14px 104px}.top{margin-bottom:16px}.brand h1{font-size:18px}
@@ -1979,6 +2070,23 @@ button.pill{min-height:0;font:650 12.5px/1 var(--ff);padding:5px 12px}
 .evfirst{margin-top:6px;padding:4px 14px;border-radius:16px;background:var(--surface2)}.evfirst .row>span:first-child{display:flex;flex-direction:column;gap:2px;max-width:80%}
 .evnote{display:flex;gap:10px;align-items:center;padding:8px 0 10px;font-size:13px}.evnote .ic{color:var(--o)}
 .sumchips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.sumchips .chip{color:var(--text);font-weight:500;font-size:13px;padding:6px 12px}.sumchips .chip.best{background:color-mix(in srgb,var(--o) 12%,transparent)}
+/* ---- v0.18: organisation ---- */
+.subnav{display:flex;gap:4px;max-width:1360px;margin:0 auto 16px;padding:4px;background:var(--nav);border-radius:var(--r-pill);width:fit-content;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.subnav button{background:transparent;color:var(--muted);padding:8px 16px;min-height:38px;white-space:nowrap}.subnav button:hover{color:var(--text);filter:none}
+.subnav button.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}.subnav .cnt{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:var(--o);color:var(--text-primary-color);font-size:11px;line-height:18px;margin-left:4px}
+details.more{padding:0}details.more>summary{list-style:none;cursor:pointer;display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;padding:18px 20px}details.more>summary::-webkit-details-marker{display:none}
+details.more>summary:before{content:"▸";color:var(--o);transition:transform .2s}details.more[open]>summary:before{transform:rotate(90deg)}
+details.more .inner{padding:0 20px 20px}.card.flat{box-shadow:none;background:var(--surface2);border:0}
+.solrow{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:24px;align-items:center}@media (max-width:720px){.solrow{grid-template-columns:1fr}}
+.estore.one{grid-template-columns:1fr}
+#gear.on{color:var(--o);border-color:var(--o)}
+.drawer{position:fixed;inset:0;z-index:30}.drawer[hidden]{display:none}.dback{position:absolute;inset:0;background:#0006;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+.drawer aside{position:absolute;top:0;right:0;bottom:0;width:min(420px,100%);background:var(--surface);box-shadow:-10px 0 40px #0004;padding:18px 20px;overflow:auto;animation:slin .2s ease-out}
+@keyframes slin{from{transform:translateX(40px);opacity:0}}
+.dhead{display:flex;justify-content:space-between;align-items:center}.dhead h2 .ic{color:var(--o)}
+.ditem{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line);font-size:13.5px;flex-wrap:wrap}.ditem .ic{width:18px;height:18px;flex:none}
+.ditem.warn .ic{color:var(--warn)}.ditem.ok .ic{color:var(--good)}.ditem .dt{flex:1;min-width:200px}
+.dchips{display:flex;flex-wrap:wrap;gap:8px}.dchips .chip{border:1px solid var(--line);cursor:pointer;min-height:34px;font:500 13px var(--ff);color:var(--muted);background:var(--surface2)}.dchips .chip.on{color:var(--text);border-color:color-mix(in srgb,var(--o) 50%,var(--line))}
 /* ---- v0.16: assistant options ---- */
 .pcats{flex-wrap:wrap;align-self:flex-start}.pcats button{padding:6px 12px;min-height:32px;font-size:13px}
 .chipw{display:inline-flex;align-items:center;flex:none}.chipw .x{min-height:28px;padding:2px 6px;margin-left:-4px}
