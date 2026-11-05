@@ -91,6 +91,7 @@ CONF_LOW_SOLAR = "low_solar_kwh"
 CONF_TOPUP_KW = "topup_kw"
 CONF_EXPORT_KW = "export_kw"
 CONF_EXPORT_MIN_SOC = "export_min_soc"
+CONF_HOUSE_RULE = "house_off_grid"  # never buy grid power for the house outside the cheap window
 CONF_EV_PRIORITY = "ev_priority"  # while the EV charges, export only enough to cover the supply charge
 CONF_BATT_MAX_KW = "battery_max_kw"  # most the battery can deliver at once
 CONF_EV_TRICKLE_KW = "ev_trickle_kw"  # small export kept once the supply charge is covered (inverter overhead)
@@ -217,6 +218,7 @@ DEFAULTS: dict[str, object] = {
     CONF_TOPUP_KW: 5.0,
     CONF_EXPORT_KW: 5.0,
     CONF_EXPORT_MIN_SOC: 35.0,
+    CONF_HOUSE_RULE: True,
     CONF_EV_PRIORITY: True,
     CONF_BATT_MAX_KW: 5.0,
     CONF_EV_TRICKLE_KW: 0.2,

@@ -61,7 +61,10 @@ def tips(s: dict[str, Any], live: dict[str, float], now: datetime, *, mode: str 
 
     pre_peak = nxt == "peak" and to_next is not None and 0 < to_next <= 90 and ev > 0.5 and (ev_grid > 0.5 or (spare is not None and spare < 0))
     if ev > 0.5 and not cheap and not pre_peak:
-        if ev_grid > 0.5:
+        if ev_grid > 0.5 and s.get("house_rule") and period != "peak":
+            add(INFO, f"EV is charging from the off-peak grid ({ev_grid:.1f} kW at {rate:.0f}c).",
+                f"allowed by the house rule; the cheap window from {b.get('until', '10:00')} costs less")
+        elif ev_grid > 0.5:
             add(ACT, f"EV is pulling {ev_grid:.1f} kW from the grid at {rate:.0f}c (of its {ev:.1f} kW: {mix}).",
                 f"pause it until {b.get('until', '10:00')} or lower its charge rate so solar and the battery can cover it")
         elif ev_batt > 0.5 and spare is not None and spare < 0:
@@ -78,6 +81,9 @@ def tips(s: dict[str, Any], live: dict[str, float], now: datetime, *, mode: str 
         add(ACT, f"Peak starts at {_hm(nxt_at)} and the EV is charging at {ev:.1f} kW ({mix}).",
             "it will need the grid in peak: let it finish before then or pause it" if ev_grid > 0.5 else
             f"the battery can't also cover {need_txt}: pause it before then")
+
+    if s.get("house_note"):
+        add(ACT if "Pause" in s["house_note"] else INFO, s["house_note"], "house rule: no grid power for the house outside the cheap window")
 
     # Is the battery enough for tonight?
     if not cheap and spare is not None and spare < 0 and not (ev_batt > 0.5):

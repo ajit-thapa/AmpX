@@ -26,9 +26,24 @@ def night_kwh(ctx: dict[str, Any]) -> float:
 
 
 def night_floor(ctx: dict[str, Any]) -> float:
-    """Lowest battery level (%) that still covers the night load, whatever tomorrow's solar looks like."""
+    """Lowest battery level (%) that still covers the night load, whatever tomorrow's solar looks like.
+
+    With the house rule on, that is the reserve plus everything the house uses until the next cheap
+    window, so the house never buys grid power outside it."""
     cap = ctx["battery_kwh"] or 1.0
+    if ctx.get("house_rule") and ctx.get("house_until_cheap") is not None:
+        need = ctx.get("reserve", 0.0) + ctx["house_until_cheap"] / cap * 100 + 2
+        return round(max(ctx["export_floor"], min(100.0, need)), 1)
     return round(max(ctx["export_floor"], min(90.0, night_kwh(ctx) / cap * 100 + 10)), 1)
+
+
+def house_target(ctx: dict[str, Any]) -> float | None:
+    """Battery level (%) needed when the cheap window ends to carry the house to the next one."""
+    if not ctx.get("house_rule") or ctx.get("night_need") is None:
+        return None
+    cap = ctx["battery_kwh"] or 1.0
+    need = max(ctx["night_need"] - (ctx.get("pv_after_cheap") or 0.0), 0.0)
+    return round(min(100.0, ctx.get("reserve", 0.0) + need / cap * 100 + 3), 1)
 
 
 def baseline(window: str, ctx: dict[str, Any]) -> dict[str, Any]:
@@ -38,22 +53,27 @@ def baseline(window: str, ctx: dict[str, Any]) -> dict[str, Any]:
         return {"window": window, "do": False, "reason": "battery level unknown"}
     if window == TOPUP:
         room = cap * (100 - soc) / 100
-        if margin(ctx) <= MIN_MARGIN_C:
-            return {"window": window, "do": False, "reason": "evening export margin too thin to top up"}
         day_load = ctx["avg_daily_load"] * (1 - ctx["night_share"])
         ev = ctx["ev_need_kwh"] if ctx.get("ev_plugged") else 0.0
         pv = ctx.get("pv_today")
         spare = 0.0 if pv is None else max(pv - day_load - ev, 0.0) * SOLAR_TO_BATTERY
+        house = house_target(ctx)
+        if house is not None and soc + spare / cap * 100 < house - 1:
+            # the house rule: fill enough now that the house never needs the grid before the next cheap window
+            return {"window": window, "do": True, "kw": ctx["topup_kw"], "target_soc": round(house),
+                    "reason": f"the house needs {house:.0f}% to reach the next cheap window without the grid"}
+        if margin(ctx) <= MIN_MARGIN_C:
+            return {"window": window, "do": False, "reason": "evening export margin too thin to top up"}
         need = room - spare
         if need < 1.5:
             return {"window": window, "do": False, "reason": f"solar should fill the battery ({spare:.0f} kWh spare)"}
-        target = min(100.0, soc + need / cap * 100)
+        target = min(100.0, max(soc + need / cap * 100, house or 0.0))
         return {
             "window": window, "do": True, "kw": ctx["topup_kw"], "target_soc": round(target),
             "reason": f"need {need:.1f} kWh from the grid at {ctx['shoulder']:g}c to export at {ctx['fit_evening']:g}c",
         }
     floor = night_floor(ctx)
-    if ctx["feed_in_now"] < 20:
+    if ctx["feed_in_now"] < ctx["fit_evening"] - 0.01 or ctx["feed_in_now"] <= ctx.get("off_peak_fit", 0.0):
         return {"window": window, "do": False, "reason": "feed-in rate is low right now"}
     avail = cap * (soc - floor) / 100
     if avail < 2:
@@ -108,11 +128,15 @@ def validate(window: str, raw: dict[str, Any] | None, ctx: dict[str, Any], base:
         return out
     if window == TOPUP:
         if out["do"]:
-            if soc >= 98 or margin(ctx) <= 0:
+            house = house_target(ctx) or 0.0
+            if soc >= 98 or (margin(ctx) <= 0 and soc >= house - 1):
                 out.update(do=False, reason="battery already full or no price margin")
             else:
                 out["kw"] = round(clamp(_num(raw.get("kw"), ctx["topup_kw"]), 0.5, ctx["topup_kw"]), 1)
-                out["target_soc"] = round(clamp(_num(raw.get("target_soc"), base.get("target_soc", 100)), soc + 1, 100))
+                out["target_soc"] = round(clamp(_num(raw.get("target_soc"), base.get("target_soc", 100)), max(soc + 1, house), 100))
+        elif (house_target(ctx) or 0.0) > soc + 1 and base.get("do"):
+            # the model may not skip a top-up the house rule needs
+            out.update(do=True, kw=base["kw"], target_soc=base["target_soc"], reason=base["reason"], source="baseline")
     else:
         if out["do"]:
             # Solar tomorrow cannot power tonight: the model may raise the floor but never go below the night need.
@@ -120,7 +144,7 @@ def validate(window: str, raw: dict[str, Any] | None, ctx: dict[str, Any], base:
             floor = round(clamp(_num(raw.get("floor_soc"), base.get("floor_soc", low)), low, 90))
             if raw.get("floor_soc") is not None and _num(raw.get("floor_soc"), floor) < low - 0.5:
                 out["reason"] = (out["reason"] + f" (floor raised to {floor}% to cover the night)")[:260]
-            if ctx["feed_in_now"] < 15 or soc <= floor + 2:
+            if ctx["feed_in_now"] < ctx["fit_evening"] - 0.01 or soc <= floor + 2:
                 out.update(do=False, reason="feed-in too low or battery near the floor")
             else:
                 out["kw"] = round(clamp(_num(raw.get("kw"), ctx["export_kw"]), 0.5, ctx["export_kw"]), 1)
@@ -132,7 +156,7 @@ def prompt(window: str, ctx: dict[str, Any], base: dict[str, Any]) -> str:
     keys = (
         "now", "soc", "battery_kwh", "battery_usable_kwh", "pv_today", "pv_tomorrow", "solar_day", "avg_daily_load",
         "night_share", "ev_plugged", "ev_need_kwh", "shoulder", "off_peak", "peak", "fit_evening", "feed_in_now",
-        "business_day", "topup_kw", "export_kw", "export_floor", "recent",
+        "business_day", "topup_kw", "export_kw", "export_floor", "house_rule", "reserve", "house_until_cheap", "recent",
     )
     facts = {k: ctx.get(k) for k in keys}
     facts["margin_c_per_kwh"] = round(margin(ctx), 1)
@@ -175,7 +199,7 @@ def from_plan(window: str, plan: dict[str, Any], ctx: dict[str, Any]) -> dict[st
     if soc is None:
         return {"window": window, "do": False, "reason": "battery level unknown"}
     if window == TOPUP:
-        target = int(plan.get("topup") or 0)
+        target = max(int(plan.get("topup") or 0), round(house_target(ctx) or 0))
         if target and soc < target - 2:
             return {"window": window, "do": True, "kw": ctx["topup_kw"], "target_soc": target,
                     "reason": f"{tag}: top up to {target}%"}

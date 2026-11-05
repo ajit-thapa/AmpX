@@ -344,7 +344,7 @@ async def test_health_ignore_list_and_battery_unit(hass: HomeAssistant):
 # ---- battery control from the panel ---------------------------------------------
 async def test_panel_set_options_and_manual_dispatch(hass: HomeAssistant, hass_ws_client):
     async_mock_service(hass, "notify", "send_message")
-    brain = await _setup(hass, autopilot_mode="shadow")
+    brain = await _setup(hass, autopilot_mode="shadow", house_off_grid=False)
     hass.states.async_set("sensor.neovolt_online_soc", "80")
     sent = []
     for domain, svc in (("number", "set_value"), ("select", "select_option"), ("button", "press")):
@@ -538,3 +538,39 @@ async def test_same_notification_is_not_pushed_again(hass: HomeAssistant):
     assert sp.push_log[0]["repeat"] and len(sent) == 1
     assert await sp.push("Supply charge covered ($1.67 earned).", title="Cortex energy")
     assert len(sent) == 2
+
+
+async def test_house_rule_guard(hass: HomeAssistant):
+    """Outside the cheap window: forced export stops at the house's share; EV off-peak charges from the grid."""
+    async_mock_service(hass, "notify", "send_message")
+    sent = []
+    for domain, svc in (("number", "set_value"), ("select", "select_option"), ("button", "press")):
+        async def rec(call, d=domain, s=svc):
+            sent.append((d, s, dict(call.data)))
+            if d == "select":
+                hass.states.async_set(call.data["entity_id"], call.data["option"])
+        hass.services.async_register(domain, svc, rec)
+    brain = await _setup(hass, autopilot_mode="auto")
+    mode = LEGACY["dispatch_mode"]
+    # 22:00 weekday (off-peak), house uses ~1 kWh/h until 10:00 = 12 kWh; battery 40% of 50 = 10 kWh usable
+    now = datetime(2026, 11, 5, 22, 0, tzinfo=dt_util.get_default_time_zone())
+    brain.energy.profile = [1.0] * 24
+    hass.states.async_set(LEGACY["battery_soc"], "40")
+    hass.states.async_set(mode, "Force Discharge")
+    assert await brain.energy.house_guard(now) == "export_stopped"
+    assert hass.states.get(mode).state == "Normal"
+    # EV starts charging (7 kW) with the house at 1 kW: battery runs at house load, grid charges the car
+    hass.states.async_set(LEGACY["studio_ev"], "7.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set(LEGACY["studio_pv"], "0", {"unit_of_measurement": "kW"})
+    hass.states.async_set(LEGACY["studio_grid"], "7.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set(LEGACY["studio_battery"], "1000", {"unit_of_measurement": "W"})  # discharging 1 kW (this sensor reads + for discharge)
+    sent.clear()
+    assert await brain.energy.house_guard(now) == "house_only"
+    assert hass.states.get(mode).state == "Force Discharge" and brain.energy.house_only
+    assert ("number", "set_value", {"entity_id": LEGACY["dispatch_power"], "value": 1.2}) in sent  # 1 kW house + 200 W
+    assert await brain.energy.ev_guard(now) is None  # EV-first does not take over
+    # EV done: back to normal
+    hass.states.async_set(LEGACY["studio_ev"], "0", {"unit_of_measurement": "kW"})
+    assert await brain.energy.house_guard(now) == "ended" and hass.states.get(mode).state == "Normal"
+    # inside the cheap window the rule does nothing
+    assert await brain.energy.house_guard(now.replace(hour=11)) is None

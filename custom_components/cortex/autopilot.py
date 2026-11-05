@@ -27,6 +27,8 @@ from .const import (
     CONF_RATE_LOW_PEAK,
     CONF_ST_DAY_LOAD,
     CONF_TOPUP_KW,
+    CONF_HOUSE_RULE,
+    CONF_RESERVE,
 )
 from .feature import Feature
 
@@ -124,7 +126,14 @@ class Autopilot(Feature):
              **({"outcome": d["outcome"]} if d.get("outcome") else {})}
             for d in self.decisions[-4:]
         ]
+        needs = brain.energy.house_needs()
         return {
+            "house_rule": bool(o.get(CONF_HOUSE_RULE)),
+            "reserve": float(o[CONF_RESERVE]),
+            "house_until_cheap": needs["until_cheap"],
+            "night_need": needs["night"],
+            "pv_after_cheap": needs["pv_after"],
+            "off_peak_fit": plan.fit_off_peak,
             "now": dt_util.now().strftime("%a %H:%M"),
             "soc": s.get("battery_soc"),
             "battery_kwh": float(o[CONF_BATTERY_KWH]),

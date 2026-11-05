@@ -54,3 +54,31 @@ def test_from_plan_keeps_the_night_floor():
     d = rules.from_plan(rules.TOPUP, {"topup": 90, "saving": 0.5}, ctx)
     assert d["do"] and d["target_soc"] == 90
     assert not rules.from_plan(rules.TOPUP, {"topup": 0}, ctx)["do"]
+
+
+# ---- house rule: no grid power for the house outside the cheap window ------------------
+def test_planner_keeps_the_house_off_the_grid():
+    # evening, battery at 60%, dull day tomorrow: without the rule exporting can win; with it, never short
+    on = best_plan(datetime(2026, 11, 5, 16, 30), FixedTOU(Tariff()), 60, BatterySpec(house_rule=True), LOAD, 0.5, 8)
+    off = best_plan(datetime(2026, 11, 5, 16, 30), FixedTOU(Tariff()), 60, BatterySpec(house_rule=False), LOAD, 0.5, 8)
+    assert on["house_grid"] <= 0.2 and on["house_grid"] <= off["house_grid"]
+    for row in on["rows"]:
+        if row["period"] != "shoulder":
+            assert row["grid"] <= 0.21 / 2 or row["action"] == "top-up"
+
+
+def test_rules_floor_and_topup_follow_the_house_need():
+    ctx = {"soc": 80.0, "battery_kwh": 50.0, "export_floor": 30.0, "avg_daily_load": 20.0, "night_share": 0.35,
+           "topup_kw": 5.0, "export_kw": 7.0, "house_rule": True, "reserve": 20.0, "house_until_cheap": 15.0,
+           "night_need": 18.0, "pv_after_cheap": 3.0, "shoulder": 11.0, "fit_evening": 12.0, "feed_in_now": 12.0,
+           "pv_today": 10.0, "ev_plugged": False, "ev_need_kwh": 0.0}
+    assert rules.night_floor(ctx) == 52.0  # 20% reserve + 15 kWh (30%) + 2
+    d = rules.baseline(rules.EXPORT, ctx)
+    assert d["do"] and d["floor_soc"] == 52
+    # thin price margin (12c x 0.9 < 11c + 2c) would skip the top-up; the house rule still needs 20 + 30 + 3 = 53%
+    t = rules.baseline(rules.TOPUP, {**ctx, "soc": 30.0})
+    assert t["do"] and t["target_soc"] == 53
+    assert not rules.baseline(rules.TOPUP, {**ctx, "soc": 30.0, "house_rule": False})["do"]
+    # the model may not skip it
+    v = rules.validate(rules.TOPUP, {"do": False, "reason": "no"}, {**ctx, "soc": 30.0}, t)
+    assert v["do"] and v["target_soc"] == 53

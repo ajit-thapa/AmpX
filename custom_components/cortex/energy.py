@@ -52,6 +52,7 @@ from .const import (
     CONF_SUPPLY,
     CONF_TOPUP_KW,
     CONF_EFFICIENCY,
+    CONF_HOUSE_RULE,
     CONF_FIT_EVENING_END,
     CONF_FIT_EVENING_START,
     CONF_FIT_MORNING_END,
@@ -101,6 +102,9 @@ class EnergyBrain:
         # Today's export earnings, built minute by minute from the export counter at the rate of the moment.
         self.earned: dict[str, Any] = {"day": None, "cents": 0.0, "last": None}
         self.ev_guard_note: str | None = None
+        self.house_only = False  # Cortex is running the battery at house load so the grid charges the EV
+        self.house_note: str | None = None
+        self._rule_told: dict[str, str] = {}
         self.house_kwh_day = 22.0  # average daily use, refreshed hourly from history
         self.profile: list[float] | None = None  # house kWh per hour of day, EV charging removed
         self.holidays: set[date] = set()  # public holidays for the next year, from the calendar
@@ -218,6 +222,8 @@ class EnergyBrain:
         data["supply_left"] = round(self.supply_left(), 2)
         data["budget"] = tariff.battery_budget(now, soc, bat_kwh, reserve, plan, self.house_kwh_day, self.supply_left(), self.profile)
         data["ev_guard"] = self.ev_guard_note
+        data["house_rule"] = bool(o.get(CONF_HOUSE_RULE))
+        data["house_note"] = self.house_note
         data["storage_summary"] = self._storage_summary(data, bat_kwh, ev_kwh)
         data["summary"] = self._summary(data)
         return data
@@ -329,6 +335,25 @@ class EnergyBrain:
         self.profile = [round(sums[h] / counts[h], 3) if counts[h] else flat for h in range(24)]
         self.house_kwh_day = round(sum(self.profile), 1)
 
+    def house_needs(self, now: datetime | None = None) -> dict[str, float | None]:
+        """What the house alone needs from the battery (kWh), for the house rule.
+
+        ``until_cheap``: from now until the next cheap window opens. ``night``: from the end of
+        today's cheap window until the next one, and ``pv_after``: forecast solar after it ends."""
+        now = now or dt_util.now()
+        o, plan = self.brain.opts, self.plan()
+        cap, res = float(o[CONF_BATTERY_KWH]), float(o[CONF_RESERVE])
+        b = tariff.battery_budget(now, 100.0, cap, res, plan, self.house_kwh_day, 0.0, self.profile)
+        end = now.replace(hour=plan.shoulder_window[1] % 24, minute=0, second=0, microsecond=0)
+        at = end if end > now else now
+        n = tariff.battery_budget(at, 100.0, cap, res, plan, self.house_kwh_day, 0.0, self.profile)
+        pv = self._num(CONF_PV_TODAY)
+        hours = [h / 2 for h in range(48)]
+        shape = planner.solar_shape(1.0, hours)
+        frac = sum(v for h, v in zip(hours, shape) if h >= at.hour + at.minute / 60) / (sum(shape) or 1.0)
+        return {"until_cheap": b["house"] if b else None, "night": n["house"] if n else None,
+                "pv_after": round(pv * frac, 1) if pv is not None and at.date() == now.date() else 0.0}
+
     def spec(self) -> planner.BatterySpec:
         o = self.brain.opts
         return planner.BatterySpec(
@@ -337,6 +362,7 @@ class EnergyBrain:
             export_kw=float(o[CONF_EXPORT_KW]), min_export_floor=float(o[CONF_EXPORT_FLOOR]),
             cycle_cost_c=float(o.get(CONF_CYCLE_COST) or 0),
             efficiency=min(max(float(o.get(CONF_EFFICIENCY) or 90) / 100, 0.5), 1.0),
+            house_rule=bool(o.get(CONF_HOUSE_RULE)),
         )
 
     def run_planner(self, now: datetime | None = None) -> dict[str, Any] | None:
@@ -389,7 +415,7 @@ class EnergyBrain:
             return None
         mode_id = o.get(CONF_MODE)
         state = self.hass.states.get(mode_id) if mode_id else None
-        if state is None or state.state != "Force Discharge":
+        if state is None or state.state != "Force Discharge" or self.house_only:
             return None
         live = self.brain.live_flows()
         ev = live["ev"]
@@ -422,6 +448,89 @@ class EnergyBrain:
             await self._set("number", "set_value", CONF_POWER, value=want)
             return "trickle" if covered else "adjusted"
         return "ok"
+
+    async def _tell_once(self, key: str, msg: str) -> None:
+        day = dt_util.now().date().isoformat()
+        if self._rule_told.get(key) == day:
+            return
+        self._rule_told[key] = day
+        self.brain.log("energy", msg)
+        await self.brain.speaker.push(msg, title="Cortex energy")
+
+    async def house_guard(self, now: datetime | None = None) -> str | None:
+        """The house rule: outside the cheap window the house never buys grid power.
+
+        * A forced export stops once the battery holds only what the house needs until the
+          next cheap window (any mode, manual included).
+        * While the EV charges off-peak and the battery has nothing to spare, Cortex runs the
+          battery at the house's load so the grid charges the car and the house stays on the
+          battery (only when Cortex controls the battery: timers or Autopilot).
+        * In peak the EV may not use the grid either: Cortex asks to pause it if the battery
+          can't cover both.
+        """
+        now = now or dt_util.now()
+        o = self.brain.opts
+        if not o.get(CONF_HOUSE_RULE):
+            self.house_note = None
+            return await self._end_house_only() if self.house_only else None
+        plan = self.plan()
+        mode_id = o.get(CONF_MODE)
+        state = self.hass.states.get(mode_id) if mode_id else None
+        mode = state.state if state else None
+        cheap = tariff._in(now.hour, plan.shoulder_window)
+        per = tariff.period(now, plan, self.is_holiday(now.date()))
+        need = self.house_needs(now)["until_cheap"] or 0.0
+        soc = self._num(CONF_SOC)
+        cap, res = float(o[CONF_BATTERY_KWH]), float(o[CONF_RESERVE])
+        usable = None if soc is None else max(soc - res, 0.0) / 100 * cap
+        spare = None if usable is None else usable - need
+        live = self.brain.live_flows()
+        ev, home = live["ev"], max(live["load"] - live["ev"], 0.0)
+        self.house_note = None
+        if cheap or spare is None:
+            return await self._end_house_only() if self.house_only else None
+
+        # 1. a forced export must leave the house's share in the battery
+        if mode == "Force Discharge" and not self.house_only and spare <= 0.5:
+            await self.stop(only_mode="Force Discharge")
+            self.ev_guard_note = None
+            await self._tell_once("export", f"Export stopped: the battery keeps {need:.0f} kWh for the house until "
+                                            f"{plan.shoulder_window[0]:02d}:00, so the house won't buy grid power.")
+            return "export_stopped"
+
+        acting = self.brain.control_mode() in ("auto", "timers")
+        # 2. EV charging off-peak with nothing to spare: battery for the house, grid for the car
+        if self.house_only or (ev >= 0.5 and per != tariff.PEAK and spare <= 0.5 and acting and mode in (None, "Normal")):
+            if ev < 0.3 or per == tariff.PEAK or not acting:
+                return await self._end_house_only()
+            want = round(min(float(o.get(CONF_BATT_MAX_KW) or 10.0), home + float(o.get(CONF_EV_TRICKLE_KW) or 0.0)), 1)
+            if not self.house_only:
+                await self._set("number", "set_value", CONF_DURATION, value=240)
+                await self._set("number", "set_value", CONF_DISCHARGE_TARGET, value=res)
+                await self._set("number", "set_value", CONF_POWER, value=want)
+                if not await self._set("select", "select_option", CONF_MODE, option="Force Discharge"):
+                    return "failed"
+                self.house_only = True
+                self.brain.log("energy", f"house rule: battery covers the house ({want:.1f} kW), grid charges the EV")
+            elif abs((self._num(CONF_POWER) or 0.0) - want) >= 0.1:
+                await self._set("number", "set_value", CONF_POWER, value=want)
+            self.house_note = (f"House rule: the battery covers only the house ({home:.1f} kW); the EV ({ev:.1f} kW) "
+                               f"charges from the off-peak grid so the battery keeps {need:.0f} kWh for the house.")
+            return "house_only"
+
+        # 3. peak: no grid for the EV either
+        if ev >= 0.5 and per == tariff.PEAK and spare - ev * 0.5 < 0:
+            self.house_note = f"Peak: the battery can't carry the EV ({ev:.1f} kW) and the house until {plan.shoulder_window[0]:02d}:00. Pause the EV."
+            await self._tell_once("peak_ev", self.house_note)
+            return "pause_ev"
+        return None
+
+    async def _end_house_only(self) -> str:
+        self.house_only = False
+        self.house_note = None
+        await self.stop(only_mode="Force Discharge")
+        self.brain.log("energy", "house rule: battery back to normal")
+        return "ended"
 
     # ---- actions --------------------------------------------------------
     async def _set(self, domain: str, service: str, key: str, **data: Any) -> bool:
@@ -474,6 +583,13 @@ class EnergyBrain:
         if not force and (soc is None or soc <= float(o[CONF_EXPORT_MIN_SOC])):
             return "skipped: battery too low to export"
         plan = self.plan()
+        if o.get(CONF_HOUSE_RULE):
+            # never export what the house needs before the next cheap window
+            cap, res = float(o[CONF_BATTERY_KWH]), float(o[CONF_RESERVE])
+            keep = res + (self.house_needs()["until_cheap"] or 0.0) / cap * 100 + 2
+            floor = max(float(floor or o[CONF_EXPORT_FLOOR]), min(round(keep), 100))
+            if soc is not None and soc <= floor + 1:
+                return f"skipped: the house needs the battery down to {floor:.0f}% until the cheap window"
         await self._set("number", "set_value", CONF_POWER, value=float(kw or o[CONF_EXPORT_KW]))
         await self._set("number", "set_value", CONF_DURATION, value=240)
         await self._set(

@@ -956,7 +956,9 @@ class CortexStudio extends HTMLElement {
       <div class="ctl2">
         <div><h3>Limits <span class="muted">used by timers, Autopilot and manual dispatch</span></h3>
           ${slider("export_kw", "Export power", 0.5, 10, 0.5, "kW")}${slider("export_floor", "Export floor, battery stops at", 10, 90, 1, "%")}${slider("topup_kw", "Top-up power", 0.5, 10, 0.5, "kW")}
-          <div class="evfirst"><label class="row"><span><b>EV first</b><span class="muted">While the EV charges, the battery feeds the car first. It exports until the daily supply charge is covered, then only ${Math.round((c.ev_trickle_kw ?? 0.2) * 1000)} W to cover the inverter.</span></span>${this._toggle(`data-optev="1"`, c.ev_priority)}</label>
+          <div class="evfirst"><label class="row"><span><b>House rule</b><span class="muted">Outside ${wl(this._rates().sw)} the house never buys grid power: exports stop at what the house needs until then, and an off-peak EV charges from the grid while the battery covers only the house.</span></span>${this._toggle(`data-optrule="1"`, c.house_rule)}</label>
+            ${d.energy.house_note ? `<div class="evnote">${icon("home")}<span>${esc(d.energy.house_note)}</span></div>` : ""}</div>
+          <div class="evfirst"><label class="row"><span><b>EV first</b><span class="muted">While the EV charges during an export, the battery feeds the car first. It exports until the daily supply charge is covered, then only ${Math.round((c.ev_trickle_kw ?? 0.2) * 1000)} W to cover the inverter.</span></span>${this._toggle(`data-optev="1"`, c.ev_priority)}</label>
             <div class="row"><span class="muted">Supply charge today</span><b>$${fx(d.energy.export_earned, 2)} earned · ${d.energy.supply_left > 0 ? "$" + fx(d.energy.supply_left, 2) + " to go" : "covered ✓"}</b></div>
             ${d.energy.ev_guard ? `<div class="evnote">${icon("car")}<span>${esc(d.energy.ev_guard)}</span></div>` : ""}</div></div>
         <div>${manual ? manualPane : autoPane}</div></div>
@@ -998,6 +1000,7 @@ class CortexStudio extends HTMLElement {
     });
     r.querySelectorAll("[data-optb]").forEach(i => i.onchange = () => save({ autopilot_use_ai: i.checked }));
     r.querySelectorAll("[data-optev]").forEach(i => i.onchange = () => save({ ev_priority: i.checked }));
+    r.querySelectorAll("[data-optrule]").forEach(i => i.onchange = () => save({ house_off_grid: i.checked }));
     const act = async (action, extra) => { msg("Sending…"); try { const x = await this._hass.callWS({ type: "cortex/action", action, ...extra }); msg(typeof x.result === "string" ? x.result : "Done"); } catch (e) { msg("Failed: " + (e.message || e.code), true); } setTimeout(() => this._load(), 1500); };
     const val = k => parseFloat((q(`[data-opt="${k}"]`) || {}).value);
     const click = (id, fn) => { const el = q(id); if (el) el.onclick = fn; };
@@ -1645,7 +1648,7 @@ class CortexStudio extends HTMLElement {
       <div class="lg"><span><b style="color:${C.batt}">━</b> battery %</span><span><b style="color:${C.grid}">■</b> grid top-up</span><span><b style="color:${C.off_peak}">■</b> export</span><span><b style="color:${C.peak}">┄</b> reserve</span></div>
       <details class="more slots"><summary><b>Hour by hour</b><span class="muted">rate, action, house, solar, grid (+ buy / − sell), battery</span></summary>
         <div class="tblwrap"><table class="ptbl"><thead><tr><th>Time</th><th>Buy / sell</th><th>Action</th><th>House</th><th>Solar</th><th>Grid</th><th>Battery</th></tr></thead><tbody>${tbl}</tbody></table></div></details>
-      <div class="muted" style="margin-top:8px">Re-planned every 15 min from ${esc(p.profile_source || "")}, solar forecast, your ${esc(this._name("plan"))} rates and ${p.candidates} candidate plans. EV charging isn't in the plan.</div>
+      <div class="muted" style="margin-top:8px">Re-planned every 15 min from ${esc(p.profile_source || "")}, solar forecast, your ${esc(this._name("plan"))} rates and ${p.candidates} candidate plans. EV charging isn't in the plan.${p.house_rule ? (p.house_grid > 0.2 ? ` <b class="bad">The battery can't carry the house to the next cheap window: ${fx(p.house_grid, 1)} kWh from the grid at least.</b>` : " House rule kept: no grid power for the house outside the cheap window.") : ""}</div>
       <div class="toast" id="plan-msg"></div></div>`;
   }
   _wirePlan() {

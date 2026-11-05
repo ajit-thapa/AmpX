@@ -38,6 +38,7 @@ class BatterySpec:
     export_kw: float = 7.0
     min_export_floor: float = 30.0
     cycle_cost_c: float = 3.0  # cents per kWh discharged (wear)
+    house_rule: bool = True  # plans that make the house buy grid power outside the cheap window are a last resort
 
 
 @dataclass
@@ -53,6 +54,7 @@ class Plan:
     wear_c: float = 0.0
     end_value_c: float = 0.0
     min_soc: float = 100.0
+    house_grid: float = 0.0  # kWh the house buys outside the cheap window
     rows: list[dict[str, Any]] = field(default_factory=list)
 
     def describe(self) -> str:
@@ -76,7 +78,7 @@ def simulate(p: Plan, slots: list, load: list[float], pv: list[float], soc0: flo
     stored = soc0 / 100 * cap
     floor_res = spec.reserve_pct / 100 * cap
     lim = spec.max_kw * SLOT_H
-    imp = exp = cost_imp = rev = wear = 0.0
+    imp = exp = cost_imp = rev = wear = house_grid = 0.0
     low = soc0
     rows = []
     fit_hi = max((s[2] for s in slots), default=0.0) - 0.01  # forced export only in the best feed-in hours
@@ -116,6 +118,8 @@ def simulate(p: Plan, slots: list, load: list[float], pv: list[float], soc0: flo
                 stored += take * half
                 g_out = -net - take
         imp += g_in
+        if period != "shoulder":
+            house_grid += g_in
         exp += g_out
         cost_imp += g_in * rate
         rev += g_out * fit
@@ -131,6 +135,7 @@ def simulate(p: Plan, slots: list, load: list[float], pv: list[float], soc0: flo
     p.import_c, p.export_c, p.wear_c = round(cost_imp, 1), round(rev, 1), round(wear, 1)
     p.cost = round(cost_imp - rev + wear - p.end_value_c, 1)
     p.min_soc = round(low, 1)
+    p.house_grid = round(house_grid, 2)
     p.rows = rows
     return p
 
@@ -160,8 +165,12 @@ def best_plan(now: datetime, tariff: Tariff, soc0: float, spec: BatterySpec, loa
              for t in [0, 40, 50, 60, 70, 80, 90, 100]
              for f in floors for s in (starts if f else starts[:1])]
     base = next(p for p in plans if not p.topup and not p.floor)
-    ok = [p for p in plans if p.min_soc >= spec.reserve_pct - 0.5]
-    best = min(ok or plans, key=lambda p: (p.cost, p.topup, -p.floor))
+    ok = [p for p in plans if p.min_soc >= spec.reserve_pct - 0.5] or plans
+    if spec.house_rule:
+        clean = [p for p in ok if p.house_grid <= 0.2]
+        # no plan keeps the house off the grid: buy as little as possible outside the cheap window
+        ok = clean or [p for p in ok if p.house_grid <= min(x.house_grid for x in ok) + 0.2]
+    best = min(ok, key=lambda p: (p.cost, p.topup, -p.floor))
     simulate(best, slots, load, pv, soc0, spec, keep_rows=True)
     simulate(base, slots, load, pv, soc0, spec, keep_rows=False)
     return {
@@ -171,5 +180,6 @@ def best_plan(now: datetime, tariff: Tariff, soc0: float, spec: BatterySpec, loa
         "cost": round(best.cost / 100, 2), "baseline": round(base.cost / 100, 2),
         "saving": round((base.cost - best.cost) / 100, 2),
         "imported": best.imported, "exported": best.exported, "min_soc": best.min_soc,
+        "house_grid": best.house_grid, "house_rule": spec.house_rule,
         "candidates": len(plans), "rows": best.rows,
     }

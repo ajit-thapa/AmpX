@@ -363,6 +363,10 @@ class Cortex:
         if self.energy.track_export() != before:
             self.save()
         try:
+            await self.energy.house_guard()
+        except Exception as err:  # noqa: BLE001 - a failed guard must not stop the minute tick
+            _LOGGER.warning("House rule guard failed: %s", err)
+        try:
             await self.energy.ev_guard()
         except Exception as err:  # noqa: BLE001 - a failed guard must not stop the minute tick
             _LOGGER.warning("EV-first export guard failed: %s", err)

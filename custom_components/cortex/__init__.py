@@ -21,7 +21,7 @@ PLATFORMS = ["sensor"]
 PANEL_URL = "cortex"
 FRONTEND_PATH = f"/{DOMAIN}_static"
 FILES_PATH = f"/{DOMAIN}_files"  # photos uploaded from the panel, kept in <config>/cortex
-FRONTEND_VERSION = "0.21.0"  # cache-buster for the panel scripts
+FRONTEND_VERSION = "0.22.0"  # cache-buster for the panel scripts
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
