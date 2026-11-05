@@ -159,7 +159,7 @@ class Autopilot(Feature):
         plan = self._fresh_plan()
         if plan is not None:
             now = dt_util.now()
-            if window == rules.EXPORT and plan.get("floor") and int(plan.get("start") or 17) > now.hour:
+            if window == rules.EXPORT and plan.get("floor") and int(plan.get("start") if plan.get("start") is not None else 17) > now.hour:
                 at = now.replace(hour=int(plan["start"]), minute=0, second=45, microsecond=0)
 
                 async def later(_t: datetime) -> None:

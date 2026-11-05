@@ -116,7 +116,7 @@ def tips(s: dict[str, Any], live: dict[str, float], now: datetime, *, mode: str 
         add(INFO, s["ev_guard"], f"${left:.2f} of the supply charge left to earn" if left else "supply charge covered")
 
     # Evening feed-in window
-    if fit >= 20 and hands_off and grid > -0.5:
+    if s.get("fit_high", fit >= 20) and hands_off and grid > -0.5:
         room = spare if spare is not None else (usable or 0) - 5
         if room is not None and room > 2:
             add(INFO, f"Feed-in pays {fit:.0f}c now. The battery can spare {room:.0f} kWh after the house's needs: export up to that from the Battery tab.",
@@ -125,7 +125,7 @@ def tips(s: dict[str, Any], live: dict[str, float], now: datetime, *, mode: str 
     # Tomorrow
     tom, low = s.get("pv_tomorrow"), s.get("low_solar")
     if now.hour >= 17 and tom is not None and low and tom < low:
-        add(INFO, f"Tomorrow looks dull ({tom:.0f} kWh of solar). Plan a battery top-up in the 10:00 to 14:00 window.")
+        add(INFO, f"Tomorrow looks dull ({tom:.0f} kWh of solar). Plan a battery top-up in the {s.get('shoulder_window') or '10:00 to 14:00'} window.")
 
     if soc is not None and soc <= reserve + 3 and period != "shoulder":
         add(WARN, f"Battery is down to {soc:.0f}% (reserve {reserve:.0f}%).")

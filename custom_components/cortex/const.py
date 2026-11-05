@@ -100,7 +100,41 @@ CONF_AUTO_EXPORT = "auto_export"
 CONF_EV_GATE = "ev_gate"
 CONF_EV_WINDOW = "ev_window"
 
+# --- your home: names, photos and extra sensors the panel shows --------------
+CONF_NAME_BATTERY = "battery_name"
+CONF_NAME_EV = "ev_name"
+CONF_NAME_CHARGER = "charger_name"
+CONF_PLAN_NAME = "plan_name"
+CONF_PHOTO_EV = "photo_ev"
+CONF_PHOTO_BATTERY = "photo_battery"
+CONF_PHOTO_BG = "photo_background"
+PHOTO_KINDS = {"ev": CONF_PHOTO_EV, "battery": CONF_PHOTO_BATTERY, "background": CONF_PHOTO_BG}
+CONF_EV_CHARGER_KW = "ev_charger_kw"
+CONF_EFFICIENCY = "battery_efficiency"
+CONF_ST_DAY_CHARGE = "studio_day_charge"
+CONF_ST_DAY_DISCHARGE = "studio_day_discharge"
+CONF_ST_LOAD = "studio_load"  # house load power, optional (peak power history)
+CONF_PV_NOW = "pv_forecast_now"  # forecast solar power right now, optional (solar vs forecast chart)
+CONF_SUMMARY = "summary_sensor"
+CONF_BEST_TIME = "best_time_sensor"
+CONF_HOUSE_SENSORS = "house_sensors"
+CONF_BILL_SENSORS = "bill_sensors"
+CONF_AUTOMATIONS = "related_automations"
+
 # --- tariff ---------------------------------------------------------------
+CONF_SHOULDER_START = "shoulder_start"
+CONF_SHOULDER_END = "shoulder_end"
+CONF_PEAK_START = "peak_start"
+CONF_PEAK_END = "peak_end"
+CONF_PEAK_DAYS = "peak_days"  # business | weekdays | everyday
+PEAK_DAYS = ["business", "weekdays", "everyday"]
+CONF_HIGH_MONTHS = "high_months"
+CONF_FIT_EVENING_START = "fit_evening_start"
+CONF_FIT_EVENING_END = "fit_evening_end"
+CONF_FIT_MORNING_START = "fit_morning_start"
+CONF_FIT_MORNING_END = "fit_morning_end"
+WINDOW_KEYS = (CONF_SHOULDER_START, CONF_SHOULDER_END, CONF_PEAK_START, CONF_PEAK_END,
+               CONF_FIT_EVENING_START, CONF_FIT_EVENING_END, CONF_FIT_MORNING_START, CONF_FIT_MORNING_END)
 CONF_RATE_HIGH_PEAK = "rate_high_peak"
 CONF_RATE_LOW_PEAK = "rate_low_peak"
 CONF_RATE_SHOULDER = "rate_shoulder"
@@ -111,6 +145,8 @@ CONF_FIT_MORNING = "fit_morning"
 CONF_FIT_OTHER = "fit_other"
 
 DEFAULTS: dict[str, object] = {
+    # Every entity id is blank: pick yours under Configure. Rates and windows are an example
+    # time-of-use plan (cheap midday window, weekday evening peak); set your own.
     CONF_SPEAKERS: [],
     CONF_MOTION: [],
     CONF_BRIEF_MORNING: "07:30:00",
@@ -136,60 +172,88 @@ DEFAULTS: dict[str, object] = {
     CONF_AP_LLM: True,
     CONF_AP_PLANNER: False,
     CONF_CYCLE_COST: 3.0,
-    CONF_EV_ENERGY: "sensor.tesla_wall_connector_energy",
+    CONF_EV_ENERGY: "",
     CONF_AP_NIGHT: 0.35,
     CONF_AP_TIMEOUT: 150,
-    CONF_ST_PV: "sensor.sungrow_pv",
-    CONF_ST_GRID: "sensor.neovolt_online_grid",
-    CONF_ST_BATT: "sensor.neovolt_online_battery_power",
-    CONF_ST_EV: "sensor.tesla_wall_connector_total_power",
+    CONF_ST_PV: "",
+    CONF_ST_GRID: "",
+    CONF_ST_BATT: "",
+    CONF_ST_EV: "",
     CONF_ST_GRID_INVERT: False,
-    CONF_ST_BATT_INVERT: True,
-    CONF_ST_DAY_PV: "sensor.neovolt_online_pv_generated_today",
-    CONF_ST_DAY_LOAD: "sensor.neovolt_online_consumed_today",
-    CONF_ST_DAY_EXPORT: "sensor.neovolt_online_feed_in_today",
-    CONF_ST_DAY_IMPORT: "sensor.neovolt_online_grid_import_today",
+    CONF_ST_BATT_INVERT: False,
+    CONF_ST_DAY_PV: "",
+    CONF_ST_DAY_LOAD: "",
+    CONF_ST_DAY_EXPORT: "",
+    CONF_ST_DAY_IMPORT: "",
+    CONF_ST_DAY_CHARGE: "",
+    CONF_ST_DAY_DISCHARGE: "",
+    CONF_ST_LOAD: "",
+    CONF_PV_NOW: "",
     CONF_QUIET_START: "22:00:00",
     CONF_QUIET_END: "07:00:00",
     CONF_BANNED: "",
     CONF_DEDUPE: 30,
-    CONF_NOTIFY: "notify.iphone_2",
-    CONF_SOC: "sensor.neovolt_online_soc",
-    CONF_MODE: "select.neovolt_neovoltlocal_dispatch_mode",
-    CONF_POWER: "number.neovolt_neovoltlocal_dispatch_power",
-    CONF_DURATION: "number.neovolt_neovoltlocal_dispatch_duration",
-    CONF_CHARGE_TARGET: "number.neovolt_neovoltlocal_dispatch_charge_target_soc",
-    CONF_DISCHARGE_TARGET: "number.neovolt_neovoltlocal_dispatch_discharge_target_soc",
-    CONF_STOP: "button.neovolt_neovoltlocal_stop_force_charge_discharge",
-    CONF_PV_TODAY: "sensor.pv_forecast_ingleburn",
-    CONF_PV_TOMORROW: "sensor.pv_forecast_forecast",
-    CONF_EV_SOC: "sensor.byd_sealion_7_battery_level",
-    CONF_EV_PLUG: "binary_sensor.byd_sealion_7_plug",
-    CONF_EV_TARGET: "input_number.byd_target_soc",
-    CONF_EV_START: "button.byd_sealion_7_start_charging",
-    CONF_HOLIDAYS: "calendar.australia_nsw",
-    CONF_BATTERY_KWH: 50.0,
-    CONF_EV_KWH: 82.5,
+    CONF_NOTIFY: "",
+    CONF_SOC: "",
+    CONF_MODE: "",
+    CONF_POWER: "",
+    CONF_DURATION: "",
+    CONF_CHARGE_TARGET: "",
+    CONF_DISCHARGE_TARGET: "",
+    CONF_STOP: "",
+    CONF_PV_TODAY: "",
+    CONF_PV_TOMORROW: "",
+    CONF_EV_SOC: "",
+    CONF_EV_PLUG: "",
+    CONF_EV_TARGET: "",
+    CONF_EV_START: "",
+    CONF_HOLIDAYS: "",
+    CONF_BATTERY_KWH: 13.5,
+    CONF_EV_KWH: 60.0,
+    CONF_EV_CHARGER_KW: 7.0,
+    CONF_EFFICIENCY: 90.0,
     CONF_RESERVE: 20.0,
-    CONF_LOW_SOLAR: 30.0,
+    CONF_LOW_SOLAR: 20.0,
     CONF_TOPUP_KW: 5.0,
-    CONF_EXPORT_KW: 7.0,
+    CONF_EXPORT_KW: 5.0,
     CONF_EXPORT_MIN_SOC: 35.0,
     CONF_EV_PRIORITY: True,
-    CONF_BATT_MAX_KW: 10.0,
+    CONF_BATT_MAX_KW: 5.0,
     CONF_EV_TRICKLE_KW: 0.2,
     CONF_EXPORT_FLOOR: 30.0,
     CONF_AUTO_TOPUP: False,
     CONF_AUTO_EXPORT: False,
     CONF_EV_GATE: False,
-    CONF_RATE_HIGH_PEAK: 41.91,
-    CONF_RATE_LOW_PEAK: 42.416,
-    CONF_RATE_SHOULDER: 11.11,
-    CONF_RATE_OFF_PEAK: 32.12,
-    CONF_SUPPLY: 166.617,
-    CONF_FIT_EVENING: 28.0,
-    CONF_FIT_MORNING: 3.0,
-    CONF_FIT_OTHER: 3.0,
+    CONF_NAME_BATTERY: "Home battery",
+    CONF_NAME_EV: "EV",
+    CONF_NAME_CHARGER: "EV charger",
+    CONF_PLAN_NAME: "My plan",
+    CONF_PHOTO_EV: "",
+    CONF_PHOTO_BATTERY: "",
+    CONF_PHOTO_BG: "",
+    CONF_SUMMARY: "",
+    CONF_BEST_TIME: "",
+    CONF_HOUSE_SENSORS: [],
+    CONF_BILL_SENSORS: [],
+    CONF_AUTOMATIONS: [],
+    CONF_RATE_HIGH_PEAK: 45.0,
+    CONF_RATE_LOW_PEAK: 45.0,
+    CONF_RATE_SHOULDER: 15.0,
+    CONF_RATE_OFF_PEAK: 30.0,
+    CONF_SUPPLY: 110.0,
+    CONF_FIT_EVENING: 10.0,
+    CONF_FIT_MORNING: 5.0,
+    CONF_FIT_OTHER: 5.0,
+    CONF_SHOULDER_START: "10:00:00",
+    CONF_SHOULDER_END: "14:00:00",
+    CONF_PEAK_START: "16:00:00",
+    CONF_PEAK_END: "20:00:00",
+    CONF_PEAK_DAYS: "business",
+    CONF_HIGH_MONTHS: ["11", "12", "1", "2", "3"],
+    CONF_FIT_EVENING_START: "17:00:00",
+    CONF_FIT_EVENING_END: "21:00:00",
+    CONF_FIT_MORNING_START: "07:00:00",
+    CONF_FIT_MORNING_END: "08:00:00",
 }
 
 SAFETY_CLASSES = {

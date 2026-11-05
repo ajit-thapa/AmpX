@@ -149,7 +149,7 @@ def prompt(window: str, ctx: dict[str, Any], base: dict[str, Any]) -> str:
             'Reply with ONLY this JSON: {"do": true|false, "kw": number, "floor_soc": number, "reason": "short"}.'
         )
     return (
-        "You are the energy planner for an Australian home on an AGL time-of-use plan. Rates are cents per kWh. "
+        "You are the energy planner for a home with solar, a battery and a time-of-use electricity plan. Rates are cents per kWh. "
         "Buying in the shoulder window is cheap; exporting in the evening pays the feed-in rate; "
         "never let the battery run flat before morning (night_floor_soc is the lowest safe level; exports below it are overridden). "
         "A top-up only pays when margin_c_per_kwh is clearly positive and solar will not fill the battery anyway. "

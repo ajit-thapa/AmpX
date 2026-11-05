@@ -6,6 +6,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, async_
 
 from custom_components.cortex import autopilot_rules as r
 from custom_components.cortex.const import DEFAULTS, DOMAIN
+from custom_components.cortex.migrate import LEGACY
 
 CTX = dict(
     soc=40, battery_kwh=50, pv_today=30, pv_tomorrow=30, avg_daily_load=25, night_share=0.35,
@@ -97,7 +98,7 @@ async def _setup(hass: HomeAssistant, **opts):
     hass.states.async_set("sensor.neovolt_online_soc", "40")
     hass.states.async_set("sensor.pv_forecast_ingleburn", "30")
     hass.states.async_set("sensor.byd_sealion_7_battery_level", "50")
-    entry = MockConfigEntry(domain=DOMAIN, title="Cortex", data={}, options={**DEFAULTS, **opts})
+    entry = MockConfigEntry(domain=DOMAIN, title="Cortex", data={}, options={**DEFAULTS, **LEGACY, **opts})
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -132,7 +133,7 @@ async def test_auto_mode_follows_model_within_limits(hass: HomeAssistant):
     assert d["result"] == "started" and d["source"] == "llm" and d["kw"] == 4
     assert {c.data["value"] for c in numbers} >= {4.0, 85.0}
     assert selects[-1].data["option"] == "Force Charge"
-    assert "AGL" in asked[0] and brain.autopilot.active["window"] == "topup"
+    assert "time-of-use" in asked[0] and brain.autopilot.active["window"] == "topup"
     assert hass.states.get("sensor.cortex_autopilot") is not None
 
 

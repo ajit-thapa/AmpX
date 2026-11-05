@@ -51,6 +51,17 @@ from .const import (
     CONF_STOP,
     CONF_SUPPLY,
     CONF_TOPUP_KW,
+    CONF_EFFICIENCY,
+    CONF_FIT_EVENING_END,
+    CONF_FIT_EVENING_START,
+    CONF_FIT_MORNING_END,
+    CONF_FIT_MORNING_START,
+    CONF_HIGH_MONTHS,
+    CONF_PEAK_DAYS,
+    CONF_PEAK_END,
+    CONF_PEAK_START,
+    CONF_SHOULDER_END,
+    CONF_SHOULDER_START,
 )
 
 if TYPE_CHECKING:
@@ -58,6 +69,27 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 UNKNOWN = ("unknown", "unavailable", "none", "")
+
+
+def hour(value: Any) -> int:
+    """Hour of a "HH:MM[:SS]" option (or a plain number of hours)."""
+    if isinstance(value, (int, float)):
+        return int(value) % 24
+    try:
+        return int(str(value).split(":")[0]) % 24
+    except ValueError:
+        return 0
+
+
+def months(value: Any) -> tuple[int, ...]:
+    out = []
+    for m in value or []:
+        try:
+            if 1 <= int(m) <= 12:
+                out.append(int(m))
+        except (TypeError, ValueError):
+            continue
+    return tuple(out)
 
 
 class EnergyBrain:
@@ -86,6 +118,12 @@ class EnergyBrain:
             fit_evening=float(o[CONF_FIT_EVENING]),
             fit_morning=float(o[CONF_FIT_MORNING]),
             fit_off_peak=float(o[CONF_FIT_OTHER]),
+            high_months=months(o.get(CONF_HIGH_MONTHS)),
+            shoulder_window=(hour(o[CONF_SHOULDER_START]), hour(o[CONF_SHOULDER_END])),
+            peak_window=(hour(o[CONF_PEAK_START]), hour(o[CONF_PEAK_END])),
+            fit_evening_window=(hour(o[CONF_FIT_EVENING_START]), hour(o[CONF_FIT_EVENING_END])),
+            fit_morning_window=(hour(o[CONF_FIT_MORNING_START]), hour(o[CONF_FIT_MORNING_END])),
+            peak_days=str(o.get(CONF_PEAK_DAYS) or "business"),
         )
 
     def _num(self, key: str) -> float | None:
@@ -154,6 +192,8 @@ class EnergyBrain:
             "period": cur,
             "import_rate": tariff.import_rate(now, plan, holiday),
             "feed_in_rate": tariff.feed_in_rate(now, plan),
+            "fit_high": tariff.feed_in_rate(now, plan) >= plan.fit_evening > max(plan.fit_morning, plan.fit_off_peak),
+            "shoulder_window": f"{plan.shoulder_window[0]:02d}:00 to {plan.shoulder_window[1]:02d}:00",
             "next_period": change_to,
             "next_change": change_at,
             "business_day": tariff.is_business_day(now.date(), holiday),
@@ -204,7 +244,7 @@ class EnergyBrain:
             f"{name.capitalize()} {d['import_rate']:g}c",
             f"next {d['next_period'].replace('_', ' ')} {d['next_change'].astimezone().strftime('%H:%M')}",
         ]
-        if d["feed_in_rate"] >= 20:
+        if d.get("fit_high"):
             parts.insert(0, f"Export {d['feed_in_rate']:g}c now")
         if d["pv_today"] is not None:
             parts.append(f"solar {d['pv_today']:.0f} kWh ({d['solar_day']})")
@@ -296,6 +336,7 @@ class EnergyBrain:
             max_kw=float(o.get(CONF_BATT_MAX_KW) or 10), topup_kw=float(o[CONF_TOPUP_KW]),
             export_kw=float(o[CONF_EXPORT_KW]), min_export_floor=float(o[CONF_EXPORT_FLOOR]),
             cycle_cost_c=float(o.get(CONF_CYCLE_COST) or 0),
+            efficiency=min(max(float(o.get(CONF_EFFICIENCY) or 90) / 100, 0.5), 1.0),
         )
 
     def run_planner(self, now: datetime | None = None) -> dict[str, Any] | None:

@@ -79,13 +79,14 @@ def simulate(p: Plan, slots: list, load: list[float], pv: list[float], soc0: flo
     imp = exp = cost_imp = rev = wear = 0.0
     low = soc0
     rows = []
+    fit_hi = max((s[2] for s in slots), default=0.0) - 0.01  # forced export only in the best feed-in hours
     for i, (t, rate, fit, period) in enumerate(slots):
         h = t.hour + t.minute / 60
         net = load[i] - pv[i]  # + needs energy, - surplus
         g_in = g_out = 0.0
         action = "self-use"
         # forced evening export (house is served first, the rest goes to the grid)
-        if p.floor and fit >= 20 and h >= p.start and stored > p.floor / 100 * cap:
+        if p.floor and fit >= fit_hi and h >= p.start and stored > p.floor / 100 * cap:
             room = stored - p.floor / 100 * cap
             out = min(spec.export_kw * SLOT_H + max(net, 0.0), lim, room * half)
             drawn = out / half
@@ -152,10 +153,12 @@ def best_plan(now: datetime, tariff: Tariff, soc0: float, spec: BatterySpec, loa
             pv.append(pv_today_left * solar_shape(1.0, [h])[0] / s0)
         else:
             pv.append(solar_shape(pv_tomorrow, [h])[0])
+    f0, f1 = getattr(getattr(tariff, "plan", None), "fit_evening_window", (17, 21))
+    starts = [(f0 + i) % 24 for i in range(max(min((f1 - f0) % 24, 4), 1))]
     floors = [0] + list(range(int(max(spec.min_export_floor, spec.reserve_pct + 5)), 91, 10))
     plans = [simulate(Plan(t, f, s), slots, load, pv, soc0, spec)
              for t in [0, 40, 50, 60, 70, 80, 90, 100]
-             for f in floors for s in ([17, 18, 19, 20] if f else [17])]
+             for f in floors for s in (starts if f else starts[:1])]
     base = next(p for p in plans if not p.topup and not p.floor)
     ok = [p for p in plans if p.min_soc >= spec.reserve_pct - 0.5]
     best = min(ok or plans, key=lambda p: (p.cost, p.topup, -p.floor))

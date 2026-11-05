@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from datetime import timedelta
+from pathlib import Path
+import re
+import secrets
 from typing import Any
 
 import voluptuous as vol
@@ -34,6 +39,7 @@ from .const import (
     CONF_TOPUP_KW,
     DOMAIN,
 )
+from .const import *  # noqa: F403 - profile and setup option keys
 from .memory import CATEGORIES
 from .runtime import Cortex
 from . import tariff
@@ -62,6 +68,40 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_action)
     websocket_api.async_register_command(hass, ws_set_options)
     websocket_api.async_register_command(hass, ws_plans_save)
+    websocket_api.async_register_command(hass, ws_upload)
+
+
+def _profile(brain: Cortex) -> dict[str, Any]:
+    """Everything the panel needs to know about this home: names, photos, entities, tariff."""
+    o, p = brain.opts, brain.energy.plan()
+    f = lambda k, d=0.0: float(o.get(k) or d)  # noqa: E731
+    lst = lambda k: [x for x in (o.get(k) or []) if isinstance(x, str) and x]  # noqa: E731
+    return {
+        "names": {"battery": o.get(CONF_NAME_BATTERY) or "Home battery", "ev": o.get(CONF_NAME_EV) or "EV",
+                  "charger": o.get(CONF_NAME_CHARGER) or "EV charger", "plan": o.get(CONF_PLAN_NAME) or "My plan"},
+        "photos": {k: o.get(v) or "" for k, v in PHOTO_KINDS.items()},
+        "battery": {"soc": o.get(CONF_SOC) or "", "power": o.get(CONF_ST_BATT) or "", "mode": o.get(CONF_MODE) or "",
+                    "capacity": f(CONF_BATTERY_KWH, 10), "reserve": f(CONF_RESERVE), "efficiency": f(CONF_EFFICIENCY, 90)},
+        "ev": {"soc": o.get(CONF_EV_SOC) or "", "plug": o.get(CONF_EV_PLUG) or "", "target": o.get(CONF_EV_TARGET) or "",
+               "start": o.get(CONF_EV_START) or "", "capacity": f(CONF_EV_KWH, 60), "charger_kw": f(CONF_EV_CHARGER_KW, 7)},
+        "charger": {"power": o.get(CONF_ST_EV) or "", "energy": o.get(CONF_EV_ENERGY) or ""},
+        "solar": {"power": o.get(CONF_ST_PV) or "", "forecast_now": o.get(CONF_PV_NOW) or "",
+                  "today": o.get(CONF_PV_TODAY) or "", "tomorrow": o.get(CONF_PV_TOMORROW) or ""},
+        "grid": o.get(CONF_ST_GRID) or "",
+        "load": o.get(CONF_ST_LOAD) or "",
+        "day": {"pv": o.get(CONF_ST_DAY_PV) or "", "load": o.get(CONF_ST_DAY_LOAD) or "", "export": o.get(CONF_ST_DAY_EXPORT) or "",
+                "import": o.get(CONF_ST_DAY_IMPORT) or "", "charge": o.get(CONF_ST_DAY_CHARGE) or "",
+                "discharge": o.get(CONF_ST_DAY_DISCHARGE) or ""},
+        "holidays": o.get(CONF_HOLIDAYS) or "", "notify": o.get(CONF_NOTIFY) or "",
+        "summary": o.get(CONF_SUMMARY) or "", "best_time": o.get(CONF_BEST_TIME) or "", "weather": o.get(CONF_WEATHER) or "",
+        "house": lst(CONF_HOUSE_SENSORS), "bills": lst(CONF_BILL_SENSORS), "automations": lst(CONF_AUTOMATIONS),
+        "tariff": {
+            "shoulder": p.shoulder, "off": p.off_peak, "hi": p.high_season_peak, "lo": p.low_season_peak,
+            "fitE": p.fit_evening, "fitM": p.fit_morning, "fitO": p.fit_off_peak, "supply": p.supply_charge,
+            "sw": list(p.shoulder_window), "pw": list(p.peak_window), "few": list(p.fit_evening_window),
+            "fmw": list(p.fit_morning_window), "months": list(p.high_months), "peak_days": p.peak_days,
+        },
+    }
 
 
 @websocket_api.websocket_command({vol.Required("type"): "cortex/overview"})
@@ -107,6 +147,7 @@ async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
             "week": brain.timeline.week(),
             "security": brain.security.check(),
             "backups": await brain.backup.list(),
+            "profile": _profile(brain),
             "studio": {
                 "pv": brain.opts.get("studio_pv"),
                 "grid": brain.opts.get("studio_grid"),
@@ -241,6 +282,49 @@ CONTROL_OPTIONS = {
     CONF_AS_NOTES: vol.All(str, vol.Length(max=600)),
 }
 
+
+def _hour_opt(value: Any) -> str:
+    """0-24 or "HH:MM[:SS]" -> "HH:00:00" (24 means midnight)."""
+    if isinstance(value, str) and ":" in value:
+        value = value.split(":")[0]
+    h = int(vol.Coerce(int)(value))
+    if not 0 <= h <= 24:
+        raise vol.Invalid("hour must be 0 to 24")
+    return f"{h % 24:02d}:00:00"
+
+
+def _months_opt(value: Any) -> list[str]:
+    out = sorted({int(vol.Coerce(int)(m)) for m in value})
+    if any(not 1 <= m <= 12 for m in out):
+        raise vol.Invalid("months are 1 to 12")
+    return [str(m) for m in out]
+
+
+def _photo_opt(value: Any) -> str:
+    value = str(value or "").strip()
+    if value and not re.match(r"^(/|https?://)", value):
+        raise vol.Invalid("photo must be a path or http(s) address")
+    return value[:400]
+
+
+_NAME = vol.All(str, vol.Strip, vol.Length(min=1, max=40))
+_RATE = vol.All(vol.Coerce(float), vol.Range(min=-200, max=500))
+CONTROL_OPTIONS.update({
+    CONF_NAME_BATTERY: _NAME, CONF_NAME_EV: _NAME, CONF_NAME_CHARGER: _NAME, CONF_PLAN_NAME: _NAME,
+    **{key: _photo_opt for key in PHOTO_KINDS.values()},
+    CONF_BATTERY_KWH: vol.All(vol.Coerce(float), vol.Range(min=1, max=500)),
+    CONF_EV_KWH: vol.All(vol.Coerce(float), vol.Range(min=1, max=300)),
+    CONF_EV_CHARGER_KW: vol.All(vol.Coerce(float), vol.Range(min=1, max=50)),
+    CONF_RESERVE: vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
+    CONF_EFFICIENCY: vol.All(vol.Coerce(float), vol.Range(min=50, max=100)),
+    CONF_RATE_SHOULDER: _RATE, CONF_RATE_OFF_PEAK: _RATE, CONF_RATE_HIGH_PEAK: _RATE, CONF_RATE_LOW_PEAK: _RATE,
+    CONF_FIT_EVENING: _RATE, CONF_FIT_MORNING: _RATE, CONF_FIT_OTHER: _RATE,
+    CONF_SUPPLY: vol.All(vol.Coerce(float), vol.Range(min=0, max=2000)),
+    **{key: _hour_opt for key in WINDOW_KEYS},
+    CONF_PEAK_DAYS: vol.In(PEAK_DAYS),
+    CONF_HIGH_MONTHS: _months_opt,
+})
+
 _BAND = vol.Schema({
     vol.Required("from"): vol.All(vol.Coerce(int), vol.Range(min=0, max=23)),
     vol.Required("to"): vol.All(vol.Coerce(int), vol.Range(min=1, max=24)),
@@ -355,3 +439,60 @@ async def ws_plans_save(hass: HomeAssistant, connection, msg) -> None:
     brain.plans = plans
     brain.save()
     connection.send_result(msg["id"], {"plans": plans})
+
+
+# ---- photos ------------------------------------------------------------------
+MAX_PHOTO = 4 * 1024 * 1024
+_MAGIC = ((b"\x89PNG", "png"), (b"\xff\xd8\xff", "jpg"), (b"GIF8", "gif"), (b"RIFF", "webp"))
+
+
+def _photo_ext(raw: bytes) -> str | None:
+    for magic, ext in _MAGIC:
+        if raw.startswith(magic) and (ext != "webp" or raw[8:12] == b"WEBP"):
+            return ext
+    return None
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "cortex/upload",
+        vol.Required("kind"): vol.In(list(PHOTO_KINDS)),
+        vol.Optional("data"): vol.Any(None, str),  # base64 or a data: URL; leave out to remove the photo
+    }
+)
+@websocket_api.async_response
+async def ws_upload(hass: HomeAssistant, connection, msg) -> None:
+    """Save a photo (car, battery or background) under <config>/cortex and point the option at it."""
+    brain = _brain(hass)
+    if brain is None:
+        connection.send_error(msg["id"], "not_loaded", "Cortex is not set up")
+        return
+    key, url = PHOTO_KINDS[msg["kind"]], ""
+    folder = Path(hass.config.path(DOMAIN))
+    old = str(brain.opts.get(key) or "")
+    data = msg.get("data")
+    if data:
+        try:
+            raw = base64.b64decode(data.split(",", 1)[1] if data.startswith("data:") else data, validate=True)
+        except (binascii.Error, ValueError, IndexError):
+            connection.send_error(msg["id"], "invalid", "Not a valid image")
+            return
+        ext = _photo_ext(raw)
+        if not ext or len(raw) > MAX_PHOTO:
+            connection.send_error(msg["id"], "invalid", "Use a PNG, JPEG, WebP or GIF under 4 MB")
+            return
+        name = f"{msg['kind']}-{secrets.token_hex(6)}.{ext}"
+
+        def write() -> None:
+            folder.mkdir(exist_ok=True)
+            (folder / name).write_bytes(raw)
+
+        await hass.async_add_executor_job(write)
+        url = f"/{DOMAIN}_files/{name}"
+    prefix = f"/{DOMAIN}_files/"
+    if old.startswith(prefix):  # remove the photo this one replaces
+        stale = folder / Path(old[len(prefix):]).name
+        await hass.async_add_executor_job(lambda: stale.unlink(missing_ok=True))
+    entry = brain.entry
+    hass.config_entries.async_update_entry(entry, options={**entry.options, key: url})
+    connection.send_result(msg["id"], {"url": url})

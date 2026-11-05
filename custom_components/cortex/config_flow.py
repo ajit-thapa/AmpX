@@ -72,6 +72,20 @@ SECTIONS: dict[str, dict[str, Any]] = {
         CONF_AGENT: sel.ConversationAgentSelector(),
         CONF_AI_PER_HOUR: _num(0, 120, 1, "calls/h"),
     },
+    "profile": {
+        CONF_NAME_BATTERY: sel.TextSelector(),
+        CONF_NAME_EV: sel.TextSelector(),
+        CONF_NAME_CHARGER: sel.TextSelector(),
+        CONF_PLAN_NAME: sel.TextSelector(),
+        CONF_PHOTO_EV: sel.TextSelector(),
+        CONF_PHOTO_BATTERY: sel.TextSelector(),
+        CONF_PHOTO_BG: sel.TextSelector(),
+        CONF_SUMMARY: _entity("sensor", "input_text"),
+        CONF_BEST_TIME: _entity("sensor", "input_text"),
+        CONF_HOUSE_SENSORS: sel.EntitySelector(sel.EntitySelectorConfig(multiple=True)),
+        CONF_BILL_SENSORS: _entity("sensor", "input_number", multiple=True),
+        CONF_AUTOMATIONS: _entity("automation", multiple=True),
+    },
     "studio": {
         CONF_ST_PV: _entity("sensor"),
         CONF_ST_GRID: _entity("sensor"),
@@ -83,6 +97,10 @@ SECTIONS: dict[str, dict[str, Any]] = {
         CONF_ST_DAY_LOAD: _entity("sensor"),
         CONF_ST_DAY_EXPORT: _entity("sensor"),
         CONF_ST_DAY_IMPORT: _entity("sensor"),
+        CONF_ST_DAY_CHARGE: _entity("sensor"),
+        CONF_ST_DAY_DISCHARGE: _entity("sensor"),
+        CONF_ST_LOAD: _entity("sensor"),
+        CONF_PV_NOW: _entity("sensor"),
         CONF_EV_ENERGY: _entity("sensor"),
     },
     "energy": {
@@ -102,6 +120,8 @@ SECTIONS: dict[str, dict[str, Any]] = {
         CONF_HOLIDAYS: _entity("calendar"),
         CONF_BATTERY_KWH: _num(1, 500, 0.1, "kWh"),
         CONF_EV_KWH: _num(1, 300, 0.1, "kWh"),
+        CONF_EV_CHARGER_KW: _num(1, 50, 0.1, "kW"),
+        CONF_EFFICIENCY: _num(50, 100, 1, "%"),
         CONF_RESERVE: _num(0, 100, 1, "%"),
         CONF_LOW_SOLAR: _num(0, 200, 1, "kWh"),
         CONF_TOPUP_KW: _num(0.5, 30, 0.1, "kW"),
@@ -124,6 +144,20 @@ SECTIONS: dict[str, dict[str, Any]] = {
         CONF_FIT_EVENING: _num(0, 200, 0.001, "c/kWh"),
         CONF_FIT_MORNING: _num(0, 200, 0.001, "c/kWh"),
         CONF_FIT_OTHER: _num(0, 200, 0.001, "c/kWh"),
+        CONF_SHOULDER_START: sel.TimeSelector(),
+        CONF_SHOULDER_END: sel.TimeSelector(),
+        CONF_PEAK_START: sel.TimeSelector(),
+        CONF_PEAK_END: sel.TimeSelector(),
+        CONF_PEAK_DAYS: sel.SelectSelector(
+            sel.SelectSelectorConfig(options=PEAK_DAYS, mode=sel.SelectSelectorMode.LIST, translation_key="peak_days")
+        ),
+        CONF_HIGH_MONTHS: sel.SelectSelector(
+            sel.SelectSelectorConfig(options=[str(m) for m in range(1, 13)], multiple=True, mode=sel.SelectSelectorMode.DROPDOWN, translation_key="months")
+        ),
+        CONF_FIT_EVENING_START: sel.TimeSelector(),
+        CONF_FIT_EVENING_END: sel.TimeSelector(),
+        CONF_FIT_MORNING_START: sel.TimeSelector(),
+        CONF_FIT_MORNING_END: sel.TimeSelector(),
     },
 }
 CLEARABLE = {
@@ -133,6 +167,8 @@ CLEARABLE = {
     CONF_BRIEF_MORNING, CONF_BRIEF_EVENING, CONF_WEATHER, CONF_WEEKLY_TIME,
     CONF_AI_TASK, CONF_DOORBELL_CAMERA, CONF_ST_PV, CONF_ST_GRID, CONF_ST_BATT, CONF_ST_EV,
     CONF_ST_DAY_PV, CONF_ST_DAY_LOAD, CONF_ST_DAY_EXPORT, CONF_ST_DAY_IMPORT, CONF_EV_ENERGY,
+    CONF_ST_DAY_CHARGE, CONF_ST_DAY_DISCHARGE, CONF_ST_LOAD, CONF_PV_NOW, CONF_SUMMARY, CONF_BEST_TIME,
+    CONF_PHOTO_EV, CONF_PHOTO_BATTERY, CONF_PHOTO_BG,
 }
 
 
@@ -161,7 +197,7 @@ class CortexConfigFlow(ConfigFlow, domain=DOMAIN):
         if self._async_current_entries():
             return self.async_abort(reason="single_instance_allowed")
         if user_input is not None:
-            return self.async_create_entry(title=user_input[CONF_NAME], data={}, options=DEFAULTS)
+            return self.async_create_entry(title=user_input[CONF_NAME], data={"schema": 2}, options=DEFAULTS)
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({vol.Required(CONF_NAME, default="Cortex"): str}),
@@ -178,7 +214,7 @@ class CortexOptionsFlow(OptionsFlow):
         return {**DEFAULTS, **self.config_entry.options}
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        return self.async_show_menu(step_id="init", menu_options=["general", "briefing", "house", "autopilot", "studio", "energy", "tariff"])
+        return self.async_show_menu(step_id="init", menu_options=["profile", "general", "briefing", "house", "autopilot", "studio", "energy", "tariff"])
 
     async def _section(self, section: str, user_input: dict[str, Any] | None) -> ConfigFlowResult:
         if user_input is not None:
@@ -186,6 +222,9 @@ class CortexOptionsFlow(OptionsFlow):
         return self.async_show_form(
             step_id=section, data_schema=section_schema(section, self._current())
         )
+
+    async def async_step_profile(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        return await self._section("profile", user_input)
 
     async def async_step_general(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return await self._section("general", user_input)

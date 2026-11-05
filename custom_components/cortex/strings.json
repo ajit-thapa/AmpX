@@ -18,6 +18,7 @@
       "init": {
         "title": "Cortex",
         "menu_options": {
+          "profile": "Your home: names, photos, extra sensors",
           "general": "Voice and rules",
           "energy": "Energy and EV",
           "tariff": "Tariff rates",
@@ -71,21 +72,34 @@
           "export_floor_soc": "Export down to",
           "auto_topup": "Run the grid top-up automatically",
           "auto_export": "Run the evening export automatically",
-          "ev_gate": "Gate EV charging to the cheap window"
+          "ev_gate": "Gate EV charging to the cheap window",
+          "ev_charger_kw": "EV charger power",
+          "battery_efficiency": "Battery round-trip efficiency"
         }
       },
       "tariff": {
-        "title": "Tariff rates",
+        "title": "Tariff rates and windows",
         "data": {
-          "rate_shoulder": "Shoulder rate",
+          "rate_shoulder": "Cheap window (shoulder) rate",
           "rate_off_peak": "Off-peak rate",
-          "rate_high_peak": "Peak rate (Nov-Mar)",
-          "rate_low_peak": "Peak rate (Apr-Oct)",
+          "rate_high_peak": "Peak rate, high season",
+          "rate_low_peak": "Peak rate, rest of the year",
           "supply_charge": "Daily supply charge",
           "fit_evening": "Feed-in, evening",
           "fit_morning": "Feed-in, morning",
-          "fit_other": "Feed-in, other times"
-        }
+          "fit_other": "Feed-in, other times",
+          "shoulder_start": "Cheap window starts",
+          "shoulder_end": "Cheap window ends",
+          "peak_start": "Peak starts",
+          "peak_end": "Peak ends",
+          "peak_days": "Peak applies on",
+          "high_months": "High season months",
+          "fit_evening_start": "Evening feed-in starts",
+          "fit_evening_end": "Evening feed-in ends",
+          "fit_morning_start": "Morning feed-in starts",
+          "fit_morning_end": "Morning feed-in ends"
+        },
+        "description": "Cents per kWh. The cheap window is called shoulder. Only the hour of each time is used; an end time of 00:00 means midnight."
       },
       "briefing": {
         "title": "Briefings and reports",
@@ -126,7 +140,11 @@
           "studio_day_load": "Consumed today (kWh)",
           "studio_day_export": "Exported today (kWh)",
           "ev_energy": "EV charger energy meter (kWh total)",
-          "studio_day_import": "Imported today (kWh)"
+          "studio_day_import": "Imported today (kWh)",
+          "studio_day_charge": "Battery charged today (kWh)",
+          "studio_day_discharge": "Battery discharged today (kWh)",
+          "studio_load": "House load power (optional)",
+          "pv_forecast_now": "Solar forecast power now (optional)"
         }
       },
       "autopilot": {
@@ -140,6 +158,24 @@
           "conversation_agent": "Local model / conversation agent",
           "ai_per_hour": "Max AI calls per hour",
           "autopilot_timeout": "Wait for the model up to (then use rules)"
+        }
+      },
+      "profile": {
+        "title": "Your home",
+        "description": "Names and photos used on the Cortex panel, plus extra sensors to show. Photos can also be uploaded from the panel (Settings).",
+        "data": {
+          "battery_name": "Home battery name",
+          "ev_name": "EV name",
+          "charger_name": "EV charger name",
+          "plan_name": "Electricity plan name",
+          "photo_ev": "EV photo (URL or /local path)",
+          "photo_battery": "Battery photo (URL or /local path)",
+          "photo_background": "Panel background (URL or /local path)",
+          "summary_sensor": "Daily summary sensor (shown as chips on Energy, Today)",
+          "best_time_sensor": "Best time to run appliances sensor",
+          "house_sensors": "Extra sensors for the House tab",
+          "bill_sensors": "Bill and cost sensors for History",
+          "related_automations": "Your own energy automations (on/off switches under Devices)"
         }
       }
     }
@@ -243,6 +279,29 @@
         "off": "Off",
         "shadow": "Shadow: plan and notify, never act",
         "auto": "Auto: act within the guardrails"
+      }
+    },
+    "peak_days": {
+      "options": {
+        "business": "Weekdays except public holidays",
+        "weekdays": "Weekdays",
+        "everyday": "Every day"
+      }
+    },
+    "months": {
+      "options": {
+        "1": "January",
+        "2": "February",
+        "3": "March",
+        "4": "April",
+        "5": "May",
+        "6": "June",
+        "7": "July",
+        "8": "August",
+        "9": "September",
+        "10": "October",
+        "11": "November",
+        "12": "December"
       }
     }
   }

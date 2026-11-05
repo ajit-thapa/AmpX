@@ -1,4 +1,4 @@
-"""AGL-style time-of-use tariff engine. Pure Python, no Home Assistant imports.
+"""Time-of-use tariff engine (cheap window, peak, off-peak, two feed-in windows). Pure Python, no Home Assistant imports.
 
 Rates are in cents per kWh. All windows are configurable through ``Plan``.
 """
@@ -31,6 +31,7 @@ class Plan:
     peak_window: tuple[int, int] = (16, 20)
     fit_evening_window: tuple[int, int] = (17, 21)
     fit_morning_window: tuple[int, int] = (7, 8)
+    peak_days: str = "business"  # business (weekdays, not holidays) | weekdays | everyday
 
 
 def _in(hour: int, window: tuple[int, int]) -> bool:
@@ -45,6 +46,14 @@ def is_business_day(day: date, is_holiday: bool = False) -> bool:
     return day.weekday() < 5 and not is_holiday
 
 
+def peak_day(day: date, plan: Plan, is_holiday: bool = False) -> bool:
+    if plan.peak_days == "everyday":
+        return True
+    if plan.peak_days == "weekdays":
+        return day.weekday() < 5
+    return is_business_day(day, is_holiday)
+
+
 def is_high_season(day: date, plan: Plan) -> bool:
     return day.month in plan.high_months
 
@@ -54,7 +63,7 @@ def period(now: datetime, plan: Plan, is_holiday: bool = False) -> str:
     hour = now.hour
     if _in(hour, plan.shoulder_window):
         return SHOULDER
-    if _in(hour, plan.peak_window) and is_business_day(now.date(), is_holiday):
+    if _in(hour, plan.peak_window) and peak_day(now.date(), plan, is_holiday):
         return PEAK
     return OFF_PEAK
 

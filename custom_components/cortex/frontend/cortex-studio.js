@@ -23,6 +23,8 @@ const ICONS = {
   mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/>',
   star: '<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
   chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>',
+  upload: '<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>',
 };
 const icon = (n, cls = "ic") => `<svg viewBox="0 0 24 24" class="${cls}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const bigNum = (v, d = 1, unit = "") => {
@@ -32,56 +34,26 @@ const bigNum = (v, d = 1, unit = "") => {
 };
 const fmtH = h => (h === null || h === undefined || !Number.isFinite(h) ? "–" : h >= 1 ? Math.floor(h) + "h " + String(Math.round((h % 1) * 60)).padStart(2, "0") + "m" : Math.max(Math.round(h * 60), 1) + "m");
 const NS = "http://www.w3.org/2000/svg";
-const N = "sensor.neovolt_neovoltlocal_";
-const E = {
-  bt: [["Voltage", N + "battery_voltage", "mdi"], ["Current", N + "battery_current"], ["Power", N + "battery_power"], ["Health (SOH)", N + "combined_battery_soh"],
-       ["Max cell temp", N + "battery_max_cell_temperature"], ["Min cell temp", N + "battery_min_cell_temperature"], ["Max cell V", N + "battery_max_cell_voltage"], ["Min cell V", N + "battery_min_cell_voltage"]],
-  health: [["Inverter", N + "inverter_fault"], ["Battery", N + "battery_fault"], ["Protection", N + "battery_protection"], ["Grid freq", N + "grid_frequency"], ["Meter", "sensor.home_energy_purchased_today"]],
-  life: [["Lifetime charged", N + "battery_charge_energy"], ["Lifetime discharged", N + "battery_discharge_energy"]],
-  flows: [["Solar", N + "combined_pv_power", "#f2c744"], ["House", N + "combined_house_load", "#e8833a"], ["Battery", N + "combined_battery_power", "#7f5af0"], ["Grid", N + "grid_total_active_power", "#e45649"]],
-  day: [["Solar", "sensor.neovolt_online_pv_generated_today", "#f2c744"], ["Import", "sensor.neovolt_online_grid_import_today", "#e45649"], ["Export", "sensor.neovolt_online_feed_in_today", "#50a14f"]],
-  cyc: [["Charged", "sensor.neovolt_online_battery_charged_today", "#26a69a"], ["Discharged", "sensor.neovolt_online_battery_discharged_today", "#7e57c2"]],
-  cost: [["Solar sold (period)", "sensor.agl_solar_sold_this_period"], ["Supply charge", "sensor.agl_supply_charge"], ["Recent cost total", "sensor.globird_energy_balance"],
-         ["GloBird invoice", "sensor.globird_energy_latest_invoice"], ["Export total (period)", "sensor.agl_solar_feed_in_credit"], ["Consumption (period)", "sensor.agl_consumption_this_period"]],
-  autos: ["automation.agl_plan_shoulder_grid_top_up_battery", "automation.agl_plan_evening_export_17_00_21_00_28c_fit", "automation.agl_plan_ev_charge_in_shoulder_window", "automation.agl_plan_ev_plug_in_gate_10_00_14_00_only", "automation.agl_plan_peak_guard_ev_and_battery"],
-  nums: [["Battery capacity (kWh)", "input_number.system_battery_capacity"], ["BYD capacity (kWh)", "input_number.system_ev_battery_capacity"], ["PV capacity (kW)", "input_number.system_solar_inverter_size"],
-         ["Wall connector (kW)", "input_number.system_ev_charger_power"], ["Round-trip efficiency", "input_number.system_battery_round_trip_efficiency"], ["Low-solar line (kWh)", "input_number.agl_low_solar_threshold"],
-         ["BYD target SOC (%)", "input_number.byd_target_soc"], ["Shoulder (c)", "input_number.agl_plan_shoulder"], ["Off-peak (c)", "input_number.agl_plan_off_peak"],
-         ["Peak high season (c)", "input_number.agl_plan_high_season_peak"], ["Peak low season (c)", "input_number.agl_plan_low_season_peak"], ["FiT evening (c)", "input_number.agl_plan_fit_evening"],
-         ["FiT morning (c)", "input_number.agl_plan_fit_morning"], ["FiT off-peak (c)", "input_number.agl_plan_fit_off_peak"], ["Supply (c/day)", "input_number.agl_plan_supply_charge"]],
-};
-const EV = {
-  img: "/api/image/serve/3215d9a31830fbbdda209ef2fddeae4b/original",
-  soc: "sensor.byd_sealion_7_battery_level", power: "sensor.byd_sealion_7_battery_power",
-  plug: "binary_sensor.byd_sealion_7_plug", charging: "binary_sensor.byd_sealion_7_charging",
-  online: "binary_sensor.byd_sealion_7_online", remain: "sensor.byd_sealion_7_charge_remaining_time",
-  locked: "binary_sensor.byd_sealion_7_locked", loc: "device_tracker.byd_sealion_7_location",
-  full: "switch.byd_sealion_7_charge_to_full", sched: "switch.byd_sealion_7_schedule_enabled",
-  daily: "switch.byd_sealion_7_repeat_daily", start: "time.byd_sealion_7_start_time", end: "time.byd_sealion_7_end_time",
-  go: "button.byd_sealion_7_start_charging", poll: "button.byd_sealion_7_force_poll",
-  cap: "input_number.system_ev_battery_capacity", kw: "input_number.system_ev_charger_power",
-  wcStatus: "sensor.tesla_wall_connector_status", wcPower: "sensor.tesla_wall_connector_total_power",
-  wcSession: "sensor.tesla_wall_connector_session_energy", wcV: "sensor.tesla_wall_connector_grid_voltage",
-  wcA: ["sensor.tesla_wall_connector_phase_a_current", "sensor.tesla_wall_connector_phase_b_current", "sensor.tesla_wall_connector_phase_c_current"],
-  wcT: [["Handle", "sensor.tesla_wall_connector_handle_temperature"], ["MCU", "sensor.tesla_wall_connector_mcu_temperature"], ["PCB", "sensor.tesla_wall_connector_pcb_temperature"]],
-};
-// Daily energy sensors reset at midnight and keep only sum/state statistics, so day
-// totals are rebuilt from hourly "state" deltas (also gives tariff-accurate costs).
-const AN = { pv: "sensor.neovolt_online_pv_generated_today", imp: "sensor.neovolt_online_grid_import_today", exp: "sensor.neovolt_online_feed_in_today",
-  chg: "sensor.neovolt_online_battery_charged_today", dis: "sensor.neovolt_online_battery_discharged_today", load: "sensor.neovolt_online_consumed_today",
-  evKwh: "sensor.tesla_wall_connector_energy" };
-const AN_POWER = { pv: N + "combined_pv_power", load: N + "combined_house_load", grid: N + "grid_total_active_power", soc: N + "combined_battery_soc" };
+/** Find an entity among a device's entities by domain and a pattern on its id or name. */
+const pick = (list, doms, re, test) => list.find(x => doms.includes(x.dom) && re.test(x.key) && (!test || test(x)));
+const pickAll = (list, doms, re, test) => list.filter(x => doms.includes(x.dom) && re.test(x.key) && (!test || test(x)));
+const unitOf = st => ((st && st.attributes && st.attributes.unit_of_measurement) || "").toLowerCase();
+const kwScale = st => (unitOf(st) === "w" ? 0.001 : unitOf(st) === "mw" ? 1000 : 1);
+const inW = (h, w) => !w || w[0] === w[1] ? false : w[0] < w[1] ? h >= w[0] && h < w[1] : h >= w[0] || h < w[1];
+const wl = w => (w ? `${w[0]}–${w[1] || 24}` : "");
 let _tzf = null, _tzName = null;
 function tzParts(ms, tz) {
   if (!_tzf || _tzName !== tz) { _tzName = tz; _tzf = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23", weekday: "short" }); }
   const o = {}; _tzf.formatToParts(new Date(ms)).forEach(x => { o[x.type] = x.value; });
   return { key: `${o.year}-${o.month}-${o.day}`, hour: Number(o.hour) % 24, month: Number(o.month), biz: o.weekday !== "Sat" && o.weekday !== "Sun" };
 }
+/** Rate at an hour ({hour, month, biz}) from the plan in the profile (public holidays treated as normal days). */
 function tariffAt(h, r) {
   let per = "off_peak", imp = r.off;
-  if (h.hour >= 10 && h.hour < 14) { per = "shoulder"; imp = r.shoulder; }
-  else if (h.hour >= 16 && h.hour < 20 && h.biz) { per = "peak"; imp = [11, 12, 1, 2, 3].includes(h.month) ? r.hi : r.lo; }
-  const fit = h.hour >= 17 && h.hour < 21 ? r.fitE : h.hour >= 7 && h.hour < 8 ? r.fitM : r.fitO;
+  const peakDay = r.peak_days === "everyday" || h.biz;
+  if (inW(h.hour, r.sw)) { per = "shoulder"; imp = r.shoulder; }
+  else if (inW(h.hour, r.pw) && peakDay) { per = "peak"; imp = (r.months || []).includes(h.month) ? r.hi : r.lo; }
+  const fit = inW(h.hour, r.few) ? r.fitE : inW(h.hour, r.fmw) ? r.fitM : r.fitO;
   return { per, imp, fit };
 }
 const dayLabel = (key, long) => long ? key.slice(8) + "/" + key.slice(5, 7) : new Date(key + "T12:00").toLocaleDateString([], { weekday: "short" });
@@ -95,7 +67,9 @@ const SUBS = {
 // Old tab names (links, saved state) and where they live now
 const ALIAS = { ev: ["devices", "ev"], battery: ["devices", "battery"], plan: ["energy", "plan"], analytics: ["energy", "history"], history: ["energy", "history"] };
 const PUSH_CATS = [["health", "House health"], ["autopilot", "Autopilot"], ["energy", "Battery and export"], ["routines", "Routines"], ["suggestions", "Suggestions"], ["speech", "Urgent announcements"]];
-const BG_PATHS = ["/local/simple_dreams_light.jpg", "/local/images/simple_dreams_light.jpg", "/local/backgrounds/simple_dreams_light.jpg", "/local/cortex/simple_dreams_light.jpg"];
+// Older installs kept the background in one of these places
+const LEGACY_BG = ["/local/simple_dreams_light.jpg", "/local/images/simple_dreams_light.jpg", "/local/backgrounds/simple_dreams_light.jpg", "/local/cortex/simple_dreams_light.jpg"];
+const INVERTER_BRANDS = /inverter|sungrow|neovolt|byte.?watt|alpha.?ess|goodwe|growatt|solis|fronius|huawei|\bsma\b|victron|enphase|solaredge|deye|sofar|fox.?ess|sigen|powerwall|saj|redback|selectronic/i;
 const CAT_ICON = { fact: "📌", preference: "⭐", person: "👤", place: "📍", routine: "🔁", note: "📝" };
 
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -178,6 +152,82 @@ class CortexStudio extends HTMLElement {
     return Number.isNaN(v) ? null : v;
   }
 
+  // ---- this home: names, photos, entities -------------------------------
+  _pf() {
+    const p = (this._data && this._data.profile) || {};
+    return { names: {}, photos: {}, battery: {}, ev: {}, charger: {}, solar: {}, day: {}, tariff: {}, house: [], bills: [], automations: [], ...p };
+  }
+  _name(k) { return this._pf().names[k] || { battery: "Home battery", ev: "EV", charger: "EV charger", plan: "My plan" }[k]; }
+  /** Background photo: the uploaded one, else (older installs) the first legacy path that loads. */
+  _applyBg() {
+    const url = this._pf().photos.background || "", bg = this._root.querySelector(".bg");
+    if (!bg || this._bgUrl === url) return;
+    this._bgUrl = url;
+    const list = url ? [url, ...(/simple_dreams_light/.test(url) ? LEGACY_BG : [])] : [];
+    bg.classList.remove("on"); bg.style.backgroundImage = "";
+    const tryBg = i => { if (i >= list.length) return; const im = new Image();
+      im.onload = () => { if (this._bgUrl !== url) return; bg.style.backgroundImage = `url("${list[i]}")`; bg.classList.add("on"); }; im.onerror = () => tryBg(i + 1); im.src = list[i]; };
+    tryBg(0);
+  }
+  /** Entities of the given devices, ready for pattern matching on id and name. */
+  _devEnts(devIds) {
+    const ents = this._hass.entities || {}, devs = new Set(devIds.filter(Boolean));
+    if (!devs.size) return [];
+    return Object.values(ents).filter(e => devs.has(e.device_id) && !e.hidden).map(e => {
+      const st = this._hass.states[e.entity_id];
+      return { id: e.entity_id, dom: e.entity_id.split(".")[0], st, dev: e.device_id, key: (e.entity_id + " " + ((st && st.attributes.friendly_name) || e.name || "")).toLowerCase() };
+    }).filter(x => x.st);
+  }
+  _devOf(ids) { const ents = this._hass.entities || {}; return ids.filter(Boolean).map(id => ents[id] && ents[id].device_id).filter(Boolean); }
+  /** A sensor's name without its device's name in front ("Wall Connector Handle temperature" → "Handle temperature"). */
+  _short(x) {
+    const dv = this._hass.devices && this._hass.devices[x.dev], n = (x.st.attributes || {}).friendly_name || x.id, dn = dv && (dv.name_by_user || dv.name);
+    const t = dn && n.toLowerCase().startsWith(dn.toLowerCase()) ? n.slice(dn.length).trim() : n;
+    return (t || n).charAt(0).toUpperCase() + (t || n).slice(1);
+  }
+  /** Car, charger and battery details found on the devices behind the configured entities (cached). */
+  _disc() {
+    const pf = this._pf(), devs = this._hass.devices || {};
+    const sig = JSON.stringify([pf.ev, pf.charger, pf.battery, pf.solar.power, pf.grid, Object.keys(this._hass.entities || {}).length]);
+    if (this._dc && this._dc.sig === sig) return this._dc;
+    const id = x => (x ? x.id : ""), num = x => !Number.isNaN(parseFloat(x.st.state)), pw = x => ["w", "kw"].includes(unitOf(x.st));
+    const ev = this._devEnts(this._devOf([pf.ev.soc, pf.ev.plug, pf.ev.start])), ch = this._devEnts(this._devOf([pf.charger.power, pf.charger.energy]));
+    const brand = Object.values(devs).filter(dv => INVERTER_BRANDS.test(`${dv.manufacturer || ""} ${dv.model || ""} ${dv.name || ""}`)).map(dv => dv.id);
+    const bt = this._devEnts([...new Set([...this._devOf([pf.battery.soc, pf.battery.power, pf.battery.mode, pf.solar.power, pf.grid]), ...brand])]);
+    const E = {
+      soc: pf.ev.soc, plug: pf.ev.plug, target: pf.ev.target,
+      power: id(pick(ev, ["sensor"], /charg\w*[ _]?power|battery[ _]power|\bpower\b/, pw)),
+      charging: id(pick(ev, ["binary_sensor"], /charging/)),
+      remain: id(pick(ev, ["sensor"], /remain|time[ _]to[ _]full|time[ _]left/)),
+      locked: id(pick(ev, ["lock"], /./) || pick(ev, ["binary_sensor"], /lock/)),
+      loc: id(pick(ev, ["device_tracker"], /./)),
+      full: id(pick(ev, ["switch"], /full/)), sched: id(pick(ev, ["switch"], /schedul/)), daily: id(pick(ev, ["switch"], /repeat|daily/)),
+      start: id(pick(ev, ["time"], /start/)), end: id(pick(ev, ["time"], /end|stop|finish/)),
+      go: pf.ev.start || id(pick(ev, ["button"], /start[ _]?charg|charge[ _]?start/)), poll: id(pick(ev, ["button"], /poll|refresh|wake|update/)),
+    };
+    const W = {
+      power: pf.charger.power, status: id(pick(ch, ["sensor"], /status|state/, x => !num(x))),
+      session: id(pick(ch, ["sensor"], /session/, num)), volt: id(pick(ch, ["sensor"], /voltage/, num)),
+      vehicle: id(pick(ch, ["binary_sensor"], /vehicle|connected|plug/)),
+      amps: pickAll(ch, ["sensor"], /current/, x => unitOf(x.st) === "a").sort((a, b) => a.id.localeCompare(b.id)).slice(0, 3).map(x => [this._short(x), x.id]),
+      temps: pickAll(ch, ["sensor"], /temp/, x => num(x) && /°c|°f/.test(unitOf(x.st))).slice(0, 4).map(x => [this._short(x).replace(/\s*temperature$/i, ""), x.id]),
+    };
+    const find = (label, re, list = bt) => [label, id(pick(list, ["sensor"], re, x => !/today|daily|period/.test(x.key)))];
+    const B = {
+      tiles: [find("Voltage", /battery[ _]voltage/), find("Current", /battery[ _]current/), find("Health (SOH)", /\bsoh\b|state[ _]of[ _]health/),
+        find("Max cell temp", /max[ _]cell[ _]temp/), find("Min cell temp", /min[ _]cell[ _]temp/), find("Max cell V", /max[ _]cell[ _]volt/), find("Min cell V", /min[ _]cell[ _]volt/)].filter(x => x[1]),
+      health: [find("Inverter", /inverter[ _]fault/), find("Battery", /battery[ _]fault/), find("Protection", /protection/), find("Grid freq", /grid[ _]freq/)].filter(x => x[1]),
+      life: [find("Lifetime charged", /(?<!dis)charge[ _]energy|total[ _]charged|lifetime[ _]charge/), find("Lifetime discharged", /discharge[ _]energy|total[ _]discharged|lifetime[ _]discharge/)].filter(x => x[1]),
+      controls: bt.filter(x => ["switch", "number", "select", "time"].includes(x.dom) && x.st.state !== "unavailable"
+        && /feed.?in|cutoff|dispatch|export limit|active power|discharg|charg\w*\s+(start|end)|minimum soc|grid power offset|pv switch/i.test(x.st.attributes.friendly_name || ""))
+        .map(x => ({ ...x.st, entity_id: x.id, dev: x.dev })).sort((a, b) => (a.attributes.friendly_name || "").localeCompare(b.attributes.friendly_name || "")),
+    };
+    B.cellT = [B.tiles.find(t => t[0] === "Max cell temp"), B.tiles.find(t => t[0] === "Min cell temp")].filter(Boolean).map(t => t[1]);
+    this._dc = { sig, ev: E, ch: W, bt: B };
+    return this._dc;
+  }
+  _rates() { const t = this._pf().tariff; return { shoulder: 0, off: 0, hi: 0, lo: 0, fitE: 0, fitM: 0, fitO: 0, supply: 0, sw: [10, 14], pw: [16, 20], few: [17, 21], fmw: [7, 8], months: [], peak_days: "business", ...t }; }
+
   /** Live flows in kW. Conventions: grid + = import, battery + = charging. */
   _flows() {
     const s = this._data.studio || {};
@@ -192,7 +242,7 @@ class CortexStudio extends HTMLElement {
   async _loadSeries() {
     const s = this._data.studio || {};
     const ids = [s.pv, s.grid, s.battery, s.ev, s.soc].filter(Boolean);
-    if (!ids.length) return;
+    if (!ids.length) { const el = this._root.querySelector("#chart"); if (el) el.innerHTML = '<div class="muted">Pick your solar, grid and battery power sensors in Cortex options to see this chart.</div>'; return; }
     const end = new Date(), start = new Date(end.getTime() - 24 * 3600 * 1000);
     try {
       const res = await this._hass.callWS({
@@ -241,11 +291,6 @@ class CortexStudio extends HTMLElement {
       </header>
       <div class="drawer" id="drawer" hidden><div class="dback" id="dback"></div><aside role="dialog" aria-label="Alerts and notifications"><div class="dhead"><h2>${icon("bell")} Alerts</h2><button class="ghost" id="dclose" aria-label="Close">✕</button></div><div id="dbody"></div></aside></div>
       <main id="view" aria-live="polite"><div class="grid"><div class="card wide skel"></div><div class="card w8 skel tall"></div><div class="card w4 skel tall"></div></div></main>`;
-    // Optional photo from HA local storage (/config/www). First path that loads wins.
-    const bg = this._root.querySelector(".bg");
-    const tryBg = i => { if (i >= BG_PATHS.length) return; const im = new Image();
-      im.onload = () => { bg.style.backgroundImage = `url(${BG_PATHS[i]})`; bg.classList.add("on"); }; im.onerror = () => tryBg(i + 1); im.src = BG_PATHS[i]; };
-    tryBg(0);
     const nav = this._root.querySelector("#tabs");
     nav.innerHTML = TABS.map(([k, l, ic]) => `<button data-tab="${k}" aria-label="${l}">${icon(ic)}<span>${l}</span></button>`).join("");
     nav.querySelectorAll("button").forEach(b => b.onclick = () => this._go(b.dataset.tab));
@@ -293,6 +338,7 @@ class CortexStudio extends HTMLElement {
     r.querySelector("#greet").innerHTML = `${h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"}<span class="gdate"> · ${now.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" })}</span>`;
     const alerts = (d.health || []).length + ((d.security || { ok: true }).ok ? 0 : ((d.security.issues || []).length || 1)), bd = r.querySelector("#badge");
     bd.hidden = !alerts; bd.textContent = alerts > 9 ? "9+" : String(alerts || "");
+    this._applyBg();
     const view = r.querySelector("#view"), k = this._key(), subs = SUBS[this._tab];
     const views = {
       now: () => this._viewNow(), house: () => this._viewHouse(), settings: () => this._viewSettings(),
@@ -303,6 +349,8 @@ class CortexStudio extends HTMLElement {
     view.innerHTML = sn + (this._tab === "assistant" ? this._viewAssistant() : views[k]());
     view.querySelectorAll("[data-sub]").forEach(b => b.onclick = () => this._go(this._tab, b.dataset.sub));
     view.querySelectorAll("[data-go]").forEach(b => b.onclick = () => this._go(b.dataset.go));
+    view.querySelectorAll("[data-photo]").forEach(b => b.onclick = () => this._uploadPhoto(b.dataset.photo));
+    view.querySelectorAll("[data-photo-del]").forEach(b => b.onclick = () => this._removePhoto(b.dataset.photoDel));
     const wires = {
       now: () => this._paintLive(), house: () => this._wireHouse(), settings: () => this._wireSettings(),
       "energy/today": () => { this._paintVisuals(); this._paintChart(); if (this._en) this._paintSplit(); },
@@ -337,19 +385,21 @@ class CortexStudio extends HTMLElement {
     if (this._pc[sel] === html) return;
     this._pc[sel] = html; el.innerHTML = html;
   }
-  _socNow() { const s = this._data.studio || {}; return this._num(s.soc) ?? this._num(N + "combined_battery_soc") ?? this._num(N + "battery_soc"); }
+  _socNow() { return this._num(this._pf().battery.soc); }
 
   // ---- NOW ------------------------------------------------------------
   /** Today's money, indicative: current rates applied to today's kWh. */
   _money() {
     const s = this._data.studio || {}, e = this._data.energy, n = id => (id ? this._num(id) : null);
-    const gen = n(s.day_pv) ?? n(AN.pv) ?? 0, exp = n(s.day_export) ?? n(AN.exp) ?? 0, imp = n(s.day_import) ?? n(AN.imp) ?? 0, used = n(s.day_load) ?? n(AN.load);
+    const gen = n(s.day_pv) ?? 0, exp = n(s.day_export) ?? 0, imp = n(s.day_import) ?? 0, used = n(s.day_load);
     const p = (e.import_rate ?? 0) / 100, f = (e.feed_in_rate ?? 0) / 100, self = Math.max(gen - exp, 0);
     return { gen, exp, imp, used, self, p, f, avoided: self * p, earned: exp * f, spent: imp * p, net: self * p + exp * f - imp * p,
       ss: used && used > 0.5 ? Math.max(0, Math.min(100, (1 - imp / used) * 100)) : null };
   }
   _insight() {
     const d = this._data, sec = d.security || { ok: true, issues: [] }, last = ((d.autopilot || {}).decisions || [])[0];
+    const pf = this._pf();
+    if (!pf.battery.soc && !pf.solar.power && !pf.grid) return { tone: "act", ic: "gear", title: "Finish setting up Cortex", text: "Pick your solar, grid and battery sensors, then your tariff.", go: "settings" };
     if ((d.health || []).length) return { tone: "warn", ic: "bell", title: d.health.length > 1 ? `${d.health.length} things need attention` : "Needs attention", text: d.health[0] + (d.health.length > 1 ? ` and ${d.health.length - 1} more` : ""), go: "house" };
     if (!sec.ok) return { tone: "warn", ic: "bell", title: "Security", text: (sec.issues || [])[0] || "Check doors and locks", go: "house" };
     const tip = (d.advice || []).find(t => t.level !== "info");
@@ -394,11 +444,11 @@ class CortexStudio extends HTMLElement {
   }
 
   _viewToday() {
-    const sum = String((this._st("sensor.daily_summary") || {}).state || "").split(/\s*[·|]\s*/).filter(Boolean);
+    const pf = this._pf(), sum = String((this._st(pf.summary) || {}).state || "").split(/\s*[·|]\s*/).filter(Boolean), best = this._st(pf.best_time);
     const go = (t, label) => `<button class="go" data-go="${t}" aria-label="${label}">${icon("arrow")}</button>`;
     return `<section class="grid">
       ${sum.length ? `<div class="card wide"><div class="sumchips" style="margin:0">${sum.map(t => `<span class="chip">${esc(t)}</span>`).join("")}
-        <span class="chip best">⏰ Best appliance time: <b>${esc((this._st("sensor.best_time_to_run_appliances") || {}).state || "–")}</b></span></div></div>` : ""}
+        ${best ? `<span class="chip best">⏰ Best appliance time: <b>${esc(best.state)}</b></span>` : ""}</div></div>` : ""}
       <div class="card wide"><div class="chead"><h2>Last 24 hours</h2><span class="legend"><b style="color:${C.solar}">●</b> Solar <b style="color:${C.home}">●</b> Home <b style="color:${C.grid}">●</b> Grid <b style="color:${C.batt}">●</b> Battery %</span></div>
         <div id="chart" class="chart"><div class="muted">Loading history…</div></div></div>
       <div class="card w8"><div class="chead"><h2>Where energy went today</h2>${go("energy/history", "History")}</div><div id="mix"></div></div>
@@ -417,7 +467,7 @@ class CortexStudio extends HTMLElement {
     this._paintVisuals();
   }
   _paintArc(f) {
-    const soc = this._socNow(), cap = this._num("input_number.system_battery_capacity") ?? 50, floor = this._num("number.neovolt_online_minimum_soc");
+    const b = this._pf().battery, soc = this._socNow(), cap = b.capacity || 10, floor = b.reserve ?? null;
     const chg = f.batt > 0.05, dis = f.batt < -0.05;
     let eta = "";
     if (soc !== null) {
@@ -496,11 +546,13 @@ class CortexStudio extends HTMLElement {
   // ---- EV -------------------------------------------------------------
   async _loadEv() {
     this._evAt = Date.now();
+    const EV = this._disc().ev, ids = [EV.soc, EV.power || this._pf().charger.power].filter(Boolean);
+    if (!ids.length) return;
     const end = new Date(), start = new Date(end.getTime() - 24 * 3600 * 1000);
     try {
       const res = await this._hass.callWS({
         type: "history/history_during_period", start_time: start.toISOString(), end_time: end.toISOString(),
-        entity_ids: [EV.soc, EV.power], minimal_response: true, no_attributes: true, significant_changes_only: false,
+        entity_ids: ids, minimal_response: true, no_attributes: true, significant_changes_only: false,
       });
       const N = 144, step = (end - start) / N;
       const rs = id => {
@@ -512,14 +564,17 @@ class CortexStudio extends HTMLElement {
         }
         return out;
       };
-      this._evSeries = { start, end, soc: rs(EV.soc), power: rs(EV.power) };
+      const pid = ids[1] || EV.power, k = kwScale(this._st(pid));
+      this._evSeries = { start, end, soc: rs(EV.soc), power: rs(pid).map(v => (v === null ? null : v * k)) };
       if (this._key() === "devices/ev") this._paintEv();
     } catch (e) { /* optional */ }
   }
 
   _evPlan() {
     const d = this._data, e = d.energy, sch = d.schedule || [];
-    const soc = this._num(EV.soc) ?? 0, cap = this._num(EV.cap) ?? 82.5, kw = this._num(EV.kw) ?? 7.4;
+    const pe = this._pf().ev, soc = this._num(pe.soc) ?? 0, cap = pe.capacity || 60, kw = pe.charger_kw || 7;
+    const t0 = this._num(pe.target);
+    if (this._evTarget === undefined && t0 !== null && t0 >= 20 && t0 <= 100) this._evTarget = Math.round(t0);
     const target = this._evTarget ?? 80;
     const need = Math.max(target - soc, 0) * cap / 100;
     const f = this._flows(), surplus = Math.max(f.pv - f.home - Math.max(f.batt, 0), 0);
@@ -531,11 +586,13 @@ class CortexStudio extends HTMLElement {
   }
 
   _viewEv() {
+    const pf = this._pf(), name = this._name("ev"), img = pf.photos.ev;
+    if (!pf.ev.soc) return `<section class="grid">${this._needSetup(name, "Pick your EV's battery level sensor (and its plug sensor) under Energy and EV.", "energy")}</section>`;
     return `<section class="grid">
       <div class="card evhero wide"><div class="stage">
-          <div class="carbox"><div class="carpic"><img src="${EV.img}" alt="BYD Sealion 7" onerror="this.style.display='none'">${carOverlay()}</div>
+          <div class="carbox"><div class="carpic ${img ? "" : "nophoto"}">${img ? `<img src="${esc(img)}" alt="${esc(name)}" onerror="this.style.display='none'">${carOverlay()}` : carSvg("hero")}</div>
             <div class="carglow" id="ev-glow"></div>
-            <div class="cartop"><span class="carname">BYD Sealion 7</span><span id="ev-state" class="pill"></span></div>
+            <div class="cartop"><span class="carname">${esc(name)}</span><span class="ctr"><button class="ghost photobtn" data-photo="ev" title="${img ? "Change the photo" : "Add a photo of your car"}" aria-label="${img ? "Change the photo" : "Add a photo of your car"}">${icon("camera")}${img ? "" : " Add photo"}</button><span id="ev-state" class="pill"></span></span></div>
             <div class="carbar"><div class="barbg"><i id="ev-fill"></i><u id="ev-mark"></u></div>
               <div class="barlbl"><b id="ev-big"></b><span id="ev-sub" class="muted"></span></div></div></div>
           <div class="evside"><div class="stats" id="ev-stats"></div></div></div></div>
@@ -551,25 +608,32 @@ class CortexStudio extends HTMLElement {
   }
 
   _viewCharger() {
-    const wcA = EV.wcA.map((id, i) => `<div class="phase"><span>${"ABC"[i]}</span><div><i data-a="${i}"></i></div><b data-av="${i}">–</b></div>`).join("");
-    const temps = EV.wcT.map(([n], i) => `<div class="phase"><span>${n}</span><div><i data-t="${i}"></i></div><b data-tv="${i}">–</b></div>`).join("");
+    const W = this._disc().ch, name = this._name("charger");
+    if (!W.power) return `<section class="grid">${this._needSetup(name, "Pick your charger's power sensor under Energy Studio sources.", "studio")}</section>`;
+    const lab = (n, i) => (W.amps.length === 3 ? "ABC"[i] : n);
+    const wcA = W.amps.map(([n], i) => `<div class="phase"><span>${esc(lab(n, i))}</span><div><i data-a="${i}"></i></div><b data-av="${i}">–</b></div>`).join("");
+    const temps = W.temps.map(([n], i) => `<div class="phase"><span>${esc(n)}</span><div><i data-t="${i}"></i></div><b data-tv="${i}">–</b></div>`).join("");
     return `<section class="grid">
-      <div class="card wide"><h2>Tesla Wall Connector <span id="wc-state" class="pill"></span></h2>
+      <div class="card wide"><h2>${esc(name)} <span id="wc-state" class="pill"></span></h2>
         <div class="stats" id="wc-stats"></div>
-        <div class="muted" style="margin-top:10px">Phase current (A)</div>${wcA}
-        <div class="muted" style="margin-top:10px">Temperature (°C)</div>${temps}</div>
+        ${wcA ? `<div class="muted" style="margin-top:10px">Current (A)</div>${wcA}` : ""}
+        ${temps ? `<div class="muted" style="margin-top:10px">Temperature (°C)</div>${temps}` : ""}</div>
     </section>`;
   }
+  /** Placeholder for a view whose entities aren't chosen yet, with a link to the right options page. */
+  _needSetup(title, text) {
+    return `<div class="card wide"><h2>${esc(title)}</h2><div class="muted" style="margin:6px 0 12px">${esc(text)}</div>
+      <a class="lnk" href="/config/integrations/integration/cortex" target="_top">Open Cortex options ↗</a></div>`;
+  }
   _evCtlCard() {
-    return `<div class="card w6"><h2>EV charging controls</h2>
-        <div class="row"><span>Start charging now</span><button id="ev-go">Start</button></div>
-        <div class="row"><span>Refresh car data</span><button id="ev-poll">Poll</button></div>
-        <label class="row"><span>Charge to full</span><input type="checkbox" class="sw" data-sw="full"></label>
-        <label class="row"><span>Schedule</span><input type="checkbox" class="sw" data-sw="sched"></label>
-        <label class="row"><span>Repeat daily</span><input type="checkbox" class="sw" data-sw="daily"></label>
-        <div class="row"><span>Window</span><span><input type="time" id="ev-start"> – <input type="time" id="ev-end"></span></div>
-        <div class="seg" style="margin-top:8px"><button id="ev-cheap" title="Set the schedule to the cheapest hours">Cheapest hours</button><button id="ev-sun" title="Set the schedule to 10:00–14:00 shoulder">Shoulder 10–14</button></div>
-        <div class="muted" id="ev-ctlmsg" style="margin-top:6px"></div></div>`;
+    const EV = this._disc().ev, sw = this._rates().sw, win = EV.start && EV.end;
+    const rows = [EV.go ? '<div class="row"><span>Start charging now</span><button id="ev-go">Start</button></div>' : "",
+      EV.poll ? '<div class="row"><span>Refresh car data</span><button id="ev-poll">Poll</button></div>' : "",
+      ...[["full", "Charge to full"], ["sched", "Schedule"], ["daily", "Repeat daily"]].map(([k, l]) => (EV[k] ? `<label class="row"><span>${l}</span><input type="checkbox" class="sw" data-sw="${k}"></label>` : "")),
+      win ? '<div class="row"><span>Window</span><span><input type="time" id="ev-start"> – <input type="time" id="ev-end"></span></div>' : "",
+      win ? `<div class="seg" style="margin-top:8px"><button id="ev-cheap" title="Set the schedule to the cheapest hours">Cheapest hours</button>${sw[0] !== sw[1] ? `<button id="ev-sun" title="Set the schedule to the cheap window">Cheap window ${wl(sw)}</button>` : ""}</div>` : ""].join("");
+    if (!rows) return "";
+    return `<div class="card w6"><h2>Charging controls</h2>${rows}<div class="muted" id="ev-ctlmsg" style="margin-top:6px"></div></div>`;
   }
   _wireEv() {
     const q = s => this._root.querySelector(s);
@@ -577,45 +641,46 @@ class CortexStudio extends HTMLElement {
       try { await this._hass.callService(dom, svc, data); q("#ev-ctlmsg").textContent = ""; }
       catch (e) { q("#ev-ctlmsg").textContent = "Failed: " + (e.message || e); }
     };
-    const slider = q("#ev-target");
+    const slider = q("#ev-target"); if (!slider) return;
     slider.oninput = () => { this._evTarget = Number(slider.value); this._paintEv(); };
     this._root.querySelectorAll("[data-tgt]").forEach(b => b.onclick = () => { this._evTarget = Number(b.dataset.tgt); slider.value = this._evTarget; this._paintEv(); });
     this._wireEvCtl(call);
   }
   _wireEvCtl(call) {
-    const q = s => this._root.querySelector(s);
+    const q = s => this._root.querySelector(s), EV = this._disc().ev, on = (sel, fn) => { const el = q(sel); if (el) el.onclick = fn; };
     if (!call) call = (dom, svc, data) => this._hass.callService(dom, svc, data).then(() => { const m = q("#ev-ctlmsg"); if (m) m.textContent = ""; }, e => { const m = q("#ev-ctlmsg"); if (m) m.textContent = "Failed: " + (e.message || e); });
-    q("#ev-go").onclick = () => call("button", "press", { entity_id: EV.go });
-    q("#ev-poll").onclick = () => call("button", "press", { entity_id: EV.poll });
+    on("#ev-go", () => call(EV.go.split(".")[0], "press", { entity_id: EV.go }));
+    on("#ev-poll", () => call("button", "press", { entity_id: EV.poll }));
     this._root.querySelectorAll("[data-sw]").forEach(c => c.onchange = () =>
       call("switch", c.checked ? "turn_on" : "turn_off", { entity_id: EV[c.dataset.sw] }));
     const setT = (id, v) => v && call("time", "set_value", { entity_id: id, time: v.length === 5 ? v + ":00" : v });
+    if (!q("#ev-start")) return;
     q("#ev-start").onchange = e => setT(EV.start, e.target.value);
     q("#ev-end").onchange = e => setT(EV.end, e.target.value);
     const preset = async (a, b) => {
       await call("time", "set_value", { entity_id: EV.start, time: a });
       await call("time", "set_value", { entity_id: EV.end, time: b });
-      await call("switch", "turn_on", { entity_id: EV.sched });
+      if (EV.sched) await call("switch", "turn_on", { entity_id: EV.sched });
     };
-    q("#ev-sun").onclick = () => preset("10:00:00", "14:00:00");
-    q("#ev-cheap").onclick = () => {
+    const pad = n => String(n % 24).padStart(2, "0") + ":00:00", sw = this._rates().sw;
+    on("#ev-sun", () => preset(pad(sw[0]), pad(sw[1])));
+    on("#ev-cheap", () => {
       const h = this._evPlan().cheapHours;
       if (!h.length) return;
-      const pad = n => String(n % 24).padStart(2, "0") + ":00:00";
       preset(pad(Math.min(...h)), pad(Math.max(...h) + 1));
-    };
+    });
   }
 
   _paintEv() {
     const q = s => this._root.querySelector(s); if (!q("#ev-state")) return;
-    const st = id => this._hass.states[id];
+    const st = id => this._hass.states[id], EV = this._disc().ev;
     const on = id => st(id) && st(id).state === "on";
     const home = st(EV.loc) && st(EV.loc).state === "home";
     const pl = this._evPlan();
-    const charging = on(EV.charging), plugged = on(EV.plug);
-    const kwNow = (this._num(EV.power) ?? 0) / (((st(EV.power) || {}).attributes || {}).unit_of_measurement === "W" ? 1000 : 1);
+    const f = this._flows(), kwNow = EV.power ? (this._kw(EV.power) ?? 0) : f.ev;
+    const charging = EV.charging ? on(EV.charging) : kwNow > 0.1, plugged = on(EV.plug) || !!this._data.energy.ev_plugged;
     const pill = q("#ev-state");
-    pill.textContent = charging ? "Charging" : plugged ? "Plugged in" : home ? "Home" : "Away";
+    pill.textContent = charging ? "Charging" : plugged ? "Plugged in" : !EV.loc ? "Unplugged" : home ? "Home" : "Away";
     pill.style.setProperty("--pc", charging ? C.shoulder : plugged ? C.off_peak : "#8a8279");
     this._battWidgets();
     const fill = q("#ev-fill"); if (fill) {
@@ -625,11 +690,14 @@ class CortexStudio extends HTMLElement {
       q("#ev-sub").textContent = `${fx(pl.soc * pl.cap / 100, 1)} of ${fx(pl.cap, 0)} kWh · target ${pl.target}%` + (charging ? ` · ⚡ charging ${fx(kwNow)} kW` : plugged ? " · plugged in" : "");
       q("#ev-glow").className = "carglow" + (plugged || charging ? " on" : "") + (charging ? " chg" : "");
       fill.classList.toggle("chg", charging); const cb = q(".carbox"); cb.classList.toggle("chg", charging); cb.classList.toggle("plug", plugged || charging); carOverlaySet(cb, pl.soc, plugged, charging);
+      const draw = q(".carpic.nophoto");
+      if (draw) { const w = 406 * Math.max(0, Math.min(pl.soc, 100)) / 100; draw.style.setProperty("--bc", levelColor(pl.soc)); draw.querySelectorAll(".bfill").forEach((r, i) => { r.style.width = w + "px"; if (!i) r.style.fill = levelColor(pl.soc); }); const fc = draw.querySelector(".fclip"); if (fc) fc.style.width = w + "px"; draw.classList.toggle("chg", charging); draw.classList.toggle("plug", plugged || charging); }
     }
+    const lk = st(EV.locked), locked = lk ? (EV.locked.startsWith("lock.") ? lk.state === "locked" : lk.state === "off") : null;
     q("#ev-stats").innerHTML = [
-      ["Power", charging ? fx(kwNow) + " kW" : "–", C.ev], ["Time left", (st(EV.remain) || {}).state && st(EV.remain).state !== "unknown" ? st(EV.remain).state : "–", C.shoulder],
-      ["Solar surplus", fx(pl.surplus) + " kW", C.solar], ["Locked", on(EV.locked) ? "no" : "yes", on(EV.locked) ? C.peak : C.shoulder],
-    ].map(([l, v, col]) => `<div class="stat" style="border-color:${col}"><span class="muted">${l}</span><b>${v}</b></div>`).join("");
+      ["Power", charging ? fx(kwNow) + " kW" : "–", C.ev], EV.remain ? ["Time left", (st(EV.remain) || {}).state && st(EV.remain).state !== "unknown" ? st(EV.remain).state : "–", C.shoulder] : null,
+      ["Solar surplus", fx(pl.surplus) + " kW", C.solar], locked === null ? null : ["Locked", locked ? "yes" : "no", locked ? C.shoulder : C.peak],
+    ].filter(Boolean).map(([l, v, col]) => `<div class="stat" style="border-color:${col}"><span class="muted">${l}</span><b>${v}</b></div>`).join("");
     // planner
     q("#ev-target-big").innerHTML = `${pl.target}% <small>needs ${fx(pl.need, 1)} kWh · ${fx(pl.hours, 1)} h at ${fx(pl.kw)} kW</small>`;
     const solarPct = Math.round(pl.cover * 100);
@@ -646,20 +714,18 @@ class CortexStudio extends HTMLElement {
   _paintWc() {
     const q = s => this._root.querySelector(s), st = id => this._hass.states[id], on = id => st(id) && st(id).state === "on";
     if (!q("#wc-state")) return;
-    // wall connector
-    const wc = st(EV.wcStatus), veh = on("binary_sensor.tesla_wall_connector_vehicle_connected");
-    const wp = q("#wc-state"); wp.textContent = wc ? wc.state.replace(/_/g, " ") : "–"; wp.style.setProperty("--pc", veh ? C.shoulder : "#8a8279");
-    const wcKw = (this._kw(EV.wcPower) ?? 0);
-    q("#wc-stats").innerHTML = [["Power", fx(wcKw) + " kW"], ["Session", fx(this._num(EV.wcSession), 1) + " kWh"], ["Grid", fx(this._num(EV.wcV), 0) + " V"], ["Vehicle", veh ? "connected" : "no"]]
-      .map(([l, v]) => `<div class="stat" style="border-color:${C.ev}"><span class="muted">${l}</span><b>${v}</b></div>`).join("");
-    EV.wcA.forEach((id, i) => { const a = this._num(id) ?? 0; q(`[data-a="${i}"]`).style.width = Math.min(a / 32 * 100, 100) + "%"; q(`[data-a="${i}"]`).style.background = C.ev; q(`[data-av="${i}"]`).textContent = fx(a, 0); });
-    EV.wcT.forEach(([, id], i) => { const t = this._num(id) ?? 0; q(`[data-t="${i}"]`).style.width = Math.min(t / 90 * 100, 100) + "%"; q(`[data-t="${i}"]`).style.background = t > 70 ? C.peak : t > 55 ? C.off_peak : C.shoulder; q(`[data-tv="${i}"]`).textContent = fx(t, 0); });
+    const W = this._disc().ch, wc = st(W.status), veh = W.vehicle ? on(W.vehicle) : null, wcKw = this._kw(W.power) ?? 0;
+    const wp = q("#wc-state"); wp.textContent = wc ? wc.state.replace(/_/g, " ") : wcKw > 0.1 ? "charging" : "idle"; wp.style.setProperty("--pc", veh || wcKw > 0.1 ? C.shoulder : "#8a8279");
+    q("#wc-stats").innerHTML = [["Power", fx(wcKw) + " kW"], W.session ? ["Session", fx(this._num(W.session), 1) + " kWh"] : null, W.volt ? ["Grid", fx(this._num(W.volt), 0) + " V"] : null, veh === null ? null : ["Vehicle", veh ? "connected" : "no"]]
+      .filter(Boolean).map(([l, v]) => `<div class="stat" style="border-color:${C.ev}"><span class="muted">${l}</span><b>${v}</b></div>`).join("");
+    W.amps.forEach(([, id], i) => { const a = this._num(id) ?? 0; q(`[data-a="${i}"]`).style.width = Math.min(a / 32 * 100, 100) + "%"; q(`[data-a="${i}"]`).style.background = C.ev; q(`[data-av="${i}"]`).textContent = fx(a, 0); });
+    W.temps.forEach(([, id], i) => { const t = this._num(id) ?? 0; q(`[data-t="${i}"]`).style.width = Math.min(t / 90 * 100, 100) + "%"; q(`[data-t="${i}"]`).style.background = t > 70 ? C.peak : t > 55 ? C.off_peak : C.shoulder; q(`[data-tv="${i}"]`).textContent = fx(t, 0); });
   }
   _paintEvCtl() {
     const q = s => this._root.querySelector(s), st = id => this._hass.states[id], on = id => st(id) && st(id).state === "on";
-    if (!q("#ev-start")) return;
-    // controls (skip while the user is editing)
+    const EV = this._disc().ev;
     this._root.querySelectorAll("[data-sw]").forEach(c => { c.checked = on(EV[c.dataset.sw]); });
+    if (!q("#ev-start")) return;
     const hm = id => ((st(id) || {}).state || "").slice(0, 5);
     const s1 = q("#ev-start"), s2 = q("#ev-end");
     if (this._root.activeElement !== s1) s1.value = hm(EV.start);
@@ -685,22 +751,23 @@ class CortexStudio extends HTMLElement {
 
   _battWidgets() {
     const r = this._root, f = this._flows(), s = this._data.studio || {};
-    r.querySelectorAll("[data-bhost]").forEach(h => { if (!h.querySelector(".batt")) h.innerHTML = battHTML(h.dataset.bhost, h.dataset.bhost === "house" ? "Home ESS" : "BYD Sealion 7"); });
+    const pf = this._pf(), EV = this._disc().ev;
+    BIMG.house = pf.photos.battery || ""; BIMG.ev = pf.photos.ev || "";
+    r.querySelectorAll("[data-bhost]").forEach(h => { if (!h.querySelector(".batt")) h.innerHTML = battHTML(h.dataset.bhost, this._name(h.dataset.bhost === "house" ? "battery" : "ev")); });
     const house = r.querySelector('[data-b="house"]'), ev = r.querySelector('[data-b="ev"]');
     if (house) {
-      const soc = this._num(s.soc) ?? this._num(N + "combined_battery_soc") ?? this._num(N + "battery_soc"), cap = this._num("input_number.system_battery_capacity") ?? 50;
-      const floor = this._num("number.neovolt_online_minimum_soc");
+      const soc = this._socNow(), cap = pf.battery.capacity || 10, floor = pf.battery.reserve ?? null;
       battSet(house, { pct: soc, charging: f.batt > 0.05, discharging: f.batt < -0.05,
         sub: `${fx(soc === null ? null : soc * cap / 100, 1)} of ${fx(cap, 0)} kWh · ` + (f.batt > 0.05 ? "▼ charging " + fx(f.batt) + " kW" : f.batt < -0.05 ? "▲ discharging " + fx(-f.batt) + " kW" : "idle"),
         marks: [{ pct: floor, color: C.peak, label: "Reserve" }] });
     }
     if (ev) {
-      const soc = this._num(EV.soc) ?? this._num(s.ev_soc), cap = this._num(EV.cap) ?? 82.5;
-      const chg = this._hass.states[EV.charging] && this._hass.states[EV.charging].state === "on";
+      const soc = this._num(EV.soc), cap = pf.ev.capacity || 60;
+      const chg = !!EV.charging && this._hass.states[EV.charging] && this._hass.states[EV.charging].state === "on";
       const kw = f.ev;
       battSet(ev, { pct: soc, charging: chg || kw > 0.05, plugged: !!this._data.energy.ev_plugged || (this._hass.states[EV.plug] || {}).state === "on",
         sub: `${fx(soc === null ? null : soc * cap / 100, 1)} of ${fx(cap, 0)} kWh · ` + (chg || kw > 0.05 ? "⚡ charging " + fx(kw) + " kW" : (this._data.energy.ev_plugged ? "plugged in" : "unplugged")),
-        marks: [{ pct: this._key() === "devices/ev" && this._evTarget !== undefined ? this._evTarget : this._num("input_number.byd_target_soc"), color: C.home, label: "Target" }] });
+        marks: [{ pct: this._key() === "devices/ev" && this._evTarget !== undefined ? this._evTarget : this._num(EV.target), color: C.home, label: "Target" }] });
     }
   }
 
@@ -721,25 +788,23 @@ class CortexStudio extends HTMLElement {
     });
     return out;
   }
-  _rates() {
-    const n = (id, d) => this._num(id) ?? d;
-    return { shoulder: n("input_number.agl_plan_shoulder", 11.11), off: n("input_number.agl_plan_off_peak", 32.12), hi: n("input_number.agl_plan_high_season_peak", 41.91),
-      lo: n("input_number.agl_plan_low_season_peak", 42.416), fitE: n("input_number.agl_plan_fit_evening", 28), fitM: n("input_number.agl_plan_fit_morning", 3),
-      fitO: n("input_number.agl_plan_fit_off_peak", 3), supply: n("input_number.agl_plan_supply_charge", 166.617) };
-  }
   /** Loads 30 days of hourly energy deltas + daily power/SOC stats + EV energy (cached 5 min). */
   async _energy() {
     if (this._en && Date.now() - this._en.at < 300000) return this._en;
     if (this._enP) return this._enP;
     this._enP = (async () => {
-      const tz = (this._hass.config && this._hass.config.time_zone) || undefined, s = (this._data && this._data.studio) || {};
-      const ids = { pv: s.day_pv || AN.pv, imp: s.day_import || AN.imp, exp: s.day_export || AN.exp, chg: AN.chg, dis: AN.dis, load: s.day_load || AN.load, ev: AN.evKwh };
+      const tz = (this._hass.config && this._hass.config.time_zone) || undefined, pf = this._pf(), dy = pf.day;
+      const ids = { pv: dy.pv, imp: dy.import, exp: dy.export, chg: dy.charge, dis: dy.discharge, load: dy.load, ev: pf.charger.energy };
+      Object.keys(ids).forEach(k => { if (!ids[k]) delete ids[k]; });
+      const pw = { pv: pf.solar.power, load: pf.load, grid: pf.grid, soc: pf.battery.soc };
+      Object.keys(pw).forEach(k => { if (!pw[k]) delete pw[k]; });
+      const scale = {}; Object.entries(pw).forEach(([k, id]) => { scale[k] = k === "soc" ? 1 : kwScale(this._st(id)); });
       const start = new Date(Date.now() - 32 * 86400000).toISOString();
       const ws = extra => this._hass.callWS({ type: "recorder/statistics_during_period", start_time: start, ...extra }).catch(() => ({}));
       const [hr, dayP, evD] = await Promise.all([
         ws({ statistic_ids: [...new Set(Object.values(ids))], period: "hour", types: ["state"] }),
-        ws({ statistic_ids: Object.values(AN_POWER), period: "day", types: ["mean", "min", "max"] }),
-        ws({ statistic_ids: [AN.evKwh], period: "day", types: ["change"] })]);
+        Object.keys(pw).length ? ws({ statistic_ids: Object.values(pw), period: "day", types: ["mean", "min", "max"] }) : {},
+        ids.ev ? ws({ statistic_ids: [ids.ev], period: "day", types: ["change"] }) : {}]);
       const hours = new Map();
       let evLast;
       Object.keys(ids).forEach(k => {
@@ -763,8 +828,8 @@ class CortexStudio extends HTMLElement {
       });
       const byDay = (res, id, f) => { const m = {}; (res[id] || []).forEach(r => { m[tzParts(+new Date(r.start), tz).key] = f(r); }); return m; };
       const power = {};
-      Object.entries(AN_POWER).forEach(([k, id]) => { power[k] = byDay(dayP, id, r => r); });
-      this._en = { at: Date.now(), tz, ids, evLast, hours: [...hours.values()].sort((a, b) => a.t - b.t), power, ev: byDay(evD, AN.evKwh, r => r.change) };
+      Object.entries(pw).forEach(([k, id]) => { power[k] = byDay(dayP, id, r => ({ min: r.min * scale[k], max: r.max * scale[k], mean: r.mean * scale[k] })); });
+      this._en = { at: Date.now(), tz, ids, evLast, hours: [...hours.values()].sort((a, b) => a.t - b.t), power, ev: ids.ev ? byDay(evD, ids.ev, r => r.change) : {} };
       this._enP = null;
       return this._en;
     })();
@@ -783,7 +848,7 @@ class CortexStudio extends HTMLElement {
         h[k] += live - have;
       }
     });
-    const evNow = this._num(AN.evKwh);
+    const evNow = this._num(en.ids.ev);
     if (evNow !== null && en.evLast !== undefined && evNow > en.evLast && evNow - en.evLast < 30) {
       let h = hrs.find(x => x.t === cur);
       if (!h) { h = { t: cur, ...pc, pv: 0, imp: 0, exp: 0, chg: 0, dis: 0, load: 0, ev: 0 }; hrs.push(h); }
@@ -798,7 +863,7 @@ class CortexStudio extends HTMLElement {
       if (!d) { d = { key: h.key, pv: 0, imp: 0, exp: 0, chg: 0, dis: 0, used: 0, cImp: 0, cExp: 0, cBase: 0, per: { shoulder: { kwh: 0, cost: 0 }, peak: { kwh: 0, cost: 0 }, off_peak: { kwh: 0, cost: 0 } }, expEve: 0, cExpEve: 0 }; days.set(h.key, d); }
       ["pv", "imp", "exp", "chg", "dis", "used", "cImp", "cExp", "cBase"].forEach(k => { d[k] += h[k]; });
       d.per[h.per].kwh += h.imp; d.per[h.per].cost += h.cImp;
-      if (h.hour >= 17 && h.hour < 21) { d.expEve += h.exp; d.cExpEve += h.cExp; }
+      if (inW(h.hour, r.few)) { d.expEve += h.exp; d.cExpEve += h.cExp; }
     });
     const list = [...days.values()].sort((a, b) => a.key.localeCompare(b.key)).slice(-30);
     list.forEach(d => {
@@ -819,37 +884,43 @@ class CortexStudio extends HTMLElement {
     return `<div class="stat" style="border-color:${color || C.ev}"><span class="muted">${esc(label)}</span><b>${esc(show)}<small>${esc(u)}</small></b></div>`;
   }
   async _loadMore(tab) {
+    const pf = this._pf();
     if (tab === "battery") {
-      const f = E.flows.map(x => x[1]);
-      const [fl, soc, tmp] = await Promise.all([this._hist(f, 24, 144), this._hist([N + "combined_battery_soc"], 48, 144), this._hist([N + "battery_max_cell_temperature", N + "battery_min_cell_temperature"], 24, 144)]);
-      this._bt = { fl, soc, tmp };
+      const fl = this._flowIds(), sc = Object.fromEntries(fl.map(x => [x[1], kwScale(this._st(x[1]))])), cell = this._disc().bt.cellT;
+      const [flh, soc, tmp] = await Promise.all([fl.length ? this._hist(fl.map(x => x[1]), 24, 144, sc) : null, pf.battery.soc ? this._hist([pf.battery.soc], 48, 144) : null, cell.length ? this._hist(cell, 24, 144) : null]);
+      this._bt = { fl: flh, soc, tmp };
     } else if (tab === "analytics") {
-      const pvId = "sensor.sungrow_pv", fc = "sensor.pv_forecast_power_now", sun = "sensor.sun_solar_elevation";
-      const [, sol, rate] = await Promise.all([this._energy().catch(() => null), this._hist([pvId, fc, sun], 36, 216, { [fc]: 0.001 }),
-        this._hist(["sensor.agl_plan_import_rate", "sensor.agl_plan_feed_in_rate"], 48, 96)]);
-      this._an = { sol, rate };
+      const pvId = pf.solar.power, fc = pf.solar.forecast_now;
+      const [, sol] = await Promise.all([this._energy().catch(() => null),
+        pvId && fc ? this._hist([pvId, fc], 36, 216, { [pvId]: kwScale(this._st(pvId)), [fc]: kwScale(this._st(fc)) }) : null]);
+      this._an = { sol, pvId, fc };
     }
     this._moreAt = { ...(this._moreAt || {}), [tab]: Date.now() };
     if (this._key() === { battery: "devices/battery", analytics: "energy/history" }[tab]) this._paintMore(tab);
   }
 
   // ---- BATTERY ---------------------------------------------------------
+  /** Power sensors for the battery page's flow chart: solar, house, battery, grid (whatever is set). */
+  _flowIds() {
+    const pf = this._pf();
+    return [["Solar", pf.solar.power, C.solar], ["House", pf.load, C.home], ["Battery", pf.battery.power, C.batt], ["Grid", pf.grid, C.grid]].filter(x => x[1]);
+  }
   _viewBattery() {
-    const soc = this._num(N + "combined_battery_soc") ?? this._num(N + "battery_soc");
-    const cap = this._num("input_number.system_battery_capacity") ?? 50;
+    const pf = this._pf(), B = this._disc().bt, name = this._name("battery");
+    if (!pf.battery.soc) return `<section class="grid">${this._needSetup(name, "Pick your battery's charge level sensor (and its control entities) under Energy and EV.")}</section>`;
+    const health = B.health.map(([l, id]) => { const st = this._st(id), ok = st && /^(ok|normal|none|0|off|no fault)$/i.test(st.state);
+      return this._tile(l, id, st && (ok || !isNaN(parseFloat(st.state))) ? C.shoulder : C.peak); }).join("");
+    const details = [B.tiles.length ? `<div class="card w6 flat"><h2>Monitor</h2><div class="stats">${B.tiles.map(([l, id]) => this._tile(l, id, C.batt)).join("")}</div></div>` : "",
+      health || B.life.length ? `<div class="card w6 flat"><h2>System health</h2>${health ? `<div class="stats">${health}</div>` : ""}
+          ${B.life.length ? `<div class="stats" style="margin-top:10px">${B.life.map(([l, id]) => this._tile(l, id, C.batt)).join("")}</div>` : ""}</div>` : "",
+      this._flowIds().length ? '<div class="card wide flat"><h2>Power flows, 24 h (kW)</h2><div id="bt-flows"></div></div>' : "",
+      B.cellT.length ? '<div class="card wide flat"><h2>Cell temperatures, 24 h (°C)</h2><div id="bt-tmp"></div></div>' : ""].join("");
     return `<section class="grid">
       ${this._ctlCards()}
-      <div class="card w4"><h2>Home ESS</h2><div data-bhost="house"></div></div>
+      <div class="card w4"><div class="chead"><h2>${esc(name)}</h2><button class="ghost" data-photo="battery" title="Upload a photo of your battery">${icon("camera")}</button></div><div data-bhost="house"></div></div>
       <div class="card w8"><h2>Charge level, 48 h (%)</h2><div id="bt-soc"></div></div>
-      <details class="card wide more"><summary><b>Battery details</b><span class="muted">cells, faults, lifetime totals, power flows, temperatures</span></summary>
-        <div class="grid inner">
-        <div class="card w6 flat"><h2>Monitor</h2><div class="stats">${E.bt.map(([l, id]) => this._tile(l, id, C.batt)).join("")}</div></div>
-        <div class="card w6 flat"><h2>System health</h2><div class="stats">${E.health.map(([l, id]) => {
-          const st = this._st(id), ok = st && /^(ok|normal|none|0)$/i.test(st.state);
-          return this._tile(l, id, st && (ok || !isNaN(parseFloat(st.state))) ? C.shoulder : C.peak); }).join("")}</div>
-          <div class="stats" style="margin-top:10px">${E.life.map(([l, id]) => this._tile(l, id, C.batt)).join("")}</div></div>
-        <div class="card wide flat"><h2>Power flows today (W)</h2><div id="bt-flows"></div></div>
-        <div class="card wide flat"><h2>Cell temperatures, 24 h (°C)</h2><div id="bt-tmp"></div></div></div></details>
+      ${details ? `<details class="card wide more"><summary><b>Battery details</b><span class="muted">found on your battery and inverter devices</span></summary>
+        <div class="grid inner">${details}</div></details>` : ""}
     </section>`;
   }
 
@@ -858,14 +929,8 @@ class CortexStudio extends HTMLElement {
     const c = this._data.control || {};
     return c.autopilot_mode === "auto" ? "auto" : c.autopilot_mode === "shadow" ? "advise" : (c.auto_topup || c.auto_export ? "timers" : "manual");
   }
-  /** Neovolt / inverter output settings, found by name so no entity ids are hard-coded. */
-  _neoControls() {
-    const dom = e => e.split(".")[0], re = /feed.?in|cutoff|dispatch|export limit|active power|discharg|charg\w*\s+(start|end)|minimum soc|grid power offset|pv switch/i, own = /^(neovolt|local\b|inverter|sg10rs)/i;
-    return Object.entries(this._hass.states).filter(([id, st]) => st && ["switch", "number", "select", "time"].includes(dom(id))
-      && own.test((st.attributes || {}).friendly_name || "") && re.test(st.attributes.friendly_name || "") && st.state !== "unavailable")
-      .map(([id, st]) => ({ ...st, entity_id: id, attributes: st.attributes }))
-      .sort((a, b) => (a.attributes.friendly_name || "").localeCompare(b.attributes.friendly_name || ""));
-  }
+  /** Battery and inverter output settings, found on their devices so no entity ids are hard-coded. */
+  _neoControls() { return this._disc().bt.controls; }
   _ctlCards() {
     const d = this._data, c = d.control; if (!c) return "";
     const mode = this._ctlMode(), manual = mode === "manual";
@@ -902,9 +967,8 @@ class CortexStudio extends HTMLElement {
   _neoCard(manual, mode) {
     const group = n => /dispatch/i.test(n) ? "Dispatch" : /feed.?in/i.test(n) ? "Grid feed-in" : /cutoff|minimum soc|charg\w*\s+(start|end)/i.test(n) ? "Battery limits" : "Inverter";
     const order = ["Grid feed-in", "Dispatch", "Battery limits", "Inverter"], groups = {};
-    const short = n => { const t = n.replace(/^(neovolt online|neovolt|local|inverter|sg10rs \(local\)|sg10rs)\s+/i, ""); return t.charAt(0).toUpperCase() + t.slice(1); };
     for (const st of this._neoControls()) {
-      const id = st.entity_id, a = st.attributes, dm = id.split(".")[0], fn = a.friendly_name || id;
+      const id = st.entity_id, a = st.attributes, dm = id.split(".")[0], fn = a.friendly_name || id, short = () => this._short({ id, st, dev: st.dev });
       const w = dm === "switch" ? this._toggle(`data-ctl="${id}"`, st.state === "on")
         : dm === "number" ? `<div class="nstep"><button data-step="-1" data-for="${id}">−</button><input type="number" data-ctl="${id}" value="${esc(st.state)}" step="${a.step || "any"}" min="${a.min ?? ""}" max="${a.max ?? ""}"><button data-step="1" data-for="${id}">+</button>${a.unit_of_measurement ? `<span class="muted">${esc(a.unit_of_measurement)}</span>` : ""}</div>`
         : dm === "select" ? `<select data-ctl="${id}">${(a.options || []).map(o => `<option${o === st.state ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>`
@@ -913,10 +977,11 @@ class CortexStudio extends HTMLElement {
     }
     const blocks = order.filter(g => groups[g]).map(g => `<div class="grp"><h3>${g}</h3>${groups[g].join("")}</div>`).join("");
     const label = { timers: "Timers", advise: "Advise", auto: "Autopilot" }[mode];
-    return `<div class="card wide"><h2>Neovolt output settings</h2>
+    if (!blocks) return "";
+    return `<div class="card wide"><h2>Inverter and battery settings</h2>
       ${manual ? "" : `<div class="lockbar"><span>🔒 Locked while Cortex runs <b>${label}</b>, so it and your edits don't fight.</span><button id="to-manual">Switch to Manual</button></div>`}
-      ${blocks ? `<div class="grps ${manual ? "" : "locked"}">${blocks}</div>` : '<div class="muted">No Neovolt output controls found.</div>'}
-      <div class="muted" style="margin-top:8px">These write straight to the Neovolt and inverter entities.</div></div>`;
+      <div class="grps ${manual ? "" : "locked"}">${blocks}</div>
+      <div class="muted" style="margin-top:8px">These write straight to your battery and inverter entities.</div></div>`;
   }
   _wireCtl() {
     const r = this._root, q = s => r.querySelector(s), msg = (t, bad) => { const m = q("#ctl-msg"); if (m) { m.textContent = t; m.className = "toast" + (t ? " show" : "") + (bad ? " bad" : ""); } };
@@ -982,6 +1047,8 @@ class CortexStudio extends HTMLElement {
     return o;
   }
   _paintSplit() {
+    const dy = this._pf().day;
+    if (!dy.pv && !dy.import && !dy.export) { const m = this._money(); this._paintTo("#mix", mixBar(m.self, m.exp, m.imp)); return; }
     const sp = this._splitToday();
     this._paintTo("#mix", sp ? sankeySvg(sp, this.clientWidth < 640) : '<div class="muted">Loading today\'s split…</div>');
     wireSankey(this._root);
@@ -990,7 +1057,7 @@ class CortexStudio extends HTMLElement {
   // ---- PLAN COMPARISON -------------------------------------------------
   _planCompare(c, keys, n) {
     const hrs = c.hrs.filter(h => keys.has(h.key)), r = c.rates;
-    const cur = { id: "current", name: "Current plan (AGL)", current: true, supply: r.supply, cost: h => [tariffAt(h, r).imp, tariffAt(h, r).fit] };
+    const cur = { id: "current", name: `Current plan (${this._name("plan")})`, current: true, supply: r.supply, cost: h => [tariffAt(h, r).imp, tariffAt(h, r).fit] };
     const mine = (this._data.plans || []).map(p => ({ ...p, cost: h => [planRate(p.import, p.import_default, h), planRate(p.fit, p.fit_default, h)] }));
     const rows = [cur, ...mine].map(p => {
       let imp = 0, exp = 0;
@@ -1049,7 +1116,7 @@ class CortexStudio extends HTMLElement {
         <a class="lnk" href="/config/integrations/integration/cortex" target="_top">All integration options ↗</a></div>
       <div class="card w6"><h2>AI and chat</h2>
         <div class="row"><span>Answer style</span><span class="seg" id="set-style">${[["brief", "Brief"], ["normal", "Normal"], ["detailed", "Detailed"]].map(([k, l]) => `<button data-style="${k}" class="${(st.style || "brief") === k ? "on" : ""}">${l}</button>`).join("")}</span></div>
-        <div class="row col"><span>Household instructions <span class="muted">followed in every chat, e.g. "Call me Ajit. Use 24-hour time."</span></span>
+        <div class="row col"><span>Household instructions <span class="muted">followed in every chat, e.g. "Call me Sam. Use 24-hour time."</span></span>
           <textarea id="set-notes" maxlength="600" rows="3" placeholder="Anything the assistant should always know or do">${esc(st.notes || "")}</textarea>
           <div class="rowend"><span class="muted" id="notes-n">${(st.notes || "").length}/600</span><button id="set-notes-save">Save</button></div></div>
         <div class="row"><span>Conversation agent</span><select id="set-agent"><option value="">Home Assistant default</option></select></div>
@@ -1058,8 +1125,82 @@ class CortexStudio extends HTMLElement {
         <div class="row"><span>Camera vision (AI Task)</span><b class="${st.ai_task ? "ok" : "bad"}">${st.ai_task ? "set up" : "not set up"}</b></div></div>
       <div class="card w6"><h2>Phone notifications</h2><div class="muted" style="margin-bottom:6px">Choose what Cortex pushes to your phone. Everything is still listed under the bell.</div>
         ${PUSH_CATS.map(([k, l]) => `<label class="row"><span>${l}</span>${this._toggle(`data-mute="${k}"`, !muted.has(k))}</label>`).join("")}</div>
+      ${this._homeCard()}${this._photoCard()}${this._tariffCard()}${this._checkCard()}
       <div class="toast wide" id="set-msg" style="grid-column:1/-1"></div>
     </section>`;
+  }
+  _homeCard() {
+    const pf = this._pf(), n = pf.names, b = pf.battery, e = pf.ev;
+    const txt = (k, l, v) => `<div class="row"><span>${l}</span><input class="tin" data-home="${k}" maxlength="40" value="${esc(v || "")}"></div>`;
+    const num = (k, l, v, min, max, step, u) => `<div class="row"><span>${l}</span><div class="nstep"><input type="number" data-homen="${k}" value="${v ?? ""}" min="${min}" max="${max}" step="${step}"><span class="muted">${u}</span></div></div>`;
+    return `<div class="card w6"><h2>Your home</h2>
+      ${txt("battery_name", "Battery name", n.battery)}${txt("ev_name", "EV name", n.ev)}${txt("charger_name", "Charger name", n.charger)}${txt("plan_name", "Electricity plan", n.plan)}
+      ${num("battery_kwh", "Battery capacity", b.capacity, 1, 500, 0.1, "kWh")}${num("battery_reserve_pct", "Battery reserve", b.reserve, 0, 100, 1, "%")}
+      ${num("battery_efficiency", "Round-trip efficiency", b.efficiency, 50, 100, 1, "%")}${num("ev_kwh", "EV battery", e.capacity, 1, 300, 0.1, "kWh")}
+      ${num("ev_charger_kw", "Charger power", e.charger_kw, 1, 50, 0.1, "kW")}
+      <div class="rowend" style="margin-top:8px"><span class="muted">Entities are picked in Cortex options.</span><button id="home-save">Save</button></div></div>`;
+  }
+  _photoCard() {
+    const ph = this._pf().photos, slot = (k, l, sub) => `<div class="phslot"><div class="phthumb">${ph[k] ? `<img src="${esc(ph[k])}" alt="" onerror="this.remove()">` : icon("camera")}</div>
+      <div class="phn"><b>${l}</b><span class="muted">${ph[k] ? "custom" : sub}</span></div>
+      <button class="ghost" data-photo="${k}">${icon("upload")} ${ph[k] ? "Replace" : "Upload"}</button>${ph[k] ? `<button class="ghost" data-photo-del="${k}" aria-label="Remove ${l} photo">✕</button>` : ""}</div>`;
+    return `<div class="card w6"><h2>Photos</h2>${slot("ev", this._name("ev"), "drawing")}${slot("battery", this._name("battery"), "drawing")}${slot("background", "Background", "none")}
+      <div class="muted" style="margin-top:8px">PNG with a transparent or plain background works best. Photos are resized here and stored in your Home Assistant config folder.</div></div>`;
+  }
+  _tariffCard() {
+    const r = this._rates(), MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const rate = (k, l, v, u = "c") => `<label><span>${l}</span><span class="win"><input type="number" step="0.001" data-tar="${k}" value="${v}"><span class="muted">${u}</span></span></label>`;
+    const win = (a, b, l, w) => `<div class="row"><span>${l}</span><span class="win"><input type="number" min="0" max="23" data-win="${a}" value="${w[0]}" aria-label="${l} from">–<input type="number" min="0" max="24" data-win="${b}" value="${w[1] || 24}" aria-label="${l} to"><span class="muted">h</span></span></div>`;
+    return `<div class="card wide"><div class="chead"><h2>Tariff <span class="muted">${esc(this._name("plan"))}</span></h2><button id="tar-save">Save</button></div>
+      <div class="tgrid">${rate("rate_shoulder", "Cheap window", r.shoulder)}${rate("rate_off_peak", "Off-peak", r.off)}${rate("rate_high_peak", "Peak, high season", r.hi)}${rate("rate_low_peak", "Peak, rest of year", r.lo)}
+        ${rate("supply_charge", "Supply", r.supply, "c/day")}${rate("fit_evening", "Feed-in, evening", r.fitE)}${rate("fit_morning", "Feed-in, morning", r.fitM)}${rate("fit_other", "Feed-in, other", r.fitO)}</div>
+      <div class="tarw">${win("shoulder_start", "shoulder_end", "Cheap window", r.sw)}${win("peak_start", "peak_end", "Peak", r.pw)}
+        <div class="row"><span>Peak applies on</span><select data-tar-days>${[["business", "Weekdays except holidays"], ["weekdays", "Weekdays"], ["everyday", "Every day"]].map(([k, l]) => `<option value="${k}"${r.peak_days === k ? " selected" : ""}>${l}</option>`).join("")}</select></div>
+        ${win("fit_evening_start", "fit_evening_end", "Evening feed-in", r.few)}${win("fit_morning_start", "fit_morning_end", "Morning feed-in", r.fmw)}</div>
+      <div class="row col"><span>High season months <span class="muted">peak uses the high-season rate</span></span><div class="dchips">${MON.map((m, i) => `<button class="chip ${(r.months || []).includes(i + 1) ? "on" : ""}" data-mon="${i + 1}">${m}</button>`).join("")}</div></div>
+      <div class="muted">Cents per kWh. Hours run from–to; a window like 0–0 is off. Holidays come from the calendar picked in options.</div></div>`;
+  }
+  _checkCard() {
+    const pf = this._pf(), d = pf.day, ok = v => !!(Array.isArray(v) ? v.length : v);
+    const items = [["Solar power", pf.solar.power], ["Grid power", pf.grid], ["Battery power", pf.battery.power], ["Battery level", pf.battery.soc], ["Battery control", pf.battery.mode],
+      ["Solar forecast", pf.solar.today], ["Daily energy counters", d.pv && d.import && d.export], ["Public holidays", pf.holidays], ["EV battery level", pf.ev.soc],
+      ["Charger power", pf.charger.power], ["Phone notifications", pf.notify], ["Speakers", (this._data.settings || {}).speakers]];
+    const miss = items.filter(x => !ok(x[1])).length;
+    return `<div class="card wide"><div class="chead"><h2>Setup check <span class="muted">${miss ? miss + " not set" : "all set"}</span></h2><a class="lnk" href="/config/integrations/integration/cortex" target="_top">Pick entities ↗</a></div>
+      <div class="checks">${items.map(([l, v]) => `<span class="chk ${ok(v) ? "ok" : ""}">${ok(v) ? icon("check") : "○"} ${l}</span>`).join("")}</div>
+      <div class="muted" style="margin-top:8px">Only what you set is used; pages without their entities show a short setup note instead.</div></div>`;
+  }
+  /** Resize a picked image in the browser, then store it through Cortex. */
+  _uploadPhoto(kind) {
+    const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/png,image/jpeg,image/webp,image/gif";
+    inp.onchange = () => {
+      const file = inp.files && inp.files[0]; if (!file) return;
+      this._toast("Uploading…");
+      const url = URL.createObjectURL(file), im = new Image();
+      im.onload = async () => {
+        URL.revokeObjectURL(url);
+        const max = kind === "background" ? 2200 : 1400, k = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight));
+        const png = file.type === "image/png" && kind !== "background", cv = document.createElement("canvas");
+        cv.width = Math.round(im.naturalWidth * k); cv.height = Math.round(im.naturalHeight * k);
+        cv.getContext("2d").drawImage(im, 0, 0, cv.width, cv.height);
+        const data = cv.toDataURL(png ? "image/png" : "image/jpeg", 0.86);
+        try { await this._hass.callWS({ type: "cortex/upload", kind, data }); this._toast("Saved. Cortex is reloading…"); this._dc = null; setTimeout(() => this._load(), 3000); }
+        catch (e) { this._toast("Upload failed: " + (e.message || e.code), true); }
+      };
+      im.onerror = () => { URL.revokeObjectURL(url); this._toast("That file isn't an image this browser can read.", true); };
+      im.src = url;
+    };
+    inp.click();
+  }
+  async _removePhoto(kind) {
+    try { await this._hass.callWS({ type: "cortex/upload", kind }); this._toast("Photo removed."); setTimeout(() => this._load(), 3000); }
+    catch (e) { this._toast("Failed: " + (e.message || e.code), true); }
+  }
+  _toast(text, bad) {
+    let t = this._root.querySelector("#gtoast");
+    if (!t) { t = document.createElement("div"); t.id = "gtoast"; t.setAttribute("role", "status"); this._root.appendChild(t); }
+    t.textContent = text; t.className = "gtoast show" + (bad ? " bad" : "");
+    clearTimeout(this._toastT); this._toastT = setTimeout(() => { t.className = "gtoast"; }, 4000);
   }
   _saveOpts(opts, msgSel = "#set-msg") {
     const m = this._root.querySelector(msgSel), msg = (t, bad) => { if (m) { m.textContent = t; m.className = "toast show" + (bad ? " bad" : ""); } };
@@ -1078,6 +1219,19 @@ class CortexStudio extends HTMLElement {
     q("#set-aph").onchange = e => { const v = parseInt(e.target.value, 10); if (!Number.isNaN(v)) save({ ai_per_hour: v }); };
     const muteSave = () => save({ mute_push: [...r.querySelectorAll("[data-mute]")].filter(i => !i.checked).map(i => i.dataset.mute) });
     r.querySelectorAll("[data-mute]").forEach(i => i.onchange = muteSave);
+    q("#home-save").onclick = () => {
+      const o = {};
+      r.querySelectorAll("[data-home]").forEach(i => { const v = i.value.trim(); if (v) o[i.dataset.home] = v; });
+      r.querySelectorAll("[data-homen]").forEach(i => { const v = parseFloat(i.value); if (!Number.isNaN(v)) o[i.dataset.homen] = v; });
+      save(o);
+    };
+    r.querySelectorAll("[data-mon]").forEach(b => b.onclick = () => b.classList.toggle("on"));
+    q("#tar-save").onclick = () => {
+      const o = { peak_days: q("[data-tar-days]").value, high_months: [...r.querySelectorAll("[data-mon].on")].map(b => Number(b.dataset.mon)) };
+      r.querySelectorAll("[data-tar]").forEach(i => { const v = parseFloat(i.value); if (!Number.isNaN(v)) o[i.dataset.tar] = v; });
+      r.querySelectorAll("[data-win]").forEach(i => { const v = parseInt(i.value, 10); if (!Number.isNaN(v)) o[i.dataset.win] = Math.max(0, Math.min(24, v)); });
+      save(o);
+    };
   }
   _paintPlans() {
     const el = this._root.querySelector("#plans"); if (!el) return;
@@ -1092,7 +1246,7 @@ class CortexStudio extends HTMLElement {
         <label>Feed-in default <input type="number" step="0.01" value="${p.fit_default}" data-p="${i}:fit_default"> c</label></div>
       <div class="bands"><h3>Import bands <button class="ghost" data-badd="${i}:import">+ band</button></h3>${(p.import || []).map((b, j) => band(i, "import", b, j)).join("") || '<div class="muted">Flat rate.</div>'}</div>
       <div class="bands"><h3>Feed-in bands <button class="ghost" data-badd="${i}:fit">+ band</button></h3>${(p.fit || []).map((b, j) => band(i, "fit", b, j)).join("") || '<div class="muted">Flat rate.</div>'}</div></div>`).join("")
-      : '<div class="muted">No plans yet. Add one with the rates from a retailer\'s offer (GloBird, Amber, another AGL plan…).</div>';
+      : '<div class="muted">No plans yet. Add one with the rates from another retailer\'s offer.</div>';
     const num = v => (v === "" ? 0 : Number(v));
     el.querySelectorAll("[data-p]").forEach(i => i.onchange = () => { const [pi, k] = i.dataset.p.split(":"); P[pi][k] = k === "name" ? i.value : num(i.value); });
     el.querySelectorAll("[data-b]").forEach(i => i.onchange = () => { const [pi, kind, bi, k] = i.dataset.b.split(":"); P[pi][kind][bi][k] = k === "days" ? i.value : num(i.value); });
@@ -1112,10 +1266,10 @@ class CortexStudio extends HTMLElement {
   _paintDevices() {
     const el = this._root.querySelector("#devs"); if (!el || !this._devs) return;
     const { devs, ents } = this._devs, s = this._data.studio || {}, ignore = new Set((this._data.settings || {}).health_ignore || []);
-    const known = new Set([s.pv, s.grid, s.battery, s.ev, s.soc, s.ev_soc, s.day_pv, s.day_load, s.day_export, s.day_import, ...Object.values(EV).flat().filter(x => typeof x === "string"),
-      ...E.bt.map(x => x[1]), ...E.health.map(x => x[1]), (this._data.control || {}).mode_entity].filter(Boolean));
+    const dc = this._disc(), known = new Set([s.pv, s.grid, s.battery, s.ev, s.soc, s.ev_soc, s.day_pv, s.day_load, s.day_export, s.day_import,
+      ...Object.values(dc.ev).filter(x => typeof x === "string"), dc.ch.power, dc.ch.status, ...dc.bt.tiles.map(x => x[1]), (this._data.control || {}).mode_entity].filter(Boolean));
     const byDev = {}; ents.forEach(e => { if (e.device_id && !e.disabled_by) (byDev[e.device_id] = byDev[e.device_id] || []).push(e.entity_id); });
-    const energy = /neovolt|sungrow|tesla|byd|alpha|byte.?watt|solcast|forecast\.solar|wall connector/i;
+    const energy = new RegExp(INVERTER_BRANDS.source + "|solcast|forecast\\.solar|wall connector|charger|wallbox|zappi|evse", "i");
     const list = devs.filter(dv => (byDev[dv.id] || []).some(id => known.has(id)) || energy.test(`${dv.manufacturer || ""} ${dv.model || ""} ${dv.name || ""}`))
       .map(dv => {
         const ids = byDev[dv.id] || [], sts = ids.map(id => this._hass.states[id]).filter(Boolean);
@@ -1268,7 +1422,7 @@ class CortexStudio extends HTMLElement {
     const pv = sum("pv"), used = sum("used"), imp = sum("imp"), exp = sum("exp"), chg = sum("chg"), dis = sum("dis"), cImp = sum("cImp"), cExp = sum("cExp"), saved = sum("saved");
     const ss = used > 0 ? Math.max(0, Math.min(100, (1 - imp / used) * 100)) : null, sc = pv > 0 ? Math.max(0, Math.min(100, (1 - exp / pv) * 100)) : null;
     const supply = days.reduce((a, d) => a + d.supply, 0), net = cImp - cExp + supply, ev = sum("ev");
-    const cap = this._num("input_number.system_battery_capacity") ?? 50, f = (v, d = 0) => fx(v, d), $ = v => (v < 0 ? "-$" : "$") + fx(Math.abs(v), 2);
+    const pf = this._pf(), rt = this._rates(), cap = pf.battery.capacity || 10, f = (v, d = 0) => fx(v, d), $ = v => (v < 0 ? "-$" : "$") + fx(Math.abs(v), 2);
     const T = (l, v, col, sub) => `<div class="stat" style="border-color:${col}"><span class="muted">${l}</span><b>${v}</b>${sub ? `<span class="muted">${sub}</span>` : ""}</div>`;
     const best = (k, max = true) => days.filter(d => d[k] !== null && d[k] !== undefined).reduce((a, d) => (!a || (max ? d[k] > a[k] : d[k] < a[k]) ? d : a), null);
     const bd = (d, k, u) => d ? `${dayLabel(d.key, true)} · ${fx(d[k], 1)}${u}` : "–";
@@ -1276,7 +1430,7 @@ class CortexStudio extends HTMLElement {
     const chart = (series, o) => lineChart(series, { labels: lbl, ...o });
     // hourly profile
     const prof = h => { const a = new Array(24).fill(0); c.hrs.filter(x => keys.has(x.key)).forEach(x => { a[x.hour] += x[h]; }); return a.map(v => v / n); };
-    const per = ["shoulder", "peak", "off_peak"].map(p => ({ id: p, name: { shoulder: "Shoulder 10–14", peak: "Peak 16–20", off_peak: "Off-peak" }[p], color: { shoulder: C.shoulder, peak: C.peak, off_peak: C.off_peak }[p],
+    const per = ["shoulder", "peak", "off_peak"].map(p => ({ id: p, name: { shoulder: `Shoulder ${wl(rt.sw)}`, peak: `Peak ${wl(rt.pw)}`, off_peak: "Off-peak" }[p], color: { shoulder: C.shoulder, peak: C.peak, off_peak: C.off_peak }[p],
       kwh: days.reduce((a, d) => a + d.per[p].kwh, 0), cost: days.reduce((a, d) => a + d.per[p].cost, 0) }));
     const pk = Math.max(...per.map(p => p.kwh), 0.1), expEve = sum("expEve"), cExpEve = sum("cExpEve");
     const rowBar = (name, color, kwh, cost, mx) => `<div class="row"><span style="min-width:120px">${name}</span><span style="flex:1;margin:0 10px;background:rgba(127,127,127,.15);border-radius:6px;height:10px;align-self:center"><i style="display:block;height:10px;border-radius:6px;width:${Math.min(kwh / mx * 100, 100)}%;background:${color}"></i></span><b>${f(kwh, 1)} kWh · ${$(cost)}</b></div>`;
@@ -1296,8 +1450,8 @@ class CortexStudio extends HTMLElement {
       <div class="card w6"><h2>Daily money ($)</h2>${barChart(lbl, [{ name: "Import cost", color: C.peak, data: days.map(d => d.cImp) }, { name: "Export earned", color: C.shoulder, data: days.map(d => d.cExp) },
         { name: "Saved vs no solar", color: C.solar, data: days.map(d => Math.max(d.saved, 0)) }], { unit: "$", dec: 2 })}</div>
       <div class="card w6"><h2>Import by rate period</h2>${per.map(p => rowBar(p.name, p.color, p.kwh, p.cost, pk)).join("")}
-        <div class="muted" style="margin-top:6px">Aim: shift peak use to battery; top up in the 10–14 shoulder.</div></div>
-      <div class="card w6"><h2>Export earnings</h2>${rowBar("Evening FiT 17–21", C.shoulder, expEve, cExpEve, Math.max(exp, 0.1))}${rowBar("Other hours", C.off_peak, exp - expEve, cExp - cExpEve, Math.max(exp, 0.1))}
+        <div class="muted" style="margin-top:6px">Aim: shift peak use to the battery; top up in the ${wl(rt.sw)} cheap window.</div></div>
+      <div class="card w6"><h2>Export earnings</h2>${rowBar(`Evening feed-in ${wl(rt.few)}`, C.shoulder, expEve, cExpEve, Math.max(exp, 0.1))}${rowBar("Other hours", C.off_peak, exp - expEve, cExp - cExpEve, Math.max(exp, 0.1))}
         <div class="row"><span>Average per exported kWh</span><b>${exp > 0 ? fx(cExp / exp * 100, 1) + "c" : "–"}</b></div></div>
       <div class="card wide"><h2>Typical day: average kWh per hour</h2>${lineChart([{ name: "Solar", color: C.solar, data: prof("pv"), area: true }, { name: "Used", color: C.home, data: prof("used") },
         { name: "Imported", color: C.grid, data: prof("imp") }, { name: "Exported", color: C.shoulder, data: prof("exp") }], { labels: Array.from({ length: 24 }, (_, h) => h + ":00"), min: 0, w: 1100, h: 220 })}</div>
@@ -1306,21 +1460,21 @@ class CortexStudio extends HTMLElement {
       <div class="card w6"><h2>Battery cycling (kWh/day)</h2>${barChart(lbl, [{ name: "Charged", color: C.batt, data: days.map(d => d.chg) }, { name: "Discharged", color: "#7e57c2", data: days.map(d => d.dis) }])}</div>
       <div class="card w6"><h2>Battery level range (%)</h2>${chart([{ name: "Max", color: C.shoulder, data: days.map(d => d.soc && d.soc.max) }, { name: "Average", color: C.batt, data: days.map(d => d.soc && d.soc.mean) },
         { name: "Min", color: C.off_peak, data: days.map(d => d.soc && d.soc.min) }], { min: 0, max: 100 })}</div>
-      <div class="card w6"><h2>Peak power each day (kW)</h2>${chart([{ name: "House load", color: C.home, data: days.map(d => d.loadMax === null ? null : d.loadMax / 1000) }, { name: "Solar", color: C.solar, data: days.map(d => d.pvMax === null ? null : d.pvMax / 1000) },
-        { name: "Grid", color: C.grid, data: days.map(d => d.gridMax === null ? null : Math.abs(((this._data.studio || {}).grid_invert ? -d.gridMin : d.gridMax)) / 1000) }], { min: 0 })}</div>
-      <div class="card w6"><h2>EV charging (kWh/day)</h2>${barChart(lbl, [{ name: "Tesla wall connector", color: C.ev, data: evDays }])}</div>
-      <div class="card wide"><h2>Solar production vs forecast, last 36 h (kW)</h2><div id="an-sol"></div></div>
-      <div class="card w6"><h2>AGL rates 48h (c/kWh)</h2><div id="an-rate"></div></div>
-      <div class="card w6"><h2>Cost tracking</h2><div class="stats">${E.cost.map(([l, id]) => this._tile(l, id, C.off_peak)).join("")}</div></div></div></details>`;
+      <div class="card w6"><h2>Peak power each day (kW)</h2>${chart([{ name: "House load", color: C.home, data: days.map(d => d.loadMax) }, { name: "Solar", color: C.solar, data: days.map(d => d.pvMax) },
+        { name: "Grid", color: C.grid, data: days.map(d => d.gridMax === null ? null : Math.abs((this._data.studio || {}).grid_invert ? -d.gridMin : d.gridMax)) }].filter(x => x.data.some(v => v !== null)), { min: 0 })}</div>
+      ${pf.charger.energy ? `<div class="card w6"><h2>EV charging (kWh/day)</h2>${barChart(lbl, [{ name: this._name("charger"), color: C.ev, data: evDays }])}</div>` : ""}
+      ${pf.solar.power && pf.solar.forecast_now ? '<div class="card wide"><h2>Solar production vs forecast, last 36 h (kW)</h2><div id="an-sol"></div></div>' : ""}
+      <div class="card w6"><h2>${(this._data.plan || {}).rows ? "Rates, next 48 h" : "Rates today"} (c/kWh)</h2><div id="an-rate"></div></div>
+      ${pf.bills.length ? `<div class="card w6"><h2>Bills and costs</h2><div class="stats">${pf.bills.map(id => this._tile(((this._st(id) || {}).attributes || {}).friendly_name || id, id, C.off_peak)).join("")}</div></div>` : ""}</div></details>`;
   }
 
   _paintMore(tab) {
     const q = id => this._root.querySelector(id), put = (id, h) => { const el = q(id); if (el) el.innerHTML = h; };
     if (tab === "battery" && this._bt) {
-      const { fl, soc, tmp } = this._bt;
-      put("#bt-flows", lineChart(E.flows.map(([n, id, c], i) => ({ name: n, color: c, data: fl[id], area: i === 0 })), { start: fl.start, end: fl.end, h: 240, w: 1100 }));
-      put("#bt-soc", lineChart([{ name: "SOC", color: C.batt, data: soc[N + "combined_battery_soc"], area: true }], { min: 0, max: 100, start: soc.start, end: soc.end }));
-      put("#bt-tmp", lineChart([{ name: "Max cell", color: "#e8833a", data: tmp[N + "battery_max_cell_temperature"] }, { name: "Min cell", color: "#4a90d9", data: tmp[N + "battery_min_cell_temperature"] }], { start: tmp.start, end: tmp.end }));
+      const { fl, soc, tmp } = this._bt, pf = this._pf(), cell = this._disc().bt.cellT;
+      if (fl) put("#bt-flows", lineChart(this._flowIds().map(([n, id, c], i) => ({ name: n, color: c, data: fl[id], area: i === 0 })), { start: fl.start, end: fl.end, h: 240, w: 1100 }));
+      if (soc) put("#bt-soc", lineChart([{ name: "SOC", color: C.batt, data: soc[pf.battery.soc], area: true }], { min: 0, max: 100, start: soc.start, end: soc.end }));
+      if (tmp) put("#bt-tmp", lineChart(cell.map((id, i) => ({ name: i ? "Min cell" : "Max cell", color: i ? "#4a90d9" : "#e8833a", data: tmp[id] })), { start: tmp.start, end: tmp.end }));
     }
     if (tab === "analytics") {
       const body = q("#an-body");
@@ -1328,11 +1482,15 @@ class CortexStudio extends HTMLElement {
         body.innerHTML = this._anBody();
         body.querySelectorAll("[data-anr]").forEach(b => b.onclick = () => { this._anRange = Number(b.dataset.anr); this._paintMore("analytics"); });
       }
-      if (this._an) {
-        const { sol, rate } = this._an, ids = ["sensor.sungrow_pv", "sensor.pv_forecast_power_now"];
-        put("#an-sol", lineChart([{ name: "Actual PV", color: "#FFB300", data: sol[ids[0]], area: true }, { name: "Forecast", color: "#00B0FF", data: sol[ids[1]] }], { start: sol.start, end: sol.end, min: 0, h: 220, w: 1100 }));
-        put("#an-rate", lineChart([{ name: "Import", color: "#e45649", data: rate["sensor.agl_plan_import_rate"] }, { name: "Feed-in", color: "#50a14f", data: rate["sensor.agl_plan_feed_in_rate"] }], { step: true, min: 0, start: rate.start, end: rate.end }));
+      if (this._an && this._an.sol) {
+        const { sol, pvId, fc } = this._an;
+        put("#an-sol", lineChart([{ name: "Actual PV", color: "#FFB300", data: sol[pvId], area: true }, { name: "Forecast", color: "#00B0FF", data: sol[fc] }], { start: sol.start, end: sol.end, min: 0, h: 220, w: 1100 }));
       }
+      const rows = ((this._data.plan || {}).rows || []);
+      if (rows.length) put("#an-rate", lineChart([{ name: "Import", color: "#e45649", data: rows.map(x => x.rate) }, { name: "Feed-in", color: "#50a14f", data: rows.map(x => x.fit) }],
+        { step: true, min: 0, start: new Date(rows[0].t), end: new Date(new Date(rows[rows.length - 1].t).getTime() + 1800000) }));
+      else put("#an-rate", lineChart([{ name: "Import", color: "#e45649", data: (this._data.schedule || []).map(x => x.import) }, { name: "Feed-in", color: "#50a14f", data: (this._data.schedule || []).map(x => x.feed_in) }],
+        { step: true, min: 0, labels: (this._data.schedule || []).map(x => x.hour + ":00") }));
     }
   }
 
@@ -1340,8 +1498,6 @@ class CortexStudio extends HTMLElement {
   _moneyCard(cls = "") {
     const m = this._money(), exp = m.exp, imp = m.imp, p = m.p, f = m.f, self = m.self, net = m.net;
     const h = new Date().getHours(), bd = this._data.energy.business_day, high = this._data.energy.high_season;
-    const v = id => fx(this._num(id), 2), now = (a, b) => (h >= a && h < b ? '<b class="ok">◀ now</b>' : "");
-    const pk = high ? "input_number.agl_plan_high_season_peak" : "input_number.agl_plan_low_season_peak";
     return `<div class="card ${cls}"><h2>Money today</h2>
         <div class="row"><span>Solar used on-site (${fx(self, 1)} kWh)</span><b>$${fx(self * p, 2)} avoided</b></div>
         <div class="row"><span>Exported (${fx(exp, 1)} kWh)</span><b>$${fx(exp * f, 2)} earned</b></div>
@@ -1349,24 +1505,25 @@ class CortexStudio extends HTMLElement {
         <div class="row"><span><b>Net benefit</b></span><b class="${net >= 0 ? "ok" : "bad"}">$${fx(net, 2)}</b></div>
         <div class="muted">Indicative: uses the current rate for all kWh.</div></div>`;
   }
+  /** Today's rate windows, grouped from the hourly schedule (holidays included). */
   _rateCard() {
-    const m = this._money(), exp = m.exp, imp = m.imp, p = m.p, f = m.f, self = m.self, net = m.net;
-    const h = new Date().getHours(), bd = this._data.energy.business_day, high = this._data.energy.high_season;
-    const v = id => fx(this._num(id), 2), now = (a, b) => (h >= a && h < b ? '<b class="ok">◀ now</b>' : "");
-    const pk = high ? "input_number.agl_plan_high_season_peak" : "input_number.agl_plan_low_season_peak";
-    return `<div class="card w8"><h2>Rate windows</h2>
-        <div class="row"><span>10–14 Shoulder</span><span><b>${v("input_number.agl_plan_shoulder")}c</b> ${now(10, 14)}</span></div>
-        <div class="row"><span>14–16 Off peak</span><span><b>${v("input_number.agl_plan_off_peak")}c</b> ${now(14, 16)}</span></div>
-        <div class="row"><span>16–20 ${bd ? "Peak" : "Off peak (no peak today)"}</span><span><b>${bd ? v(pk) : v("input_number.agl_plan_off_peak")}c</b> ${now(16, 20)}</span></div>
-        <div class="row"><span>20–10 Off peak</span><span><b>${v("input_number.agl_plan_off_peak")}c</b> ${h >= 20 || h < 10 ? '<b class="ok">◀ now</b>' : ""}</span></div>
-        <div class="row"><span>FiT 07–08 / 17–21</span><span><b>${v("input_number.agl_plan_fit_morning")}c / ${v("input_number.agl_plan_fit_evening")}c</b></span></div>
-        <div class="muted">Supply ${v("input_number.agl_plan_supply_charge")} c/day · ${high ? "high" : "low"} season.</div></div>
+    const d = this._data, sch = d.schedule || [], h = d.hour, r = this._rates(), e = d.energy, segs = [];
+    const month = new Date().getMonth() + 1, wd = new Date().getDay(), biz = r.peak_days === "weekdays" ? wd > 0 && wd < 6 : !!e.business_day;
+    sch.forEach(x => { const per = tariffAt({ hour: x.hour, month, biz }, r).per, last = segs[segs.length - 1];
+      if (last && last.imp === x.import && last.per === per) last.to = x.hour + 1; else segs.push({ from: x.hour, to: x.hour + 1, imp: x.import, per }); });
+    if (segs.length > 1 && segs[0].imp === segs[segs.length - 1].imp && segs[0].per === segs[segs.length - 1].per) { const l = segs.pop(); segs[0].from = l.from; }
+    const label = { shoulder: "Shoulder", peak: "Peak", off_peak: "Off-peak" }, has = sg => (sg.from < sg.to ? h >= sg.from && h < sg.to : h >= sg.from || h < sg.to);
+    const fits = [[r.fmw, r.fitM], [r.few, r.fitE]].filter(([w]) => w[0] !== w[1]).map(([w, v]) => `${wl(w)}: ${fx(v, 2)}c`).join(" · ");
+    return `<div class="card w8"><h2>Rate windows <span class="muted">${esc(this._name("plan"))}</span></h2>
+        ${segs.map(sg => `<div class="row"><span><span class="dot" style="background:${C[sg.per]}"></span> ${sg.from}–${sg.to % 24 || 24} ${label[sg.per]}</span><span><b>${fx(sg.imp, 2)}c</b> ${has(sg) ? '<b class="ok">◀ now</b>' : ""}</span></div>`).join("")}
+        <div class="row"><span>Feed-in</span><span><b>${fits || "–"}</b> <span class="muted">· ${fx(r.fitO, 2)}c other times</span></span></div>
+        <div class="muted">Supply ${fx(r.supply, 2)} c/day${r.hi !== r.lo ? ` · ${e.high_season ? "high" : "low"} season` : ""}${e.business_day || r.peak_days === "everyday" ? "" : " · no peak today"}.</div></div>
 `;
   }
 
   _sysCards() {
-    return `<div class="card w6"><h2>Automations</h2>${E.autos.map(id => { const st = this._st(id); return st ? `<label class="row"><span>${esc(st.attributes.friendly_name || id)}</span><input type="checkbox" class="sw" data-auto="${id}" ${st.state === "on" ? "checked" : ""}></label>` : ""; }).join("") || '<div class="muted">None found.</div>'}</div>
-      <div class="card w6"><h2>System settings <span class="muted">edit a value, press Enter</span></h2>${E.nums.map(([l, id]) => { const st = this._st(id); return st ? `<div class="row"><span>${esc(l)}</span><input type="number" class="num" data-num="${id}" value="${esc(st.state)}" step="${st.attributes.step || "any"}" min="${st.attributes.min ?? ""}" max="${st.attributes.max ?? ""}"></div>` : ""; }).join("")}</div>`;
+    const list = this._pf().automations.map(id => { const st = this._st(id); return st ? `<label class="row"><span>${esc(st.attributes.friendly_name || id)}</span><input type="checkbox" class="sw" data-auto="${id}" ${st.state === "on" ? "checked" : ""}></label>` : ""; }).join("");
+    return list ? `<div class="card w6"><h2>Your energy automations</h2>${list}<div class="muted" style="margin-top:6px">Turn these off before letting Cortex run the same job.</div></div>` : "";
   }
   _wireExtras() {
     const call = (d, sv, data) => this._hass.callService(d, sv, data).catch(() => {});
@@ -1377,11 +1534,12 @@ class CortexStudio extends HTMLElement {
   // ---- HOUSEKEEPING extras --------------------------------------------
   _houseExtras() {
     const ups = Object.entries(this._hass.states).filter(([k, s]) => k.startsWith("update.") && s.state === "on").map(([k, s]) => s.attributes.friendly_name || k);
-    const w = this._st("weather.forecast_ingleburn");
+    const pf = this._pf(), w = this._st(pf.weather);
+    const extra = pf.house.map(id => { const st = this._st(id); if (!st) return ""; const u = st.attributes.unit_of_measurement;
+      return `<div class="row"><span>${esc(st.attributes.friendly_name || id)}</span><b>${esc(st.state)}${u ? " " + esc(u) : ""}</b></div>`; }).join("");
     return `<div class="card w6"><h2>Housekeeping</h2>
         <div class="row"><span>Updates pending</span><b>${ups.length ? esc(ups.join(", ")) : "None"}</b></div>
-        <div class="row"><span>Internet speed</span><b>${esc((this._st("sensor.fast_com_download") || {}).state || "–")} Mbps</b></div>
-        <div class="row"><span>Solar exported at battery full</span><b>${esc((this._st("input_number.solar_exported_at_battery_full") || {}).state || "–")}</b></div>
+        ${extra}
         ${w ? `<div class="row"><span>Weather</span><b>${esc(w.state.replace(/-/g, " "))} ${w.attributes.temperature ?? ""}°</b></div>` : ""}</div>`;
   }
 
@@ -1487,7 +1645,7 @@ class CortexStudio extends HTMLElement {
       <div class="lg"><span><b style="color:${C.batt}">━</b> battery %</span><span><b style="color:${C.grid}">■</b> grid top-up</span><span><b style="color:${C.off_peak}">■</b> export</span><span><b style="color:${C.peak}">┄</b> reserve</span></div>
       <details class="more slots"><summary><b>Hour by hour</b><span class="muted">rate, action, house, solar, grid (+ buy / − sell), battery</span></summary>
         <div class="tblwrap"><table class="ptbl"><thead><tr><th>Time</th><th>Buy / sell</th><th>Action</th><th>House</th><th>Solar</th><th>Grid</th><th>Battery</th></tr></thead><tbody>${tbl}</tbody></table></div></details>
-      <div class="muted" style="margin-top:8px">Re-planned every 15 min from ${esc(p.profile_source || "")}, solar forecast, your AGL rates and ${p.candidates} candidate plans. EV charging isn't in the plan.</div>
+      <div class="muted" style="margin-top:8px">Re-planned every 15 min from ${esc(p.profile_source || "")}, solar forecast, your ${esc(this._name("plan"))} rates and ${p.candidates} candidate plans. EV charging isn't in the plan.</div>
       <div class="toast" id="plan-msg"></div></div>`;
   }
   _wirePlan() {
@@ -1672,7 +1830,7 @@ function barChart(days, series, o = {}) {
 // ---- battery visuals: Neovolt ESS tower and SUV, optional PNG overrides --------
 const levelColor = p => (p === null ? "#757575" : p < 20 ? C.peak : p < 40 ? C.off_peak : C.shoulder);
 // Drop transparent PNGs here to replace the drawings: /config/www/cortex/<name>.png
-const BIMG = { house: "/local/cortex/neovolt-ess.png", ev: EV.img }; // EV: the stored BYD photo (HA image entity)
+const BIMG = { house: "", ev: "" }; // photos from Settings; empty = the drawing
 const CAR_BODY = "M26 132C20 126 18 106 21 94C24 86 38 80 62 72C100 52 142 26 192 18C222 14 262 14 294 22C324 30 348 58 364 72C382 78 410 86 420 98C426 106 426 120 422 132L416 140L34 140Z";
 const CAR_GLASS = "M348 70C332 44 312 33 288 27L196 26C160 30 120 52 88 70Z";
 function carSvg(k) {
@@ -1776,6 +1934,7 @@ function battImg(root) {
     if (root._last) battSet(root, root._last);
   };
   im.onerror = () => { root._img = "no"; };
+  if (!BIMG[key]) { root._img = "no"; return; }
   im.src = BIMG[key];
 }
 function battSet(root, o) {
@@ -2069,6 +2228,24 @@ button.pill{min-height:0;font:650 12.5px/1 var(--ff);padding:5px 12px}
 .dd{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border-radius:16px;background:var(--surface2)}
 .toast{max-height:0;overflow:hidden;opacity:0;margin-top:0;padding:0 14px;border-radius:12px;font-size:13.5px;transition:all .25s;background:color-mix(in srgb,var(--good) 16%,transparent)}
 .toast.show{max-height:70px;opacity:1;margin-top:14px;padding:10px 14px}.toast.bad{background:color-mix(in srgb,var(--bad) 18%,transparent)}
+.gtoast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);opacity:0;pointer-events:none;z-index:50;padding:10px 18px;border-radius:12px;font-size:14px;background:var(--surface);color:var(--text);box-shadow:0 8px 30px rgba(0,0,0,.18);border:1px solid var(--line);transition:all .25s}
+.gtoast.show{opacity:1;transform:translate(-50%,0)}.gtoast.bad{border-color:var(--bad);color:var(--bad)}
+@media (max-width:640px){.gtoast{bottom:92px}}
+.tin{min-width:0;width:min(220px,52vw)}
+.phslot{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}.phslot:last-of-type{border-bottom:0}
+.phthumb{width:64px;height:44px;border-radius:10px;background:var(--surface2);display:grid;place-items:center;overflow:hidden;flex:none;color:var(--muted)}.phthumb img{width:100%;height:100%;object-fit:cover}.phthumb .ic{width:20px;height:20px}
+.phn{flex:1;min-width:0;display:flex;flex-direction:column}.phslot .ghost .ic{width:16px;height:16px;vertical-align:-3px}
+.tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:4px 28px;margin-bottom:6px}
+.tgrid label{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}.tgrid input{width:92px}
+.tarw{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));column-gap:28px}.tarw select{max-width:60%}
+.win{display:inline-flex;align-items:center;gap:6px}.win input{width:58px}.win .muted{min-width:34px}.tgrid .win input{width:96px}
+.dchips .chip.on{background:color-mix(in srgb,var(--o) 16%,var(--surface2))}
+.checks{display:flex;flex-wrap:wrap;gap:8px}.chk{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:var(--r-pill);background:var(--surface2);color:var(--muted);font-size:13px}
+.chk.ok{color:var(--text);background:color-mix(in srgb,var(--good) 14%,var(--surface2))}.chk .ic{width:15px;height:15px;color:var(--good)}
+.dchips button.chip{cursor:pointer}
+.carpic.nophoto{width:min(560px,88%);padding-top:24px}.carpic.nophoto .battsvg{width:100%;height:auto;color:var(--text)}
+.ctr{display:inline-flex;align-items:center;gap:8px}
+.photobtn{background:color-mix(in srgb,var(--surface) 70%,transparent);border-radius:var(--r-pill);padding:5px 10px;font-size:12.5px;min-height:30px}.photobtn .ic{width:15px;height:15px;vertical-align:-3px}
 .lockbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;margin-bottom:14px;border-radius:16px;background:var(--surface2);font-size:13.5px}
 .grps{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}.grps.locked{opacity:.5;pointer-events:none;filter:grayscale(.5)}
 .grp{padding:12px 16px;border-radius:20px;background:var(--surface2)}

@@ -7,6 +7,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
 
 from custom_components.cortex.const import DEFAULTS, DOMAIN
+from custom_components.cortex.migrate import LEGACY
 from custom_components.cortex.learning import detect_chains, detect_routines, service_for
 from custom_components.cortex.heating import lead_minutes
 from custom_components.cortex.visitors import parse_look
@@ -15,7 +16,7 @@ UTC = timezone.utc
 
 
 async def _setup(hass: HomeAssistant, **opts):
-    entry = MockConfigEntry(domain=DOMAIN, title="Cortex", data={}, options={**DEFAULTS, **opts})
+    entry = MockConfigEntry(domain=DOMAIN, title="Cortex", data={}, options={**DEFAULTS, **LEGACY, **opts})
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -367,8 +368,8 @@ async def test_panel_set_options_and_manual_dispatch(hass: HomeAssistant, hass_w
     # manual discharge uses the numbers from the panel
     await ws.send_json({"id": 5, "type": "cortex/action", "action": "manual_export", "kw": 4.0, "soc": 35})
     assert (await ws.receive_json())["result"]["result"] == "started"
-    assert ("number", "set_value", {"entity_id": DEFAULTS["dispatch_power"], "value": 4.0}) in sent
-    assert ("number", "set_value", {"entity_id": DEFAULTS["discharge_target"], "value": 35.0}) in sent
+    assert ("number", "set_value", {"entity_id": LEGACY["dispatch_power"], "value": 4.0}) in sent
+    assert ("number", "set_value", {"entity_id": LEGACY["discharge_target"], "value": 35.0}) in sent
     assert any(d == "select" and x.get("option") == "Force Discharge" for d, _, x in sent)
     await ws.send_json({"id": 6, "type": "cortex/action", "action": "manual_stop"})
     assert (await ws.receive_json())["result"]["result"] == "stopped"

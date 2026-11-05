@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
 
+from . import migrate
 from .const import DOMAIN
 from .llm_api import CortexAPI
 from .runtime import Cortex
@@ -19,7 +20,8 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["sensor"]
 PANEL_URL = "cortex"
 FRONTEND_PATH = f"/{DOMAIN}_static"
-FRONTEND_VERSION = "0.20.0"  # cache-buster for the panel scripts
+FILES_PATH = f"/{DOMAIN}_files"  # photos uploaded from the panel, kept in <config>/cortex
+FRONTEND_VERSION = "0.21.0"  # cache-buster for the panel scripts
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -29,18 +31,8 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
-def _migrate_battery_sign(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """The Neovolt battery sensor reports charging as negative; flip it once."""
-    if entry.data.get("studio_sign_fixed"):
-        return
-    options = dict(entry.options)
-    if options.get("studio_battery", "sensor.neovolt_online_battery_power") == "sensor.neovolt_online_battery_power":
-        options["studio_battery_invert"] = True
-    hass.config_entries.async_update_entry(entry, data={**entry.data, "studio_sign_fixed": True}, options=options)
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    _migrate_battery_sign(hass, entry)
+    migrate.async_migrate(hass, entry)
     brain = Cortex(hass, entry)
     await brain.async_start()
     hass.data[DOMAIN][entry.entry_id] = brain
@@ -83,8 +75,10 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
         from homeassistant.components.http import StaticPathConfig
 
         folder = Path(__file__).parent / "frontend"
+        files = Path(hass.config.path(DOMAIN))
+        await hass.async_add_executor_job(lambda: files.mkdir(exist_ok=True))
         await hass.http.async_register_static_paths(
-            [StaticPathConfig(FRONTEND_PATH, str(folder), False)]
+            [StaticPathConfig(FRONTEND_PATH, str(folder), False), StaticPathConfig(FILES_PATH, str(files), False)]
         )
         await panel_custom.async_register_panel(
             hass,
