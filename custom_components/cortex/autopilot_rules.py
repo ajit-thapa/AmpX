@@ -165,3 +165,26 @@ def describe(d: dict[str, Any]) -> str:
         return f"No {label}: {d.get('reason', '')}".strip()
     tail = f"to {d['target_soc']}%" if d["window"] == TOPUP else f"down to {d['floor_soc']}%"
     return f"{label.capitalize()} {d['kw']:g} kW {tail}: {d.get('reason', '')}".strip()
+
+
+def from_plan(window: str, plan: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
+    """Turn the 48-hour plan into this window's decision. The night floor still applies as a hard limit."""
+    soc = ctx.get("soc")
+    saving = plan.get("saving") or 0.0
+    tag = f"48-hour plan (saves ${saving:.2f} vs doing nothing)"
+    if soc is None:
+        return {"window": window, "do": False, "reason": "battery level unknown"}
+    if window == TOPUP:
+        target = int(plan.get("topup") or 0)
+        if target and soc < target - 2:
+            return {"window": window, "do": True, "kw": ctx["topup_kw"], "target_soc": target,
+                    "reason": f"{tag}: top up to {target}%"}
+        return {"window": window, "do": False, "reason": f"{tag}: no top-up needed"}
+    floor = int(plan.get("floor") or 0)
+    if not floor:
+        return {"window": window, "do": False, "reason": f"{tag}: keep the battery for the house"}
+    floor = round(max(floor, night_floor(ctx)))
+    if soc <= floor + 2:
+        return {"window": window, "do": False, "reason": f"{tag}: battery already near the {floor}% floor"}
+    return {"window": window, "do": True, "kw": ctx["export_kw"], "floor_soc": floor,
+            "reason": f"{tag}: export down to {floor}%"}

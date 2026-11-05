@@ -46,6 +46,9 @@ CONF_HEALTH_IGNORE = "health_ignore"  # entities house health never reports
 # Autopilot: local-AI energy decisions inside hard guardrails
 CONF_AP_MODE = "autopilot_mode"  # off | shadow | auto
 CONF_AP_LLM = "autopilot_use_ai"
+CONF_AP_PLANNER = "autopilot_planner"  # Autopilot follows the 48-hour plan instead of the simple rules
+CONF_CYCLE_COST = "cycle_cost_c"  # battery wear, cents per kWh discharged
+CONF_EV_ENERGY = "ev_energy"  # wall connector energy counter, used to take EV charging out of house history
 CONF_AP_NIGHT = "autopilot_night_share"
 CONF_AP_TIMEOUT = "autopilot_timeout"
 AP_MODES = ["off", "shadow", "auto"]
@@ -131,6 +134,9 @@ DEFAULTS: dict[str, object] = {
     CONF_HEALTH_IGNORE: [],
     CONF_AP_MODE: "shadow",
     CONF_AP_LLM: True,
+    CONF_AP_PLANNER: False,
+    CONF_CYCLE_COST: 3.0,
+    CONF_EV_ENERGY: "sensor.tesla_wall_connector_energy",
     CONF_AP_NIGHT: 0.35,
     CONF_AP_TIMEOUT: 150,
     CONF_ST_PV: "sensor.sungrow_pv",

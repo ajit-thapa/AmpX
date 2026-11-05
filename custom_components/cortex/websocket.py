@@ -19,6 +19,7 @@ from .const import (
     CONF_AS_STYLE,
     AS_STYLES,
     CONF_AP_LLM,
+    CONF_AP_PLANNER,
     CONF_AP_MODE,
     CONF_AUTO_EXPORT,
     CONF_AUTO_TOPUP,
@@ -123,6 +124,7 @@ async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
             "control": {
                 "autopilot_mode": brain.autopilot.mode,
                 "use_ai": bool(brain.opts.get(CONF_AP_LLM)),
+                "use_planner": bool(brain.opts.get(CONF_AP_PLANNER)),
                 "auto_topup": bool(brain.opts[CONF_AUTO_TOPUP]),
                 "auto_export": bool(brain.opts[CONF_AUTO_EXPORT]),
                 "topup_kw": float(brain.opts[CONF_TOPUP_KW]),
@@ -139,6 +141,7 @@ async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
                 "decisions": brain.autopilot.decisions[-6:][::-1],
             },
             "advice": brain.advice(),
+            "plan": brain.energy.plan_result,
             "plans": brain.plans,
             "settings": {
                 "agent": brain.opts.get(CONF_AGENT) or "",
@@ -221,6 +224,7 @@ ACTIONS = (
 CONTROL_OPTIONS = {
     CONF_AP_MODE: vol.In(AP_MODES),
     CONF_AP_LLM: bool,
+    CONF_AP_PLANNER: bool,
     CONF_AUTO_TOPUP: bool,
     CONF_AUTO_EXPORT: bool,
     CONF_TOPUP_KW: vol.All(vol.Coerce(float), vol.Range(min=0.5, max=15)),

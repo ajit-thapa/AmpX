@@ -125,6 +125,7 @@
           "studio_day_pv": "Solar generated today (kWh)",
           "studio_day_load": "Consumed today (kWh)",
           "studio_day_export": "Exported today (kWh)",
+          "ev_energy": "EV charger energy meter (kWh total)",
           "studio_day_import": "Imported today (kWh)"
         }
       },
@@ -132,6 +133,8 @@
         "title": "Autopilot",
         "data": {
           "autopilot_mode": "Mode",
+          "autopilot_planner": "Follow the 48-hour plan (off = plan is shown only)",
+          "cycle_cost_c": "Battery wear cost per kWh discharged",
           "autopilot_use_ai": "Ask the conversation agent (otherwise rules only)",
           "autopilot_night_share": "Share of daily use that happens overnight",
           "conversation_agent": "Local model / conversation agent",
@@ -214,6 +217,9 @@
       },
       "last_event": {
         "name": "Last event"
+      },
+      "battery_plan": {
+        "name": "Battery plan"
       },
       "autopilot": {
         "name": "Autopilot"

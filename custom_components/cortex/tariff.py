@@ -159,6 +159,7 @@ def battery_budget(
     plan: Plan,
     house_kwh_per_day: float,
     supply_left_dollars: float,
+    profile: list[float] | None = None,
 ) -> dict | None:
     """What the home battery has to cover until the next cheap (shoulder) window.
 
@@ -178,7 +179,16 @@ def battery_budget(
         if nxt <= now:
             nxt += timedelta(days=1)
         hours = (nxt - now).total_seconds() / 3600
-    house = house_kwh_per_day / 24 * hours
+    if profile and len(profile) == 24 and hours:
+        # walk the hour-of-day profile (kWh per hour) from now to the window
+        house, t, left = 0.0, now, hours
+        while left > 1e-6:
+            step = min(left, 1 - t.minute / 60) or 1.0
+            house += profile[t.hour] * step
+            t = t.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+            left -= step
+    else:
+        house = house_kwh_per_day / 24 * hours
     fit_end = plan.fit_evening_window[1]
     supply = 0.0
     if plan.fit_evening > 0 and now.hour < fit_end and supply_left_dollars > 0:
@@ -193,3 +203,27 @@ def battery_budget(
         "spare": round(spare, 1),
         "ok": spare >= 0,
     }
+
+
+class FixedTOU:
+    """Tariff interface used by the planner.
+
+    Any tariff (a dynamic one such as Amber later) only needs ``rate`` and ``slots``
+    and the ``deterministic`` flag; the planner never looks inside the tariff.
+    """
+
+    deterministic = True
+
+    def __init__(self, plan: Plan, holiday: Callable[[date], bool] | None = None) -> None:
+        self.plan = plan
+        self.holiday = holiday or (lambda _d: False)
+
+    def rate(self, ts: datetime) -> tuple[float, float, str]:
+        """(import c/kWh, feed-in c/kWh, period) at ``ts``."""
+        hol = self.holiday(ts.date())
+        return import_rate(ts, self.plan, hol), feed_in_rate(ts, self.plan), period(ts, self.plan, hol)
+
+    def slots(self, start: datetime, hours: int = 48, minutes: int = 30) -> list[tuple[datetime, float, float, str]]:
+        first = start.replace(minute=(start.minute // minutes) * minutes, second=0, microsecond=0)
+        n = hours * 60 // minutes
+        return [(t, *self.rate(t)) for t in (first + timedelta(minutes=minutes * i) for i in range(n))]

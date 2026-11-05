@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import deque
 from datetime import timedelta
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from homeassistant.core import HomeAssistant
@@ -23,6 +24,9 @@ MOTION_WINDOW = timedelta(minutes=10)
 VOICE_WINDOW = timedelta(minutes=5)
 
 
+REPEAT_HOURS = 12
+
+
 class Speaker:
     """Single place everything that talks goes through."""
 
@@ -32,6 +36,7 @@ class Speaker:
         self.gate = gate
         self.log: deque[dict] = deque(maxlen=50)
         self.push_log: deque[dict] = deque(maxlen=40)
+        self._pushed: dict[str, object] = {}  # same message (numbers ignored) -> when it was last sent
         self._voice: tuple[object, str] | None = None
 
     def _area_of(self, entity_id: str) -> str | None:
@@ -154,11 +159,22 @@ class Speaker:
     async def push(self, text: str, title: str = "Cortex") -> bool:
         cat = self.category(title)
         muted = cat in (self.brain.opts.get(CONF_MUTE_PUSH) or [])
-        entry = {"time": dt_util.now().isoformat(timespec="seconds"), "title": title, "text": text, "category": cat, "sent": False, "muted": muted}
+        now = dt_util.now()
+        # The same message, even with different numbers, goes to the phone at most once every REPEAT_HOURS.
+        key = cat + ":" + re.sub(r"[$\d][\d.,:%]*", "#", text.lower())
+        last = self._pushed.get(key)
+        window = timedelta(minutes=10) if cat == "speech" else timedelta(hours=REPEAT_HOURS)  # urgent alarms may repeat sooner
+        repeat = last is not None and now - last < window
+        entry = {"time": now.isoformat(timespec="seconds"), "title": title, "text": text, "category": cat,
+                 "sent": False, "muted": muted, "repeat": repeat}
         self.push_log.appendleft(entry)
         target = self.brain.opts.get(CONF_NOTIFY)
-        if not target or muted:
+        if not target or muted or repeat:
             return False
+        self._pushed[key] = now
+        if len(self._pushed) > 200:
+            for k in sorted(self._pushed, key=self._pushed.get)[:100]:
+                del self._pushed[k]
         try:
             if self.hass.states.get(target) is not None:
                 await self.hass.services.async_call(

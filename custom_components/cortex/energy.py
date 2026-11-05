@@ -10,9 +10,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
-from . import tariff
+from . import planner, tariff
 from .const import (
+    CONF_AP_PLANNER,
     CONF_BATT_MAX_KW,
+    CONF_CYCLE_COST,
+    CONF_EV_ENERGY,
+    CONF_ST_DAY_LOAD,
+    CONF_ST_DAY_PV,
     CONF_BATTERY_KWH,
     CONF_EV_PRIORITY,
     CONF_EV_TRICKLE_KW,
@@ -65,6 +70,9 @@ class EnergyBrain:
         self.earned: dict[str, Any] = {"day": None, "cents": 0.0, "last": None}
         self.ev_guard_note: str | None = None
         self.house_kwh_day = 22.0  # average daily use, refreshed hourly from history
+        self.profile: list[float] | None = None  # house kWh per hour of day, EV charging removed
+        self.holidays: set[date] = set()  # public holidays for the next year, from the calendar
+        self.plan_result: dict[str, Any] | None = None
 
     # ---- inputs ---------------------------------------------------------
     def plan(self) -> tariff.Plan:
@@ -98,7 +106,9 @@ class EnergyBrain:
         return state is not None and state.state == "on"
 
     def is_holiday(self, day: date) -> bool:
-        """Today's holiday flag comes from the calendar; future days are unknown."""
+        """Public holiday? Uses the cached year of calendar events, and today's calendar state."""
+        if day in self.holidays:
+            return True
         entity_id = self.brain.opts.get(CONF_HOLIDAYS)
         if not entity_id or day != dt_util.now().date():
             return False
@@ -166,7 +176,7 @@ class EnergyBrain:
         }
         data["export_earned"] = round(self.earned["cents"] / 100, 2)
         data["supply_left"] = round(self.supply_left(), 2)
-        data["budget"] = tariff.battery_budget(now, soc, bat_kwh, reserve, plan, self.house_kwh_day, self.supply_left())
+        data["budget"] = tariff.battery_budget(now, soc, bat_kwh, reserve, plan, self.house_kwh_day, self.supply_left(), self.profile)
         data["ev_guard"] = self.ev_guard_note
         data["storage_summary"] = self._storage_summary(data, bat_kwh, ev_kwh)
         data["summary"] = self._summary(data)
@@ -202,6 +212,110 @@ class EnergyBrain:
             parts.append(f"battery {d['battery_soc']:.0f}%")
         parts.append(f"daily charge ${d['daily_charge']:.2f}")
         return " | ".join(parts)[:255]
+
+    # ---- planner inputs and the 48-hour plan -----------------------------
+    async def refresh_holidays(self) -> None:
+        """Cache a year of public holidays so the tariff knows future no-peak days."""
+        entity_id = self.brain.opts.get(CONF_HOLIDAYS)
+        if not entity_id or self.hass.states.get(entity_id) is None:
+            return
+        now = dt_util.now()
+        try:
+            res = await self.hass.services.async_call(
+                "calendar", "get_events",
+                {"entity_id": entity_id, "start_date_time": now.isoformat(), "end_date_time": (now + timedelta(days=366)).isoformat()},
+                blocking=True, return_response=True,
+            )
+        except Exception as err:  # noqa: BLE001 - holidays are a nicety
+            _LOGGER.debug("Holidays not loaded: %s", err)
+            return
+        days: set[date] = set()
+        for ev in ((res or {}).get(entity_id) or {}).get("events", []):
+            try:
+                days.add(date.fromisoformat(str(ev.get("start", ""))[:10]))
+            except ValueError:
+                continue
+        self.holidays = days
+
+    async def refresh_profile(self, days: int = 14) -> None:
+        """House use per hour of day over the last two weeks, with EV charging taken out."""
+        o = self.brain.opts
+        load_id, ev_id = o.get(CONF_ST_DAY_LOAD), o.get(CONF_EV_ENERGY)
+        if not load_id:
+            return
+        try:
+            from homeassistant.components.recorder import get_instance
+            from homeassistant.components.recorder.statistics import statistics_during_period
+
+            ids = {load_id} | ({ev_id} if ev_id else set())
+            start = dt_util.utcnow() - timedelta(days=days)
+            stats = await get_instance(self.hass).async_add_executor_job(
+                statistics_during_period, self.hass, start, None, ids, "hour", None, {"state"}
+            )
+        except Exception as err:  # noqa: BLE001 - history is a nicety, never a blocker
+            _LOGGER.debug("No load history: %s", err)
+            return
+        self.profile_from_stats(stats.get(load_id, []), stats.get(ev_id, []) if ev_id else [])
+
+    def profile_from_stats(self, load_rows: list[dict], ev_rows: list[dict]) -> None:
+        def deltas(rows: list[dict], lifetime: bool) -> dict[datetime, float]:
+            out: dict[datetime, float] = {}
+            prev = None
+            for r in sorted(rows, key=lambda r: r["start"]):
+                v = r.get("state")
+                if v is None:
+                    continue
+                t = r["start"] if isinstance(r["start"], datetime) else dt_util.utc_from_timestamp(r["start"])
+                lt = dt_util.as_local(t)
+                if prev is None or (not lifetime and lt.hour == 0):
+                    d = v if not lifetime and prev is not None else 0.0
+                else:
+                    d = v - prev
+                if d < 0:
+                    d = 0.0 if lifetime else v
+                prev = v
+                if 0 <= d < 30:
+                    out[lt] = d
+            return out
+        load, ev = deltas(load_rows, False), deltas(ev_rows, True)
+        sums, counts = [0.0] * 24, [0] * 24
+        for t, kwh in load.items():
+            house = max(kwh - ev.get(t, 0.0), 0.0)
+            sums[t.hour] += house
+            counts[t.hour] += 1
+        if sum(counts) < 24 * 3:  # under three days of data: not enough to trust
+            return
+        flat = sum(sums) / max(sum(counts), 1)
+        self.profile = [round(sums[h] / counts[h], 3) if counts[h] else flat for h in range(24)]
+        self.house_kwh_day = round(sum(self.profile), 1)
+
+    def spec(self) -> planner.BatterySpec:
+        o = self.brain.opts
+        return planner.BatterySpec(
+            capacity_kwh=float(o[CONF_BATTERY_KWH]), reserve_pct=float(o[CONF_RESERVE]),
+            max_kw=float(o.get(CONF_BATT_MAX_KW) or 10), topup_kw=float(o[CONF_TOPUP_KW]),
+            export_kw=float(o[CONF_EXPORT_KW]), min_export_floor=float(o[CONF_EXPORT_FLOOR]),
+            cycle_cost_c=float(o.get(CONF_CYCLE_COST) or 0),
+        )
+
+    def run_planner(self, now: datetime | None = None) -> dict[str, Any] | None:
+        """Search the next 48 hours for the cheapest battery plan."""
+        now = now or dt_util.now()
+        soc = self._num(CONF_SOC)
+        if soc is None:
+            return self.plan_result
+        o = self.brain.opts
+        made = self._num(CONF_ST_DAY_PV)
+        fc_today = self._num(CONF_PV_TODAY)
+        left = max((fc_today or 0.0) - (made or 0.0), 0.0)
+        tomorrow = self._tomorrow_estimate(self.hass.states.get(o.get(CONF_PV_TOMORROW) or ""))
+        profile = self.profile or [self.house_kwh_day / 24] * 24
+        tar = tariff.FixedTOU(self.plan(), self.is_holiday)
+        result = planner.best_plan(now, tar, soc, self.spec(), profile, left, tomorrow if tomorrow is not None else (fc_today or 0.0))
+        result["follow"] = bool(o.get(CONF_AP_PLANNER))
+        result["profile_source"] = "history, EV removed" if self.profile else "average daily use"
+        self.plan_result = result
+        return result
 
     # ---- export earnings and the EV-first guard --------------------------
     def track_export(self, now: datetime | None = None) -> float:
@@ -242,7 +356,7 @@ class EnergyBrain:
             return None
         home = max(live["load"] - ev, 0.0)
         budget = tariff.battery_budget(now, self._num(CONF_SOC), float(o[CONF_BATTERY_KWH]), float(o[CONF_RESERVE]),
-                                       self.plan(), self.house_kwh_day, self.supply_left())
+                                       self.plan(), self.house_kwh_day, self.supply_left(), self.profile)
         short = budget is not None and budget["house"] > budget["usable"]  # the house alone needs all that's left
         covered = self.supply_left() <= 0.004 or short
         extra = float(o.get(CONF_EV_TRICKLE_KW) or 0.0) if covered else float(o[CONF_EXPORT_KW])

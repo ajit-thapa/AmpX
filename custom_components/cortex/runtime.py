@@ -347,12 +347,21 @@ class Cortex:
         async_dispatcher_send(self.hass, f"{SIGNAL_UPDATE}_{self.entry.entry_id}")
 
     async def _tick_minute(self, _now: datetime) -> None:
-        if _now.minute == 7 or not self._load_at:
+        first = not self._load_at
+        if _now.minute == 7 or first:
             self._load_at = True
             try:
                 self.energy.house_kwh_day = await self.autopilot.avg_daily_load()
+                await self.energy.refresh_profile()  # overrides the average when there is enough history
             except Exception as err:  # noqa: BLE001 - keep the last value
                 _LOGGER.debug("Average load not refreshed: %s", err)
+        if first or (_now.hour == 3 and _now.minute == 13):
+            await self.energy.refresh_holidays()
+        if first or _now.minute % 15 == 3:
+            try:
+                self.energy.run_planner()
+            except Exception as err:  # noqa: BLE001 - the plan is advisory until followed
+                _LOGGER.warning("Battery planner failed: %s", err)
         before = self.energy.earned["cents"]
         if self.energy.track_export() != before:
             self.save()

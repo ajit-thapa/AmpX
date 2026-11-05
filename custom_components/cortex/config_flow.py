@@ -65,6 +65,8 @@ SECTIONS: dict[str, dict[str, Any]] = {
             sel.SelectSelectorConfig(options=AP_MODES, mode=sel.SelectSelectorMode.LIST, translation_key="autopilot_mode")
         ),
         CONF_AP_LLM: sel.BooleanSelector(),
+        CONF_AP_PLANNER: sel.BooleanSelector(),
+        CONF_CYCLE_COST: _num(0, 20, 0.1, "c/kWh"),
         CONF_AP_NIGHT: _num(0.1, 0.7, 0.01, "of daily use"),
         CONF_AP_TIMEOUT: _num(10, 600, 5, "s"),
         CONF_AGENT: sel.ConversationAgentSelector(),
@@ -81,6 +83,7 @@ SECTIONS: dict[str, dict[str, Any]] = {
         CONF_ST_DAY_LOAD: _entity("sensor"),
         CONF_ST_DAY_EXPORT: _entity("sensor"),
         CONF_ST_DAY_IMPORT: _entity("sensor"),
+        CONF_EV_ENERGY: _entity("sensor"),
     },
     "energy": {
         CONF_SOC: _entity("sensor"),
@@ -129,7 +132,7 @@ CLEARABLE = {
     CONF_EV_SOC, CONF_EV_PLUG, CONF_EV_TARGET, CONF_EV_START, CONF_HOLIDAYS, CONF_SOC,
     CONF_BRIEF_MORNING, CONF_BRIEF_EVENING, CONF_WEATHER, CONF_WEEKLY_TIME,
     CONF_AI_TASK, CONF_DOORBELL_CAMERA, CONF_ST_PV, CONF_ST_GRID, CONF_ST_BATT, CONF_ST_EV,
-    CONF_ST_DAY_PV, CONF_ST_DAY_LOAD, CONF_ST_DAY_EXPORT, CONF_ST_DAY_IMPORT,
+    CONF_ST_DAY_PV, CONF_ST_DAY_LOAD, CONF_ST_DAY_EXPORT, CONF_ST_DAY_IMPORT, CONF_EV_ENERGY,
 }
 
 

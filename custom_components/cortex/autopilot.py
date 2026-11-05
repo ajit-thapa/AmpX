@@ -8,7 +8,7 @@ import logging
 from typing import Any
 
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import async_track_point_in_time, async_track_time_change
 from homeassistant.util import dt as dt_util
 
 from . import autopilot_rules as rules
@@ -17,6 +17,7 @@ from .const import (
     CONF_AP_LLM,
     CONF_AP_MODE,
     CONF_AP_NIGHT,
+    CONF_AP_PLANNER,
     CONF_AP_TIMEOUT,
     CONF_BATTERY_KWH,
     CONF_EV_KWH,
@@ -155,7 +156,20 @@ class Autopilot(Feature):
         ctx = await self.context()
         base = rules.baseline(window, ctx)
         raw = None
-        if brain.opts.get(CONF_AP_LLM) and brain.ai_allowed():
+        plan = self._fresh_plan()
+        if plan is not None:
+            now = dt_util.now()
+            if window == rules.EXPORT and plan.get("floor") and int(plan.get("start") or 17) > now.hour:
+                at = now.replace(hour=int(plan["start"]), minute=0, second=45, microsecond=0)
+
+                async def later(_t: datetime) -> None:
+                    await self.decide(rules.EXPORT, execute)
+
+                self._unsubs.append(async_track_point_in_time(self.hass, later, at))
+                base = {"window": window, "do": False, "reason": f"48-hour plan exports from {plan['start']}:00"}
+            else:
+                base = rules.from_plan(window, plan, ctx)
+        if plan is None and brain.opts.get(CONF_AP_LLM) and brain.ai_allowed():
             try:
                 limit = float(brain.opts.get(CONF_AP_TIMEOUT) or DEFAULT_TIMEOUT)
                 async with asyncio.timeout(limit):
@@ -169,6 +183,8 @@ class Autopilot(Feature):
             except HomeAssistantError as err:
                 _LOGGER.warning("Autopilot model call failed: %s", err)
         decision = rules.validate(window, raw, ctx, base)
+        if plan is not None:
+            decision["source"] = "plan"
         decision["time"] = dt_util.now().isoformat(timespec="seconds")
         decision["soc"] = ctx.get("soc")
         decision["mode"] = self.mode
@@ -183,10 +199,24 @@ class Autopilot(Feature):
         brain.log("autopilot", f"[{decision['source']}/{decision['result']}] {text}")
         brain.record("autopilot_decisions")
         brain.save()
-        if decision["do"] or window == rules.TOPUP:
+        if decision["do"]:  # holds stay in the log and the panel; only actions reach the phone
             prefix = "Autopilot" if decision["result"] in ("started", "failed") else "Autopilot advice"
             await brain.speaker.push(f"{prefix}: {text}", title="Cortex autopilot")
         return decision
+
+    def _fresh_plan(self) -> dict[str, Any] | None:
+        """The 48-hour plan, when Autopilot is set to follow it and it is under 45 minutes old."""
+        if not self.brain.opts.get(CONF_AP_PLANNER):
+            return None
+        plan = self.brain.energy.plan_result
+        try:
+            made = dt_util.parse_datetime(plan["made"]) if plan else None
+        except (KeyError, TypeError, ValueError):
+            made = None
+        if not made or dt_util.now() - made > timedelta(minutes=45):
+            self.brain.energy.run_planner()
+            plan = self.brain.energy.plan_result
+        return plan
 
     async def _act(self, d: dict[str, Any]) -> str:
         energy, cap = self.brain.energy, float(self.brain.opts[CONF_BATTERY_KWH])

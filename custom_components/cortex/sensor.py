@@ -139,6 +139,11 @@ SENSORS: tuple[CortexSensorDescription, ...] = (
         attrs=lambda b: {"mode": b.autopilot.mode, "active": b.autopilot.active, "decisions": b.autopilot.decisions[-8:]},
     ),
     CortexSensorDescription(
+        key="battery_plan", translation_key="battery_plan", icon="mdi:chart-timeline-variant",
+        value=lambda b: (b.energy.plan_result or {}).get("summary"),
+        attrs=lambda b: {k: v for k, v in (b.energy.plan_result or {}).items() if k != "rows"},
+    ),
+    CortexSensorDescription(
         key="last_event", translation_key="last_event", icon="mdi:timeline-clock-outline",
         value=lambda b: (b.timeline.items[0]["text"][:255] if b.timeline.items else None),
         attrs=lambda b: {"timeline": list(b.timeline.items)[:15]},

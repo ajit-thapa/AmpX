@@ -322,7 +322,7 @@ class CortexStudio extends HTMLElement {
     const muted = new Set(d.mute_push || []), cat = Object.fromEntries(PUSH_CATS);
     const ago = t => { const m = Math.round((Date.now() - new Date(t)) / 60000); return m < 1 ? "now" : m < 60 ? m + "m" : m < 1440 ? Math.round(m / 60) + "h" : Math.round(m / 1440) + "d"; };
     el.innerHTML = `<h3>Needs attention</h3>${issues.length ? issues.map(i => `<div class="ditem warn">${icon("bell")}<span>${esc(i)}</span></div>`).join("") : `<div class="ditem ok">${icon("check")}<span>All clear</span></div>`}
-      <h3>Recent notifications</h3>${(d.pushes || []).length ? d.pushes.slice(0, 25).map(p => `<div class="ditem"><span class="pill" style="--pc:${p.muted ? "#8a8279" : C.grid}">${esc(cat[p.category] || p.category)}</span><span class="dt">${esc(p.text)}</span><span class="muted">${ago(p.time)}${p.muted ? " · muted" : p.sent ? "" : " · not sent"}</span></div>`).join("") : '<div class="muted">Nothing yet.</div>'}
+      <h3>Recent notifications</h3>${(d.pushes || []).length ? d.pushes.slice(0, 25).map(p => `<div class="ditem"><span class="pill" style="--pc:${p.muted ? "#8a8279" : C.grid}">${esc(cat[p.category] || p.category)}</span><span class="dt">${esc(p.text)}</span><span class="muted">${ago(p.time)}${p.repeat ? " · repeat, not sent" : p.muted ? " · muted" : p.sent ? "" : " · not sent"}</span></div>`).join("") : '<div class="muted">Nothing yet.</div>'}
       <h3>Push to my phone</h3><div class="dchips">${PUSH_CATS.map(([k, l]) => `<button class="chip ${muted.has(k) ? "" : "on"}" data-dmute="${k}">${muted.has(k) ? "🔕" : "🔔"} ${l}</button>`).join("")}</div>
       <div class="toast" id="d-msg"></div>`;
     el.querySelectorAll("[data-dmute]").forEach(b => b.onclick = () => {
@@ -1445,6 +1445,7 @@ class CortexStudio extends HTMLElement {
     const pvT = e.pv_today, pvM = e.pv_tomorrow, mx = Math.max(pvT || 0, pvM || 0, e.low_solar || 30, 1);
     const bar = (v, label) => `<div class="hbar"><span>${label}</span><div><i style="width:${v === null ? 0 : Math.min(v / mx, 1) * 100}%;background:${C.solar}"></i></div><b>${v === null ? "–" : fx(v, 0) + " kWh"}</b></div>`;
     return `<section class="grid">
+      ${this._planCard()}
       <div class="card wide"><h2>Today's rates <span class="legend"><b style="color:${C.shoulder}">■</b> shoulder <b style="color:${C.off_peak}">■</b> off-peak <b style="color:${C.peak}">■</b> peak <b style="color:#2e7d32">━</b> feed-in</span></h2>
         <div class="chart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${grid}${bars}
         <path d="${pts}" fill="none" stroke="#2e7d32" stroke-width="2.5"/>${labels}</svg></div></div>
@@ -1465,7 +1466,32 @@ class CortexStudio extends HTMLElement {
     </section>`;
   }
 
+  /** The 48-hour battery plan: one card, the slot table folded away. */
+  _planCard() {
+    const p = this._data.plan, c = this._data.control || {};
+    if (!p) return `<div class="card wide"><h2>48-hour plan</h2><div class="muted">Planning… (needs the battery level)</div></div>`;
+    const $ = v => (v < 0 ? "−$" : "$") + Math.abs(v).toFixed(2), rows = p.rows || [];
+    const W = 900, H = 120, x = i => (i / Math.max(rows.length - 1, 1)) * W, y = v => H - 8 - (v / 100) * (H - 16);
+    const line = rows.map((r, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(r.soc).toFixed(1)).join("");
+    const acol = { "top-up": C.grid, export: C.off_peak };
+    const bands = rows.map((r, i) => acol[r.action] ? `<rect x="${x(i)}" y="0" width="${(W / rows.length + 0.5).toFixed(1)}" height="${H}" fill="${acol[r.action]}" opacity=".16"/>` : "").join("");
+    const ticks = rows.map((r, i) => (r.t.slice(11, 16) === "00:00" || r.t.slice(11, 16) === "12:00") ? `<text x="${x(i)}" y="${H - 1}" class="ax" text-anchor="middle">${r.t.slice(11, 16) === "00:00" ? new Date(r.t).toLocaleDateString([], { weekday: "short" }) : "noon"}</text>` : "").join("");
+    const res = rows.length ? `<line x1="0" x2="${W}" y1="${y(20)}" y2="${y(20)}" stroke="${C.peak}" stroke-dasharray="4 4" opacity=".6"/>` : "";
+    const stat = (v, l) => `<div><b>${v}</b><span>${l}</span></div>`;
+    const tbl = rows.filter((_, i) => i % 2 === 0).map(r => `<tr class="${r.action !== "self-use" ? "act" : ""}"><td>${r.t.slice(11, 16)}</td><td>${r.rate.toFixed(0)}c / ${r.fit.toFixed(0)}c</td><td>${r.action}</td><td>${r.load.toFixed(1)}</td><td>${r.pv.toFixed(1)}</td><td>${r.grid > 0 ? "+" : ""}${r.grid.toFixed(1)}</td><td>${r.soc.toFixed(0)}%</td></tr>`).join("");
+    return `<div class="card wide plan48"><div class="chead"><h2>48-hour plan</h2>
+        <label class="row" style="padding:0;border:0;gap:10px"><span class="muted">Autopilot follows</span>${this._toggle('data-optplan="1"', c.use_planner)}</label></div>
+      <div class="planhead">${esc(p.summary)}.</div>
+      <div class="skstats">${stat($(p.cost), "estimated cost, next 48 h")}${stat($(p.saving), "better than doing nothing")}${stat(Math.round(p.min_soc) + "%", "lowest battery")}${stat(fx(p.exported, 0) + " kWh", "exported")}</div>
+      <div class="chart" style="height:${H}px;margin-top:12px"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Planned battery level">${bands}${res}<path d="${line}" fill="none" stroke="${C.batt}" stroke-width="2.4" vector-effect="non-scaling-stroke"/>${ticks}</svg></div>
+      <div class="lg"><span><b style="color:${C.batt}">━</b> battery %</span><span><b style="color:${C.grid}">■</b> grid top-up</span><span><b style="color:${C.off_peak}">■</b> export</span><span><b style="color:${C.peak}">┄</b> reserve</span></div>
+      <details class="more slots"><summary><b>Hour by hour</b><span class="muted">rate, action, house, solar, grid (+ buy / − sell), battery</span></summary>
+        <div class="tblwrap"><table class="ptbl"><thead><tr><th>Time</th><th>Buy / sell</th><th>Action</th><th>House</th><th>Solar</th><th>Grid</th><th>Battery</th></tr></thead><tbody>${tbl}</tbody></table></div></details>
+      <div class="muted" style="margin-top:8px">Re-planned every 15 min from ${esc(p.profile_source || "")}, solar forecast, your AGL rates and ${p.candidates} candidate plans. EV charging isn't in the plan.</div>
+      <div class="toast" id="plan-msg"></div></div>`;
+  }
   _wirePlan() {
+    this._root.querySelectorAll("[data-optplan]").forEach(i => i.onchange = () => this._saveOpts({ autopilot_planner: i.checked }, "#plan-msg"));
     const act = async action => { try { await this._hass.callWS({ type: "cortex/action", action }); } catch (e) { /* shown next load */ } this._load(); };
     const t = this._root.querySelector("#ap-topup"), x = this._root.querySelector("#ap-export");
     if (t) t.onclick = () => act("autopilot_topup");
@@ -2122,6 +2148,10 @@ button.pill{min-height:0;font:650 12.5px/1 var(--ff);padding:5px 12px}
 .budh{display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px}.bud.short .budh span{color:var(--bad);font-weight:600}
 .budbar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--surface3)}.budbar i{display:block;height:100%}.budbar i.sh{background:repeating-linear-gradient(45deg,var(--bad) 0 4px,transparent 4px 8px)}
 .budl{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11.5px;color:var(--muted);margin-top:6px}.budl i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+.planhead{font-size:15px;font-weight:600;margin:-2px 0 12px}
+details.more.slots{box-shadow:none;border:0;background:var(--surface2);border-radius:16px;margin-top:12px}details.more.slots>summary{padding:12px 14px}
+.tblwrap{overflow:auto;max-height:360px;padding:0 10px 10px}.ptbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.ptbl th{position:sticky;top:0;background:var(--surface2);text-align:left;color:var(--muted);font-weight:600;padding:6px}.ptbl td{padding:5px 6px;border-top:1px solid var(--line)}.ptbl tr.act td{font-weight:600}
 /* ---- v0.18: organisation ---- */
 .subnav{display:flex;gap:4px;max-width:1360px;margin:0 auto 16px;padding:4px;background:var(--nav);border-radius:var(--r-pill);width:fit-content;max-width:100%;overflow-x:auto;scrollbar-width:none}
 .subnav button{background:transparent;color:var(--muted);padding:8px 16px;min-height:38px;white-space:nowrap}.subnav button:hover{color:var(--text);filter:none}

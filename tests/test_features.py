@@ -507,3 +507,33 @@ async def test_ev_guard_keeps_battery_for_the_house(hass: HomeAssistant):
     assert "needed for the house" in en.ev_guard_note
     snap = en.snapshot()
     assert snap["budget"] and snap["budget"]["ok"] is False
+
+
+async def test_planner_runs_publishes_and_autopilot_can_follow(hass: HomeAssistant, hass_ws_client):
+    async_mock_service(hass, "notify", "send_message")
+    brain = await _setup(hass, autopilot_mode="shadow", autopilot_planner=True)
+    hass.states.async_set("sensor.neovolt_online_soc", "85")
+    en = brain.energy
+    load = [{"start": dt_util.utcnow() - timedelta(hours=h), "state": float(h % 24)} for h in range(96, 0, -1)]
+    en.profile_from_stats(load, [])
+    assert en.profile and len(en.profile) == 24
+    plan = en.run_planner()
+    assert plan and plan["summary"] and plan["follow"] and len(plan["rows"]) == 96
+    brain.refresh()
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": "cortex/overview"})
+    res = (await ws.receive_json())["result"]
+    assert res["plan"]["summary"] == plan["summary"] and res["control"]["use_planner"] is True
+    d = await brain.autopilot.decide("topup", False)
+    assert d["source"] == "plan" and "48-hour plan" in d["reason"]
+
+
+async def test_same_notification_is_not_pushed_again(hass: HomeAssistant):
+    sent = async_mock_service(hass, "notify", "mobile_app_phone")
+    brain = await _setup(hass, notify="notify.mobile_app_phone")
+    sp = brain.speaker
+    assert await sp.push("Grid top-up started: solar short by 12.4 kWh.", title="Cortex energy")
+    assert not await sp.push("Grid top-up started: solar short by 9.1 kWh.", title="Cortex energy")  # same message, new number
+    assert sp.push_log[0]["repeat"] and len(sent) == 1
+    assert await sp.push("Supply charge covered ($1.67 earned).", title="Cortex energy")
+    assert len(sent) == 2
