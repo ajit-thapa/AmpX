@@ -40,3 +40,16 @@ def test_solar_spill_tip():
     assert not any("going to the grid" in t["text"] for t in out)  # battery not full
     s = snap(battery_soc=99.0, next_change=NOW + timedelta(hours=4))
     assert any("going to the grid" in t["text"] for t in tips(s, {"pv": 6.0, "grid": -4.0}, NOW.replace(hour=12)))
+
+
+def test_peak_ev_from_solar_and_battery_not_flagged_as_grid():
+    out = tips(snap(period="peak", import_rate=41.91, next_period="off_peak"),
+               {"ev": 7.0, "grid": 0.0, "batt": -7.0}, NOW.replace(hour=17))
+    assert not any("Pause it" in t["text"] for t in out)
+    assert any("solar and the home battery" in t["text"] for t in out)
+
+
+def test_peak_ev_on_grid_still_flagged():
+    out = tips(snap(period="peak", import_rate=41.91, next_period="off_peak"),
+               {"ev": 7.0, "grid": 7.0}, NOW.replace(hour=17))
+    assert any("Pause it until 10:00" in t["text"] and "7.0 kW of 7.0 kW" in t["text"] for t in out)

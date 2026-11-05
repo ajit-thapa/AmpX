@@ -51,8 +51,14 @@ def tips(s: dict[str, Any], live: dict[str, float], now: datetime, *, mode: str 
         if grid > 0.5:
             add(WARN, f"Buying {grid:.1f} kW at the peak rate ({rate:.0f}c).",
                 "the battery should be covering the house; check its mode and reserve" if (soc or 0) > reserve + 5 else "battery is at its reserve")
-        if ev > 0.5:
-            add(ACT, f"EV is charging in peak ({ev:.1f} kW at {rate:.0f}c). Pause it until 10:00 if you can.")
+        # Only the part of the EV load actually imported from the grid costs the peak rate;
+        # the rest is solar or home battery.
+        ev_grid = min(ev, max(grid, 0.0))
+        if ev_grid > 0.5:
+            add(ACT, f"EV is charging in peak ({ev_grid:.1f} kW of {ev:.1f} kW from the grid at {rate:.0f}c). Pause it until 10:00 if you can.")
+        elif ev > 0.5:
+            add(INFO, f"EV is charging at {ev:.1f} kW from solar and the home battery, not the grid.",
+                "no peak import for the car")
 
     # Cheap shoulder window
     if period == "shoulder":
