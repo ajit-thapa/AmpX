@@ -64,6 +64,7 @@ class EnergyBrain:
         # Today's export earnings, built minute by minute from the export counter at the rate of the moment.
         self.earned: dict[str, Any] = {"day": None, "cents": 0.0, "last": None}
         self.ev_guard_note: str | None = None
+        self.house_kwh_day = 22.0  # average daily use, refreshed hourly from history
 
     # ---- inputs ---------------------------------------------------------
     def plan(self) -> tariff.Plan:
@@ -165,6 +166,7 @@ class EnergyBrain:
         }
         data["export_earned"] = round(self.earned["cents"] / 100, 2)
         data["supply_left"] = round(self.supply_left(), 2)
+        data["budget"] = tariff.battery_budget(now, soc, bat_kwh, reserve, plan, self.house_kwh_day, self.supply_left())
         data["ev_guard"] = self.ev_guard_note
         data["storage_summary"] = self._storage_summary(data, bat_kwh, ev_kwh)
         data["summary"] = self._summary(data)
@@ -239,20 +241,27 @@ class EnergyBrain:
         if ev < 0.5:
             return None
         home = max(live["load"] - ev, 0.0)
-        covered = self.supply_left() <= 0.004
+        budget = tariff.battery_budget(now, self._num(CONF_SOC), float(o[CONF_BATTERY_KWH]), float(o[CONF_RESERVE]),
+                                       self.plan(), self.house_kwh_day, self.supply_left())
+        short = budget is not None and budget["house"] > budget["usable"]  # the house alone needs all that's left
+        covered = self.supply_left() <= 0.004 or short
         extra = float(o.get(CONF_EV_TRICKLE_KW) or 0.0) if covered else float(o[CONF_EXPORT_KW])
         want = round(min(float(o.get(CONF_BATT_MAX_KW) or 10.0), ev + home + extra), 1)
-        if covered and self.earned.get("covered") != self.earned["day"]:
+        if covered and not short and self.earned.get("covered") != self.earned["day"]:
             self.earned["covered"] = self.earned["day"]
             msg = (f"Supply charge covered (${self.plan().supply_charge / 100:.2f} earned). "
                    f"Battery now powers the EV, exporting just {extra * 1000:.0f} W.")
             self.brain.log("energy", msg)
             await self.brain.speaker.push(msg, title="Cortex energy")
-        self.ev_guard_note = (
-            f"EV first: supply charge covered. Battery {want:.1f} kW covers the EV ({ev:.1f} kW) and house, "
-            f"exporting about {extra * 1000:.0f} W." if covered else
-            f"EV first: battery {want:.1f} kW covers the EV ({ev:.1f} kW) and house, "
-            f"exporting the rest until ${self.supply_left():.2f} supply is covered.")
+        if short:
+            self.ev_guard_note = (f"EV first: battery needed for the house until {budget['until']} "
+                                  f"({budget['house']:.0f} kWh, {budget['usable']:.0f} kWh usable), so exporting only {extra * 1000:.0f} W.")
+        else:
+            self.ev_guard_note = (
+                f"EV first: supply charge covered. Battery {want:.1f} kW covers the EV ({ev:.1f} kW) and house, "
+                f"exporting about {extra * 1000:.0f} W." if covered else
+                f"EV first: battery {want:.1f} kW covers the EV ({ev:.1f} kW) and house, "
+                f"exporting the rest until ${self.supply_left():.2f} supply is covered.")
         power = self._num(CONF_POWER)
         if power is None or abs(power - want) >= 0.1:
             await self._set("number", "set_value", CONF_POWER, value=want)

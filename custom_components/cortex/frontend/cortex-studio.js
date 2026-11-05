@@ -425,7 +425,8 @@ class CortexStudio extends HTMLElement {
       else if (dis) eta = `${fmtH(Math.max(soc - (floor ?? 0), 0) / 100 * cap / -f.batt)} to reserve`;
     }
     const kwh = soc === null ? "" : `${fx(soc * cap / 100, 1)} of ${fx(cap, 0)} kWh`;
-    this._paintTo("#arc", arcGauge(soc, { state: chg ? `Charging ${fx(f.batt)} kW` : dis ? `Discharging ${fx(-f.batt)} kW` : "Standby", sub: [eta, kwh].filter(Boolean).join(" · "), color: levelColor(soc),
+    const bg = (this._data.energy || {}).budget;
+    this._paintTo("#arc", (bg ? budgetBar(bg) : "") + arcGauge(soc, { state: chg ? `Charging ${fx(f.batt)} kW` : dis ? `Discharging ${fx(-f.batt)} kW` : "Standby", sub: [eta, kwh].filter(Boolean).join(" · "), color: levelColor(soc),
       marks: [{ pct: floor, color: C.peak, label: "Reserve" }] }));
   }
 
@@ -1837,6 +1838,15 @@ function arcGauge(pct, o) {
     <div class="asub">${esc(o.sub || "")}</div>`;
 }
 
+/** Tonight's battery budget: house until the cheap window, export still needed for the supply charge, spare. */
+function budgetBar(b) {
+  if (!b || b.hours === 0) return "";
+  const need = b.house + b.supply, tot = Math.max(b.usable, need, 0.1), pct = v => Math.max(v / tot * 100, 0);
+  const spare = Math.max(b.spare, 0), short = Math.max(-b.spare, 0);
+  return `<div class="bud ${b.ok ? "" : "short"}"><div class="budh"><b>Tonight</b><span>${b.ok ? `${fx(spare, 0)} kWh spare` : `${fx(short, 0)} kWh short`}</span></div>
+    <div class="budbar"><i style="width:${pct(Math.min(b.house, b.usable))}%;background:${C.home}" title="House until ${b.until}: ${fx(b.house, 1)} kWh"></i>${b.supply ? `<i style="width:${pct(Math.min(b.supply, Math.max(b.usable - b.house, 0)))}%;background:${C.shoulder}" title="Export for the supply charge: ${fx(b.supply, 1)} kWh"></i>` : ""}${spare ? `<i style="width:${pct(spare)}%;background:var(--surface3)" title="Spare: ${fx(spare, 1)} kWh"></i>` : ""}${short ? `<i class="sh" style="width:${pct(short)}%" title="Short: ${fx(short, 1)} kWh"></i>` : ""}</div>
+    <div class="budl"><span><i style="background:${C.home}"></i>House to ${b.until} ${fx(b.house, 0)}</span>${b.supply ? `<span><i style="background:${C.shoulder}"></i>Supply export ${fx(b.supply, 0)}</span>` : ""}<span>of ${fx(b.usable, 0)} kWh usable</span></div></div>`;
+}
 /** Three vertical pill bars: generated so far, today's forecast, tomorrow's forecast, with the low-solar line. */
 function solarBars(gen, fc, tom, low, day) {
   const mx = Math.max(gen || 0, fc || 0, tom || 0, low || 0, 1) * 1.12, h = v => (v === null || v === undefined ? 0 : Math.min(v / mx, 1) * 100);
@@ -2108,6 +2118,10 @@ button.pill{min-height:0;font:650 12.5px/1 var(--ff);padding:5px 12px}
 .evfirst{margin-top:6px;padding:4px 14px;border-radius:16px;background:var(--surface2)}.evfirst .row>span:first-child{display:flex;flex-direction:column;gap:2px;max-width:80%}
 .evnote{display:flex;gap:10px;align-items:center;padding:8px 0 10px;font-size:13px}.evnote .ic{color:var(--o)}
 .sumchips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.sumchips .chip{color:var(--text);font-weight:500;font-size:13px;padding:6px 12px}.sumchips .chip.best{background:color-mix(in srgb,var(--o) 12%,transparent)}
+.bud{margin:0 0 12px;padding:10px 12px;border-radius:14px;background:var(--surface2)}.bud.short{box-shadow:inset 3px 0 0 var(--bad)}
+.budh{display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px}.bud.short .budh span{color:var(--bad);font-weight:600}
+.budbar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--surface3)}.budbar i{display:block;height:100%}.budbar i.sh{background:repeating-linear-gradient(45deg,var(--bad) 0 4px,transparent 4px 8px)}
+.budl{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11.5px;color:var(--muted);margin-top:6px}.budl i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
 /* ---- v0.18: organisation ---- */
 .subnav{display:flex;gap:4px;max-width:1360px;margin:0 auto 16px;padding:4px;background:var(--nav);border-radius:var(--r-pill);width:fit-content;max-width:100%;overflow-x:auto;scrollbar-width:none}
 .subnav button{background:transparent;color:var(--muted);padding:8px 16px;min-height:38px;white-space:nowrap}.subnav button:hover{color:var(--text);filter:none}

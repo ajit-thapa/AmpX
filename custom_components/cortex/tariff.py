@@ -149,3 +149,47 @@ def usable_kwh(soc: float, capacity_kwh: float, reserve_pct: float = 20.0) -> fl
 
 def room_kwh(soc: float, capacity_kwh: float) -> float:
     return round(capacity_kwh - stored_kwh(soc, capacity_kwh), 1)
+
+
+def battery_budget(
+    now: datetime,
+    soc: float | None,
+    capacity_kwh: float,
+    reserve_pct: float,
+    plan: Plan,
+    house_kwh_per_day: float,
+    supply_left_dollars: float,
+) -> dict | None:
+    """What the home battery has to cover until the next cheap (shoulder) window.
+
+    Needs, in order: the house until the shoulder window opens, then enough evening
+    export to cover what is left of the daily supply charge. Whatever remains is
+    spare: safe to put into the EV or to export. Inside the shoulder window the grid
+    is cheap, so nothing needs covering.
+    """
+    if soc is None:
+        return None
+    usable = max(soc - reserve_pct, 0.0) / 100 * capacity_kwh
+    start, end = plan.shoulder_window
+    if _in(now.hour, plan.shoulder_window):
+        hours = 0.0
+    else:
+        nxt = now.replace(hour=start, minute=0, second=0, microsecond=0)
+        if nxt <= now:
+            nxt += timedelta(days=1)
+        hours = (nxt - now).total_seconds() / 3600
+    house = house_kwh_per_day / 24 * hours
+    fit_end = plan.fit_evening_window[1]
+    supply = 0.0
+    if plan.fit_evening > 0 and now.hour < fit_end and supply_left_dollars > 0:
+        supply = supply_left_dollars / (plan.fit_evening / 100)
+    spare = usable - house - supply
+    return {
+        "usable": round(usable, 1),
+        "house": round(house, 1),
+        "hours": round(hours, 1),
+        "until": f"{start:02d}:00",
+        "supply": round(supply, 1),
+        "spare": round(spare, 1),
+        "ok": spare >= 0,
+    }

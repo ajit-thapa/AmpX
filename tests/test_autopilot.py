@@ -216,3 +216,15 @@ async def test_hung_model_falls_back_to_rules(hass: HomeAssistant, monkeypatch):
     brain = await _setup(hass, autopilot_mode="shadow", autopilot_timeout=0.05)
     d = await brain.autopilot.decide("topup")
     assert d["source"] == "baseline" and d["do"]
+
+
+def test_battery_budget_until_the_shoulder_window():
+    from datetime import datetime
+    from custom_components.cortex.tariff import Plan, battery_budget
+    plan = Plan()
+    b = battery_budget(datetime(2026, 11, 5, 18, 0), 70.0, 50.0, 20.0, plan, 24.0, 1.0)
+    # 25 kWh usable; 16 h to 10:00 at 1 kWh/h; $1 at 28c = 3.6 kWh
+    assert b["usable"] == 25.0 and b["house"] == 16.0 and b["supply"] == 3.6 and b["spare"] == 5.4 and b["ok"]
+    assert battery_budget(datetime(2026, 11, 5, 11, 0), 70.0, 50.0, 20.0, plan, 24.0, 1.0)["house"] == 0.0
+    late = battery_budget(datetime(2026, 11, 5, 22, 0), 30.0, 50.0, 20.0, plan, 24.0, 1.0)
+    assert late["supply"] == 0.0 and not late["ok"]

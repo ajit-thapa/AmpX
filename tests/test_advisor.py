@@ -50,3 +50,22 @@ def test_ev_in_peak_from_solar_and_battery_is_not_flagged():
     # grid really feeding the car: say how much
     out = tips(s, {"ev": 7.0, "pv": 0.0, "grid": 3.0, "batt": -4.0}, NOW.replace(hour=17))
     assert out[0]["level"] == "act" and "pulling 3.0 kW from the grid" in out[0]["text"]
+
+
+def test_ev_on_battery_is_fine_only_while_the_budget_holds():
+    ok = {"usable": 30.0, "house": 12.0, "supply": 3.0, "spare": 15.0, "until": "10:00", "hours": 14.0}
+    short = {"usable": 14.0, "house": 12.0, "supply": 4.0, "spare": -2.0, "until": "10:00", "hours": 14.0}
+    live = {"ev": 7.0, "pv": 0.0, "grid": 0.0, "batt": -7.8}
+    s = snap(period="peak", import_rate=41.91, next_period="off_peak", battery_soc=60.0)
+    out = tips({**s, "budget": ok}, live, NOW.replace(hour=18))
+    assert out[0]["level"] == "info" and "no grid power" in out[0]["text"] and "15 kWh spare" in out[0]["why"]
+    out = tips({**s, "budget": short}, live, NOW.replace(hour=18))
+    assert out[0]["level"] == "act" and "draining the home battery: 2 kWh short" in out[0]["text"]
+    assert "reserve about" in out[0]["why"]
+
+
+def test_budget_warns_to_stop_exporting_when_house_needs_it():
+    b = {"usable": 13.0, "house": 12.0, "supply": 4.0, "spare": -3.0, "until": "10:00", "hours": 14.0}
+    s = snap(period="peak", import_rate=41.91, feed_in_rate=28.0, next_period="off_peak", battery_soc=45.0, supply_left=1.1, budget=b)
+    out = tips(s, {"grid": -3.0, "batt": -4.0}, NOW.replace(hour=18))
+    assert any("Stop exporting soon" in t["text"] for t in out)

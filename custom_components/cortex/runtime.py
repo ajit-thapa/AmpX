@@ -97,7 +97,8 @@ class Cortex:
         self.book = MemoryBook()
         self.watches: list[dict[str, Any]] = []
         self.reminders: list[dict[str, Any]] = []
-        self.plans: list[dict[str, Any]] = []  # other tariffs to compare against, edited in the panel
+        self.plans: list[dict[str, Any]] = []
+        self._load_at = False  # other tariffs to compare against, edited in the panel
         self.gate = SpeechGate()
         self.speaker = Speaker(hass, self, self.gate)
         self.energy = EnergyBrain(hass, self)
@@ -346,6 +347,12 @@ class Cortex:
         async_dispatcher_send(self.hass, f"{SIGNAL_UPDATE}_{self.entry.entry_id}")
 
     async def _tick_minute(self, _now: datetime) -> None:
+        if _now.minute == 7 or not self._load_at:
+            self._load_at = True
+            try:
+                self.energy.house_kwh_day = await self.autopilot.avg_daily_load()
+            except Exception as err:  # noqa: BLE001 - keep the last value
+                _LOGGER.debug("Average load not refreshed: %s", err)
         before = self.energy.earned["cents"]
         if self.energy.track_export() != before:
             self.save()

@@ -480,3 +480,30 @@ async def test_push_categories_can_be_muted_and_are_logged(hass: HomeAssistant):
     assert await sp.push("Export started", title="Cortex energy") is True
     assert [p["category"] for p in sp.push_log] == ["energy", "health"]
     assert sp.push_log[1]["muted"] and sp.push_log[0]["sent"] and len(sent) == 1
+
+
+async def test_ev_guard_keeps_battery_for_the_house(hass: HomeAssistant):
+    """Supply charge not covered yet, but the house needs what's left: export only the trickle."""
+    async_mock_service(hass, "notify", "send_message")
+    brain = await _setup(hass)
+    sent = []
+    for domain, svc in (("number", "set_value"), ("select", "select_option"), ("button", "press")):
+        async def rec(call, d=domain, s=svc):
+            sent.append((d, s, dict(call.data)))
+        hass.services.async_register(domain, svc, rec)
+    o, en = brain.opts, brain.energy
+    evening = dt_util.now().replace(hour=19, minute=0)
+    en.house_kwh_day = 24.0
+    hass.states.async_set(o["battery_soc"], "35")  # 7.5 kWh usable, house needs 15 kWh until 10:00
+    hass.states.async_set(o["dispatch_mode"], "Force Discharge")
+    hass.states.async_set(o["dispatch_power"], "7")
+    hass.states.async_set(o["studio_ev"], "7.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set(o["studio_pv"], "0", {"unit_of_measurement": "kW"})
+    hass.states.async_set(o["studio_grid"], "0", {"unit_of_measurement": "kW"})
+    hass.states.async_set(o["studio_battery"], "8.0", {"unit_of_measurement": "kW"})
+    assert en.supply_left() > 1
+    assert await en.ev_guard(evening) == "trickle"
+    assert ("number", "set_value", {"entity_id": o["dispatch_power"], "value": 8.2}) in sent
+    assert "needed for the house" in en.ev_guard_note
+    snap = en.snapshot()
+    assert snap["budget"] and snap["budget"]["ok"] is False
