@@ -40,19 +40,33 @@ def tips(s: dict[str, Any], live: dict[str, float], now: datetime, *, mode: str 
     plugged, ev_room = bool(s.get("ev_plugged")), s.get("ev_room") or 0.0
     hands_off = mode == "off"
 
-    # Peak is about to start or running
+    # Peak is about to start or running. The EV only costs peak money for the part the grid supplies:
+    # solar and the home battery feeding it are fine.
+    ev_grid = min(ev, max(grid, 0.0)) if ev > 0.5 else 0.0
+    ev_batt = min(ev - ev_grid, max(-batt, 0.0)) if ev > 0.5 else 0.0
+    ev_solar = min(max(ev - ev_grid - ev_batt, 0.0), max(pv, 0.0))
+    ev_grid += max(ev - ev_grid - ev_batt - ev_solar, 0.0)  # anything unexplained is assumed to be grid
+    mix = ", ".join(p for p in (f"{ev_solar:.1f} kW solar" if ev_solar >= 0.1 else "",
+                                f"{ev_batt:.1f} kW battery" if ev_batt >= 0.1 else "",
+                                f"{ev_grid:.1f} kW grid" if ev_grid >= 0.1 else "") if p)
     if nxt == "peak" and to_next is not None and 0 < to_next <= 90:
-        if ev > 0.5:
-            add(ACT, f"Peak starts at {_hm(nxt_at)}. The EV is charging at {ev:.1f} kW: let it finish before then or pause it.",
-                "peak import costs about 4x the shoulder rate")
+        if ev > 0.5 and (ev_grid > 0.5 or (soc is not None and soc < 40)):
+            add(ACT, f"Peak starts at {_hm(nxt_at)}. The EV is charging at {ev:.1f} kW ({mix}): it will need the grid in peak.",
+                "let it finish before then, or pause it" if ev_grid > 0.5 else f"battery is only at {soc:.0f}%")
         if soc is not None and soc < 60:
             add(WARN, f"Battery is at {soc:.0f}% going into the {_hm(nxt_at)} peak.", "it may run out before the cheap window")
     if period == "peak":
-        if grid > 0.5:
-            add(WARN, f"Buying {grid:.1f} kW at the peak rate ({rate:.0f}c).",
+        if ev > 0.5 and ev_grid > 0.5:
+            add(ACT, f"EV is pulling {ev_grid:.1f} kW from the grid in peak ({rate:.0f}c) of its {ev:.1f} kW ({mix}).",
+                "pause it or lower the charge rate until the battery and solar can cover it")
+        elif ev > 0.5:
+            low = soc is not None and soc <= reserve + 15
+            add(WARN if low else INFO, f"EV charging at {ev:.1f} kW from {mix or 'solar and battery'}, no peak grid power.",
+                f"battery is down to {soc:.0f}%: it will hit its reserve soon" if low else "good: nothing to do")
+        if grid > 0.5 and ev_grid < grid - 0.5:
+            house = grid - ev_grid
+            add(WARN, f"House is buying {house:.1f} kW at the peak rate ({rate:.0f}c).",
                 "the battery should be covering the house; check its mode and reserve" if (soc or 0) > reserve + 5 else "battery is at its reserve")
-        if ev > 0.5:
-            add(ACT, f"EV is charging in peak ({ev:.1f} kW at {rate:.0f}c). Pause it until 10:00 if you can.")
 
     # Cheap shoulder window
     if period == "shoulder":

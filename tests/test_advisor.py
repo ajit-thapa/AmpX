@@ -15,7 +15,7 @@ def snap(**kw):
 
 
 def test_peak_coming_while_ev_charges():
-    out = tips(snap(), {"ev": 7.2}, NOW)
+    out = tips(snap(), {"ev": 7.2, "grid": 7.6}, NOW)
     assert out[0]["level"] == "act" and "Peak starts at 16:00" in out[0]["text"]
 
 
@@ -40,3 +40,13 @@ def test_solar_spill_tip():
     assert not any("going to the grid" in t["text"] for t in out)  # battery not full
     s = snap(battery_soc=99.0, next_change=NOW + timedelta(hours=4))
     assert any("going to the grid" in t["text"] for t in tips(s, {"pv": 6.0, "grid": -4.0}, NOW.replace(hour=12)))
+
+
+def test_ev_in_peak_from_solar_and_battery_is_not_flagged():
+    s = snap(period="peak", import_rate=41.91, next_period="off_peak", battery_soc=70.0)
+    out = tips(s, {"ev": 7.0, "pv": 3.5, "grid": 0.0, "batt": -4.0}, NOW.replace(hour=17))
+    assert not any("Pause" in t["text"] or "from the grid" in t["text"] for t in out)
+    assert any("EV charging at 7.0 kW from 3.0 kW solar, 4.0 kW battery" in t["text"] for t in out)
+    # grid really feeding the car: say how much
+    out = tips(s, {"ev": 7.0, "pv": 0.0, "grid": 3.0, "batt": -4.0}, NOW.replace(hour=17))
+    assert out[0]["level"] == "act" and "pulling 3.0 kW from the grid" in out[0]["text"]
