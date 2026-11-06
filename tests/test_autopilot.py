@@ -4,9 +4,9 @@ from homeassistant.core import HomeAssistant, SupportsResponse
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
 
-from custom_components.cortex import autopilot_rules as r
-from custom_components.cortex.const import DEFAULTS, DOMAIN
-from custom_components.cortex.migrate import LEGACY
+from custom_components.ampx import autopilot_rules as r
+from custom_components.ampx.const import DEFAULTS, DOMAIN
+from custom_components.ampx.migrate import LEGACY
 
 CTX = dict(
     soc=40, battery_kwh=50, pv_today=30, pv_tomorrow=30, avg_daily_load=25, night_share=0.35,
@@ -98,7 +98,7 @@ async def _setup(hass: HomeAssistant, **opts):
     hass.states.async_set("sensor.neovolt_online_soc", "40")
     hass.states.async_set("sensor.pv_forecast_ingleburn", "30")
     hass.states.async_set("sensor.byd_sealion_7_battery_level", "50")
-    entry = MockConfigEntry(domain=DOMAIN, title="Cortex", data={}, options={**DEFAULTS, **LEGACY, **opts})
+    entry = MockConfigEntry(domain=DOMAIN, title="AmpX", data={}, options={**DEFAULTS, **LEGACY, **opts})
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -134,7 +134,7 @@ async def test_auto_mode_follows_model_within_limits(hass: HomeAssistant):
     assert {c.data["value"] for c in numbers} >= {4.0, 85.0}
     assert selects[-1].data["option"] == "Force Charge"
     assert "time-of-use" in asked[0] and brain.autopilot.active["window"] == "topup"
-    assert hass.states.get("sensor.cortex_autopilot") is not None
+    assert hass.states.get("sensor.ampx_autopilot") is not None
 
 
 async def test_shadow_mode_never_acts(hass: HomeAssistant):
@@ -221,7 +221,7 @@ async def test_hung_model_falls_back_to_rules(hass: HomeAssistant, monkeypatch):
 
 def test_battery_budget_until_the_shoulder_window():
     from datetime import datetime
-    from custom_components.cortex.tariff import Plan, battery_budget
+    from custom_components.ampx.tariff import Plan, battery_budget
     plan = Plan()
     b = battery_budget(datetime(2026, 11, 5, 18, 0), 70.0, 50.0, 20.0, plan, 24.0, 1.0)
     # 25 kWh usable; 16 h to 10:00 at 1 kWh/h; $1 at 28c = 3.6 kWh

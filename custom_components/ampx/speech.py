@@ -17,7 +17,7 @@ from .const import CONF_MOTION, CONF_MUTE_PUSH, CONF_NOTIFY, CONF_SPEAKERS, CONF
 from .gate import SpeechGate
 
 if TYPE_CHECKING:
-    from .runtime import Cortex
+    from .runtime import AmpX
 
 _LOGGER = logging.getLogger(__name__)
 MOTION_WINDOW = timedelta(minutes=10)
@@ -30,7 +30,7 @@ REPEAT_HOURS = 12
 class Speaker:
     """Single place everything that talks goes through."""
 
-    def __init__(self, hass: HomeAssistant, brain: Cortex, gate: SpeechGate) -> None:
+    def __init__(self, hass: HomeAssistant, brain: AmpX, gate: SpeechGate) -> None:
         self.hass = hass
         self.brain = brain
         self.gate = gate
@@ -156,7 +156,7 @@ class Speaker:
                 return cat
         return "speech"
 
-    async def push(self, text: str, title: str = "Cortex") -> bool:
+    async def push(self, text: str, title: str = "AmpX") -> bool:
         cat = self.category(title)
         muted = cat in (self.brain.opts.get(CONF_MUTE_PUSH) or [])
         now = dt_util.now()

@@ -2,12 +2,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
 
-from custom_components.cortex.const import DEFAULTS, DOMAIN
-from custom_components.cortex.migrate import LEGACY
+from custom_components.ampx.const import DEFAULTS, DOMAIN
+from custom_components.ampx.migrate import LEGACY
 
 
 async def _setup(hass: HomeAssistant, **opts):
-    entry = MockConfigEntry(domain=DOMAIN, title="Cortex", data={}, options={**DEFAULTS, **LEGACY, **opts})
+    entry = MockConfigEntry(domain=DOMAIN, title="AmpX", data={}, options={**DEFAULTS, **LEGACY, **opts})
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -23,13 +23,13 @@ async def test_setup_and_energy_sensors(hass: HomeAssistant):
     brain = hass.data[DOMAIN][entry.entry_id]
     brain.refresh()
     await hass.async_block_till_done()
-    state = hass.states.get("sensor.cortex_battery_stored")
+    state = hass.states.get("sensor.ampx_battery_stored")
     assert state is not None and float(state.state) == 27.0
-    assert float(hass.states.get("sensor.cortex_battery_room_left").state) == 23.0
-    assert float(hass.states.get("sensor.cortex_ev_room_left").state) == 49.5
-    assert hass.states.get("sensor.cortex_solar_day").state == "ok"
-    assert hass.states.get("sensor.cortex_tariff_period").state in ("peak", "shoulder", "off_peak")
-    assert "Battery 27.0/50 kWh" in hass.states.get("sensor.cortex_storage_summary").state
+    assert float(hass.states.get("sensor.ampx_battery_room_left").state) == 23.0
+    assert float(hass.states.get("sensor.ampx_ev_room_left").state) == 49.5
+    assert hass.states.get("sensor.ampx_solar_day").state == "ok"
+    assert hass.states.get("sensor.ampx_tariff_period").state in ("peak", "shoulder", "off_peak")
+    assert "Battery 27.0/50 kWh" in hass.states.get("sensor.ampx_storage_summary").state
 
 
 async def test_memory_services_and_llm_api(hass: HomeAssistant):
@@ -43,7 +43,7 @@ async def test_memory_services_and_llm_api(hass: HomeAssistant):
         DOMAIN, "recall", {"query": "rabbit"}, blocking=True, return_response=True
     )
     assert len(found["memories"]) == 1
-    assert hass.states.get("sensor.cortex_memories").state == "1"
+    assert hass.states.get("sensor.ampx_memories").state == "1"
     api = await llm.async_get_api(
         hass, DOMAIN,
         llm.LLMContext(platform="test", context=None, language="en", assistant=None, device_id=None),
@@ -128,11 +128,11 @@ async def test_options_flow(hass: HomeAssistant):
 
 async def test_sensors_fill_when_sources_appear_after_start(hass: HomeAssistant):
     entry = await _setup(hass)  # nothing exists yet, like a restart race
-    assert hass.states.get("sensor.cortex_battery_stored").state == "unknown"
+    assert hass.states.get("sensor.ampx_battery_stored").state == "unknown"
     hass.states.async_set("sensor.neovolt_online_soc", "50")
     await hass.async_block_till_done()
-    assert float(hass.states.get("sensor.cortex_battery_stored").state) == 25.0
-    assert hass.states.get(f"sensor.cortex_storage_summary").state.startswith("Battery 25.0/50")
+    assert float(hass.states.get("sensor.ampx_battery_stored").state) == 25.0
+    assert hass.states.get(f"sensor.ampx_storage_summary").state.startswith("Battery 25.0/50")
 
 
 async def test_llm_tools_declare_integration_and_return_dicts(hass: HomeAssistant):

@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta
 
-from custom_components.cortex.advisor import tips
+from custom_components.ampx.advisor import tips
 
 NOW = datetime(2026, 11, 3, 15, 0)
 

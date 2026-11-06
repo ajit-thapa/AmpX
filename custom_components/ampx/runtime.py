@@ -25,7 +25,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_ENGINE,
-    ENGINE_CORTEX,
+    ENGINE_AMPX,
     ENGINE_HERMES,
     EVENT_SNAPSHOT,
     CONF_AGENT,
@@ -88,7 +88,7 @@ OFFLINE_AFTER = timedelta(minutes=30)  # a restart or a Wi-Fi blip is not a faul
 VOICE_STATES = {"listening", "processing", "responding"}
 
 
-class Cortex:
+class AmpX:
     """One per config entry."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -173,7 +173,7 @@ class Cortex:
     def _track_sources(self) -> None:
         """Refresh as soon as any energy input appears or changes.
 
-        Cortex can start before the battery, EV and forecast integrations, so
+        AmpX can start before the battery, EV and forecast integrations, so
         waiting for the minute tick leaves sensors unknown after a restart.
         """
         ids = sorted(
@@ -288,7 +288,7 @@ class Cortex:
             "generate_data",
             {
                 "entity_id": task,
-                "task_name": "cortex look",
+                "task_name": "ampx look",
                 "instructions": instructions,
                 "attachments": [
                     {"media_content_id": f"media-source://camera/{camera}", "media_content_type": "image/jpeg"}
@@ -323,10 +323,10 @@ class Cortex:
         return {"pv": pv, "grid": grid, "batt": batt, "ev": ev, "load": max(pv + grid - batt, 0.0)}
 
     def engine(self) -> str:
-        return self.opts.get(CONF_ENGINE) or ENGINE_CORTEX
+        return self.opts.get(CONF_ENGINE) or ENGINE_AMPX
 
     def hermes(self) -> bool:
-        """True when Hermes makes the energy decisions: Cortex stops writing and forwards data."""
+        """True when Hermes makes the energy decisions: AmpX stops writing and forwards data."""
         return self.engine() == ENGINE_HERMES
 
     def control_mode(self) -> str:
@@ -630,7 +630,7 @@ class Cortex:
         fresh = {txt for k, txt in current.items() if k not in self._known_issues}
         self._known_issues = set(current)
         if fresh:
-            await self.speaker.push("; ".join(sorted(fresh)), title="Cortex house health")
+            await self.speaker.push("; ".join(sorted(fresh)), title="AmpX house health")
         self.notify_update()
         return self.health
 

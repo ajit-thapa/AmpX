@@ -210,7 +210,7 @@ class Autopilot(Feature):
         brain.save()
         if decision["do"]:  # holds stay in the log and the panel; only actions reach the phone
             prefix = "Autopilot" if decision["result"] in ("started", "failed") else "Autopilot advice"
-            await brain.speaker.push(f"{prefix}: {text}", title="Cortex autopilot")
+            await brain.speaker.push(f"{prefix}: {text}", title="AmpX autopilot")
         return decision
 
     def _fresh_plan(self) -> dict[str, Any] | None:

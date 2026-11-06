@@ -41,13 +41,13 @@ from .const import (
 )
 from .const import *  # noqa: F403 - profile and setup option keys
 from .memory import CATEGORIES
-from .runtime import Cortex
+from .runtime import AmpX
 from . import tariff
 
 
-def _brain(hass: HomeAssistant) -> Cortex | None:
+def _brain(hass: HomeAssistant) -> AmpX | None:
     for value in hass.data.get(DOMAIN, {}).values():
-        if isinstance(value, Cortex):
+        if isinstance(value, AmpX):
             return value
     return None
 
@@ -71,7 +71,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_upload)
 
 
-def _profile(brain: Cortex) -> dict[str, Any]:
+def _profile(brain: AmpX) -> dict[str, Any]:
     """Everything the panel needs to know about this home: names, photos, entities, tariff."""
     o, p = brain.opts, brain.energy.plan()
     f = lambda k, d=0.0: float(o.get(k) or d)  # noqa: E731
@@ -104,12 +104,12 @@ def _profile(brain: Cortex) -> dict[str, Any]:
     }
 
 
-@websocket_api.websocket_command({vol.Required("type"): "cortex/overview"})
+@websocket_api.websocket_command({vol.Required("type"): "ampx/overview"})
 @websocket_api.async_response
 async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
     brain = _brain(hass)
     if brain is None:
-        connection.send_error(msg["id"], "not_loaded", "Cortex is not set up")
+        connection.send_error(msg["id"], "not_loaded", "AmpX is not set up")
         return
     brain.refresh()
     now = dt_util.now()
@@ -205,7 +205,7 @@ async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "cortex/memory_add",
+        vol.Required("type"): "ampx/memory_add",
         vol.Required("text"): str,
         vol.Optional("category", default="fact"): str,
     }
@@ -214,14 +214,14 @@ async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
 async def ws_memory_add(hass: HomeAssistant, connection, msg) -> None:
     brain = _brain(hass)
     if brain is None:
-        connection.send_error(msg["id"], "not_loaded", "Cortex is not set up")
+        connection.send_error(msg["id"], "not_loaded", "AmpX is not set up")
         return
     memory = brain.remember(msg["text"], msg["category"], "panel")
     connection.send_result(msg["id"], vars(memory))
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "cortex/memory_delete", vol.Required("target"): str}
+    {vol.Required("type"): "ampx/memory_delete", vol.Required("target"): str}
 )
 @websocket_api.async_response
 async def ws_memory_delete(hass: HomeAssistant, connection, msg) -> None:
@@ -231,7 +231,7 @@ async def ws_memory_delete(hass: HomeAssistant, connection, msg) -> None:
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "cortex/hush", vol.Required("minutes"): vol.All(int, vol.Range(min=0))}
+    {vol.Required("type"): "ampx/hush", vol.Required("minutes"): vol.All(int, vol.Range(min=0))}
 )
 @websocket_api.async_response
 async def ws_hush(hass: HomeAssistant, connection, msg) -> None:
@@ -244,7 +244,7 @@ async def ws_hush(hass: HomeAssistant, connection, msg) -> None:
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "cortex/cancel", vol.Required("kind"): vol.In(["reminder", "watch"]), vol.Required("target"): str}
+    {vol.Required("type"): "ampx/cancel", vol.Required("kind"): vol.In(["reminder", "watch"]), vol.Required("target"): str}
 )
 @websocket_api.async_response
 async def ws_cancel(hass: HomeAssistant, connection, msg) -> None:
@@ -279,7 +279,7 @@ CONTROL_OPTIONS = {
     CONF_AS_STYLE: vol.In(AS_STYLES),
     CONF_EV_PRIORITY: bool,
     CONF_HOUSE_RULE: bool,
-    CONF_ENGINE: vol.In((ENGINE_CORTEX, ENGINE_HERMES)),
+    CONF_ENGINE: vol.In((ENGINE_AMPX, ENGINE_HERMES)),
     CONF_EV_TRICKLE_KW: vol.All(vol.Coerce(float), vol.Range(min=0, max=2)),
     CONF_BATT_MAX_KW: vol.All(vol.Coerce(float), vol.Range(min=1, max=50)),
     CONF_AS_NOTES: vol.All(str, vol.Length(max=600)),
@@ -347,7 +347,7 @@ PLAN_SCHEMA = vol.Schema({
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "cortex/action",
+        vol.Required("type"): "ampx/action",
         vol.Required("action"): vol.In(ACTIONS),
         # "id" is reserved by the websocket protocol for the message number, so the object goes in "target"
         vol.Optional("target"): str,
@@ -361,7 +361,7 @@ PLAN_SCHEMA = vol.Schema({
 async def ws_action(hass: HomeAssistant, connection, msg) -> None:
     brain = _brain(hass)
     if brain is None:
-        connection.send_error(msg["id"], "not_loaded", "Cortex is not set up")
+        connection.send_error(msg["id"], "not_loaded", "AmpX is not set up")
         return
     action, ident = msg["action"], msg.get("target", "")
     try:
@@ -401,14 +401,14 @@ async def ws_action(hass: HomeAssistant, connection, msg) -> None:
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "cortex/set_options", vol.Required("options"): dict}
+    {vol.Required("type"): "ampx/set_options", vol.Required("options"): dict}
 )
 @websocket_api.async_response
 async def ws_set_options(hass: HomeAssistant, connection, msg) -> None:
     """Change battery control settings (automatic or manual) from the panel."""
     brain = _brain(hass)
     if brain is None:
-        connection.send_error(msg["id"], "not_loaded", "Cortex is not set up")
+        connection.send_error(msg["id"], "not_loaded", "AmpX is not set up")
         return
     changes: dict[str, Any] = {}
     try:
@@ -420,19 +420,19 @@ async def ws_set_options(hass: HomeAssistant, connection, msg) -> None:
         connection.send_error(msg["id"], "invalid", str(err))
         return
     entry = brain.entry
-    hass.config_entries.async_update_entry(entry, options={**entry.options, **changes})  # reloads Cortex
+    hass.config_entries.async_update_entry(entry, options={**entry.options, **changes})  # reloads AmpX
     connection.send_result(msg["id"], {"saved": changes})
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "cortex/plans_save", vol.Required("plans"): vol.All(list, vol.Length(max=8))}
+    {vol.Required("type"): "ampx/plans_save", vol.Required("plans"): vol.All(list, vol.Length(max=8))}
 )
 @websocket_api.async_response
 async def ws_plans_save(hass: HomeAssistant, connection, msg) -> None:
     """Store the tariffs the panel compares the current plan against."""
     brain = _brain(hass)
     if brain is None:
-        connection.send_error(msg["id"], "not_loaded", "Cortex is not set up")
+        connection.send_error(msg["id"], "not_loaded", "AmpX is not set up")
         return
     try:
         plans = [PLAN_SCHEMA(p) for p in msg["plans"]]
@@ -458,17 +458,17 @@ def _photo_ext(raw: bytes) -> str | None:
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "cortex/upload",
+        vol.Required("type"): "ampx/upload",
         vol.Required("kind"): vol.In(list(PHOTO_KINDS)),
         vol.Optional("data"): vol.Any(None, str),  # base64 or a data: URL; leave out to remove the photo
     }
 )
 @websocket_api.async_response
 async def ws_upload(hass: HomeAssistant, connection, msg) -> None:
-    """Save a photo (car, battery or background) under <config>/cortex and point the option at it."""
+    """Save a photo (car, battery or background) under <config>/ampx and point the option at it."""
     brain = _brain(hass)
     if brain is None:
-        connection.send_error(msg["id"], "not_loaded", "Cortex is not set up")
+        connection.send_error(msg["id"], "not_loaded", "AmpX is not set up")
         return
     key, url = PHOTO_KINDS[msg["kind"]], ""
     folder = Path(hass.config.path(DOMAIN))

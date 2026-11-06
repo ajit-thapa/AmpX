@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from custom_components.cortex import tariff as t
+from custom_components.ampx import tariff as t
 
 PLAN = t.Plan()
 

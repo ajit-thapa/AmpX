@@ -1,4 +1,4 @@
-"""Cortex: a shared brain for voice, memory, safety and home energy."""
+"""AmpX: a shared brain for voice, memory, safety and home energy."""
 
 from __future__ import annotations
 
@@ -11,16 +11,16 @@ from homeassistant.helpers import llm
 
 from . import migrate
 from .const import DOMAIN
-from .llm_api import CortexAPI
-from .runtime import Cortex
+from .llm_api import AmpXAPI
+from .runtime import AmpX
 from .services import async_register_services, async_unregister_services
 from .websocket import async_register_websocket
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["sensor"]
-PANEL_URL = "cortex"
+PANEL_URL = "ampx"
 FRONTEND_PATH = f"/{DOMAIN}_static"
-FILES_PATH = f"/{DOMAIN}_files"  # photos uploaded from the panel, kept in <config>/cortex
+FILES_PATH = f"/{DOMAIN}_files"  # photos uploaded from the panel, kept in <config>/ampx
 FRONTEND_VERSION = "0.23.0"  # cache-buster for the panel scripts
 
 
@@ -33,12 +33,12 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     migrate.async_migrate(hass, entry)
-    brain = Cortex(hass, entry)
+    brain = AmpX(hass, entry)
     await brain.async_start()
     hass.data[DOMAIN][entry.entry_id] = brain
 
     entry.async_on_unload(
-        llm.async_register_api(hass, CortexAPI(hass, brain))
+        llm.async_register_api(hass, AmpXAPI(hass, brain))
     )
     await _async_register_panel(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -49,7 +49,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
-        brain: Cortex = hass.data[DOMAIN].pop(entry.entry_id)
+        brain: AmpX = hass.data[DOMAIN].pop(entry.entry_id)
         brain.async_stop()
         if not hass.data[DOMAIN]:
             async_unregister_services(hass)
@@ -82,13 +82,13 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
         )
         await panel_custom.async_register_panel(
             hass,
-            webcomponent_name="cortex-studio",
+            webcomponent_name="ampx-studio",
             frontend_url_path=PANEL_URL,
-            module_url=f"{FRONTEND_PATH}/cortex-studio.js?v={FRONTEND_VERSION}",
-            sidebar_title="Cortex",
+            module_url=f"{FRONTEND_PATH}/ampx-studio.js?v={FRONTEND_VERSION}",
+            sidebar_title="AmpX",
             sidebar_icon="mdi:brain",
             require_admin=False,
         )
         hass.data[f"{DOMAIN}_panel"] = True
     except Exception as err:  # noqa: BLE001 - the panel is optional
-        _LOGGER.warning("Cortex panel not registered: %s", err)
+        _LOGGER.warning("AmpX panel not registered: %s", err)

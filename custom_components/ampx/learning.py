@@ -229,8 +229,8 @@ class Learning(Feature):
             self.brain.save()
             for record in added[:2]:
                 await self.brain.speaker.push(
-                    f"{record['text']} Automate it? Open Cortex or call cortex.accept_suggestion with id {record['id']}.",
-                    title="Cortex suggestion: noticed a pattern",
+                    f"{record['text']} Automate it? Open AmpX or call ampx.accept_suggestion with id {record['id']}.",
+                    title="AmpX suggestion: noticed a pattern",
                 )
             self.brain.record("suggestions", len(added))
             self.brain.log("learning", f"{len(added)} new suggestion(s)")

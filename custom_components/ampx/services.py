@@ -1,4 +1,4 @@
-"""Cortex services."""
+"""AmpX services."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import CONF_AGENT, DOMAIN
 from .memory import CATEGORIES
-from .runtime import Cortex
+from .runtime import AmpX
 
 SERVICES = (
     "say", "ask", "remember", "recall", "forget", "remind", "cancel_reminder",
@@ -29,11 +29,11 @@ def _fields(data, *keys):
     return {k: data[k] for k in keys if k in data}
 
 
-def _brain(hass: HomeAssistant) -> Cortex:
+def _brain(hass: HomeAssistant) -> AmpX:
     for value in hass.data.get(DOMAIN, {}).values():
-        if isinstance(value, Cortex):
+        if isinstance(value, AmpX):
             return value
-    raise HomeAssistantError("Cortex is not set up")
+    raise HomeAssistantError("AmpX is not set up")
 
 
 def async_register_services(hass: HomeAssistant) -> None:

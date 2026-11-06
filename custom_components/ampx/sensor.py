@@ -1,4 +1,4 @@
-"""Cortex sensors."""
+"""AmpX sensors."""
 
 from __future__ import annotations
 
@@ -21,18 +21,18 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN, SIGNAL_UPDATE
-from .runtime import Cortex
+from .runtime import AmpX
 
 KWH = UnitOfEnergy.KILO_WATT_HOUR
 
 
 @dataclass(frozen=True, kw_only=True)
-class CortexSensorDescription(SensorEntityDescription):
-    value: Callable[[Cortex], Any]
-    attrs: Callable[[Cortex], dict[str, Any]] | None = None
+class AmpXSensorDescription(SensorEntityDescription):
+    value: Callable[[AmpX], Any]
+    attrs: Callable[[AmpX], dict[str, Any]] | None = None
 
 
-def _e(key: str) -> Callable[[Cortex], Any]:
+def _e(key: str) -> Callable[[AmpX], Any]:
     return lambda b: b.snapshot.get(key)
 
 
@@ -45,92 +45,92 @@ def _storage(key: str) -> dict[str, Any]:
     )
 
 
-SENSORS: tuple[CortexSensorDescription, ...] = (
-    CortexSensorDescription(
+SENSORS: tuple[AmpXSensorDescription, ...] = (
+    AmpXSensorDescription(
         key="period", translation_key="period", icon="mdi:clock-time-four-outline",
         device_class=SensorDeviceClass.ENUM, options=["peak", "shoulder", "off_peak"],
         value=_e("period"),
         attrs=lambda b: {"business_day": b.snapshot.get("business_day"), "high_season": b.snapshot.get("high_season")},
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="import_rate", translation_key="import_rate", icon="mdi:transmission-tower-import",
         native_unit_of_measurement="c/kWh", state_class=SensorStateClass.MEASUREMENT, value=_e("import_rate"),
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="feed_in_rate", translation_key="feed_in_rate", icon="mdi:transmission-tower-export",
         native_unit_of_measurement="c/kWh", state_class=SensorStateClass.MEASUREMENT, value=_e("feed_in_rate"),
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="next_period", translation_key="next_period", icon="mdi:calendar-arrow-right",
         device_class=SensorDeviceClass.ENUM, options=["peak", "shoulder", "off_peak"], value=_e("next_period"),
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="next_change", translation_key="next_change", device_class=SensorDeviceClass.TIMESTAMP,
         value=_e("next_change"),
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="export_to_cover", translation_key="export_to_cover", icon="mdi:cash-check",
         native_unit_of_measurement=KWH, suggested_display_precision=2, value=_e("export_to_cover"),
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="pv_shortfall", translation_key="pv_shortfall", icon="mdi:weather-sunny-alert",
         native_unit_of_measurement=KWH, suggested_display_precision=1, value=_e("pv_shortfall"),
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="solar_day", translation_key="solar_day", icon="mdi:weather-sunny",
         device_class=SensorDeviceClass.ENUM, options=["low", "ok", "unknown"], value=_e("solar_day"),
     ),
-    CortexSensorDescription(key="battery_stored", translation_key="battery_stored", value=_e("battery_stored"), **_storage("b")),
-    CortexSensorDescription(key="battery_usable", translation_key="battery_usable", value=_e("battery_usable"), **_storage("u")),
-    CortexSensorDescription(key="battery_room", translation_key="battery_room", value=_e("battery_room"), **_storage("r")),
-    CortexSensorDescription(key="ev_stored", translation_key="ev_stored", value=_e("ev_stored"), **_storage("e")),
-    CortexSensorDescription(key="ev_room", translation_key="ev_room", value=_e("ev_room"), **_storage("er")),
-    CortexSensorDescription(
+    AmpXSensorDescription(key="battery_stored", translation_key="battery_stored", value=_e("battery_stored"), **_storage("b")),
+    AmpXSensorDescription(key="battery_usable", translation_key="battery_usable", value=_e("battery_usable"), **_storage("u")),
+    AmpXSensorDescription(key="battery_room", translation_key="battery_room", value=_e("battery_room"), **_storage("r")),
+    AmpXSensorDescription(key="ev_stored", translation_key="ev_stored", value=_e("ev_stored"), **_storage("e")),
+    AmpXSensorDescription(key="ev_room", translation_key="ev_room", value=_e("ev_room"), **_storage("er")),
+    AmpXSensorDescription(
         key="storage_summary", translation_key="storage_summary", icon="mdi:battery-charging-wireless",
         value=_e("storage_summary"),
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="summary", translation_key="summary", icon="mdi:text-box-outline", value=_e("summary"),
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="memories", translation_key="memories", icon="mdi:head-cog-outline",
         state_class=SensorStateClass.MEASUREMENT, value=lambda b: len(b.book.items),
         attrs=lambda b: {"recent": [m.text for m in b.book.recall("", 10)]},
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="last_spoken", translation_key="last_spoken", icon="mdi:message-text-outline",
         value=lambda b: (b.speaker.log[0]["text"][:255] if b.speaker.log else None),
         attrs=lambda b: {"log": list(b.speaker.log)[:10]},
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="likely_room", translation_key="likely_room", icon="mdi:map-marker-radius",
         value=lambda b: b.speaker.likely_area(),
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="health_issues", translation_key="health_issues", icon="mdi:heart-pulse",
         state_class=SensorStateClass.MEASUREMENT, value=lambda b: len(b.health),
         attrs=lambda b: {"issues": b.health},
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="suggestions", translation_key="suggestions", icon="mdi:lightbulb-on-outline",
         state_class=SensorStateClass.MEASUREMENT, value=lambda b: len(b.learning.pending),
         attrs=lambda b: {"pending": [{"id": x["id"], "text": x["text"]} for x in b.learning.pending]},
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="visitors_today", translation_key="visitors_today", icon="mdi:doorbell-video",
         state_class=SensorStateClass.MEASUREMENT, value=lambda b: b.visitors.today_count(),
         attrs=lambda b: {"recent": b.visitors.log[-5:]},
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="parcels_waiting", translation_key="parcels_waiting", icon="mdi:package-variant-closed",
         state_class=SensorStateClass.MEASUREMENT, value=lambda b: b.visitors.parcels_waiting,
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="security_issues", translation_key="security_issues", icon="mdi:shield-home-outline",
         state_class=SensorStateClass.MEASUREMENT, value=lambda b: len(b.security.check()["issues"]),
         attrs=lambda b: {"issues": b.security.check()["issues"]},
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="autopilot", translation_key="autopilot", icon="mdi:robot-outline",
         value=lambda b: (
             f"{b.autopilot.mode}: " + ("go" if b.autopilot.last["do"] else "hold") + f" {b.autopilot.last['window']}"
@@ -138,12 +138,12 @@ SENSORS: tuple[CortexSensorDescription, ...] = (
         ),
         attrs=lambda b: {"mode": b.autopilot.mode, "active": b.autopilot.active, "decisions": b.autopilot.decisions[-8:]},
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="battery_plan", translation_key="battery_plan", icon="mdi:chart-timeline-variant",
         value=lambda b: (b.energy.plan_result or {}).get("summary"),
         attrs=lambda b: {k: v for k, v in (b.energy.plan_result or {}).items() if k != "rows"},
     ),
-    CortexSensorDescription(
+    AmpXSensorDescription(
         key="last_event", translation_key="last_event", icon="mdi:timeline-clock-outline",
         value=lambda b: (b.timeline.items[0]["text"][:255] if b.timeline.items else None),
         attrs=lambda b: {"timeline": list(b.timeline.items)[:15]},
@@ -154,21 +154,21 @@ SENSORS: tuple[CortexSensorDescription, ...] = (
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    brain: Cortex = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(CortexSensor(brain, entry, d) for d in SENSORS)
+    brain: AmpX = hass.data[DOMAIN][entry.entry_id]
+    async_add_entities(AmpXSensor(brain, entry, d) for d in SENSORS)
 
 
-class CortexSensor(SensorEntity):
+class AmpXSensor(SensorEntity):
     _attr_has_entity_name = True
     _attr_should_poll = False
-    entity_description: CortexSensorDescription
+    entity_description: AmpXSensorDescription
 
-    def __init__(self, brain: Cortex, entry: ConfigEntry, desc: CortexSensorDescription) -> None:
+    def __init__(self, brain: AmpX, entry: ConfigEntry, desc: AmpXSensorDescription) -> None:
         self.brain = brain
         self.entity_description = desc
         self._attr_unique_id = f"{entry.entry_id}_{desc.key}"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)}, name=entry.title, manufacturer="Cortex",
+            identifiers={(DOMAIN, entry.entry_id)}, name=entry.title, manufacturer="AmpX",
         )
 
     async def async_added_to_hass(self) -> None:

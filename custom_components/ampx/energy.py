@@ -13,7 +13,7 @@ from homeassistant.util import dt as dt_util
 from . import planner, tariff
 from .const import (
     CONF_ENGINE,
-    ENGINE_CORTEX,
+    ENGINE_AMPX,
     CONF_AP_PLANNER,
     CONF_BATT_MAX_KW,
     CONF_CYCLE_COST,
@@ -68,7 +68,7 @@ from .const import (
 )
 
 if TYPE_CHECKING:
-    from .runtime import Cortex
+    from .runtime import AmpX
 
 _LOGGER = logging.getLogger(__name__)
 UNKNOWN = ("unknown", "unavailable", "none", "")
@@ -98,13 +98,13 @@ def months(value: Any) -> tuple[int, ...]:
 class EnergyBrain:
     """Reads the house, applies the tariff, and (optionally) drives the battery."""
 
-    def __init__(self, hass: HomeAssistant, brain: Cortex) -> None:
+    def __init__(self, hass: HomeAssistant, brain: AmpX) -> None:
         self.hass = hass
         self.brain = brain
         # Today's export earnings, built minute by minute from the export counter at the rate of the moment.
         self.earned: dict[str, Any] = {"day": None, "cents": 0.0, "last": None}
         self.ev_guard_note: str | None = None
-        self.house_only = False  # Cortex is running the battery at house load so the grid charges the EV
+        self.house_only = False  # AmpX is running the battery at house load so the grid charges the EV
         self.house_note: str | None = None
         self._rule_told: dict[str, str] = {}
         self.house_kwh_day = 22.0  # average daily use, refreshed hourly from history
@@ -225,7 +225,7 @@ class EnergyBrain:
         data["budget"] = tariff.battery_budget(now, soc, bat_kwh, reserve, plan, self.house_kwh_day, self.supply_left(), self.profile)
         data["ev_guard"] = self.ev_guard_note
         data["house_rule"] = bool(o.get(CONF_HOUSE_RULE))
-        data["decision_engine"] = o.get(CONF_ENGINE) or ENGINE_CORTEX
+        data["decision_engine"] = o.get(CONF_ENGINE) or ENGINE_AMPX
         data["house_note"] = self.house_note
         data["storage_summary"] = self._storage_summary(data, bat_kwh, ev_kwh)
         data["summary"] = self._summary(data)
@@ -438,7 +438,7 @@ class EnergyBrain:
             msg = (f"Supply charge covered (${self.plan().supply_charge / 100:.2f} earned). "
                    f"Battery now powers the EV, exporting just {extra * 1000:.0f} W.")
             self.brain.log("energy", msg)
-            await self.brain.speaker.push(msg, title="Cortex energy")
+            await self.brain.speaker.push(msg, title="AmpX energy")
         if short:
             self.ev_guard_note = (f"EV first: battery needed for the house until {budget['until']} "
                                   f"({budget['house']:.0f} kWh, {budget['usable']:.0f} kWh usable), so exporting only {extra * 1000:.0f} W.")
@@ -460,10 +460,10 @@ class EnergyBrain:
             return
         self._rule_told[key] = day
         self.brain.log("energy", msg)
-        await self.brain.speaker.push(msg, title="Cortex energy")
+        await self.brain.speaker.push(msg, title="AmpX energy")
 
     async def _watch_house(self, now: datetime) -> str | None:
-        """Hermes decides: Cortex only checks the house rule and tells the owner on a breach."""
+        """Hermes decides: AmpX only checks the house rule and tells the owner on a breach."""
         if not self.brain.opts.get(CONF_HOUSE_RULE):
             return None
         plan = self.plan()
@@ -484,10 +484,10 @@ class EnergyBrain:
 
         * A forced export stops once the battery holds only what the house needs until the
           next cheap window (any mode, manual included).
-        * While the EV charges off-peak and the battery has nothing to spare, Cortex runs the
+        * While the EV charges off-peak and the battery has nothing to spare, AmpX runs the
           battery at the house's load so the grid charges the car and the house stays on the
-          battery (only when Cortex controls the battery: timers or Autopilot).
-        * In peak the EV may not use the grid either: Cortex asks to pause it if the battery
+          battery (only when AmpX controls the battery: timers or Autopilot).
+        * In peak the EV may not use the grid either: AmpX asks to pause it if the battery
           can't cover both.
         """
         now = now or dt_util.now()
@@ -558,7 +558,7 @@ class EnergyBrain:
 
     # ---- actions --------------------------------------------------------
     async def _set(self, domain: str, service: str, key: str, **data: Any) -> bool:
-        if self.brain.hermes():  # Hermes decides and writes; Cortex only shows and suggests
+        if self.brain.hermes():  # Hermes decides and writes; AmpX only shows and suggests
             _LOGGER.debug("Decision engine is Hermes: not writing %s.%s", domain, service)
             return False
         entity_id = self.brain.opts.get(key)
@@ -594,7 +594,7 @@ class EnergyBrain:
                 f"Grid top-up started: solar short by {short} kWh."
                 if short is not None
                 else "Grid top-up started.",
-                title="Cortex energy",
+                title="AmpX energy",
             )
         if ok:
             self.brain.record("energy_actions")
@@ -627,7 +627,7 @@ class EnergyBrain:
         )
         if ok:
             await self.brain.speaker.push(
-                f"Evening export started at {plan.fit_evening:g}c/kWh.", title="Cortex energy"
+                f"Evening export started at {plan.fit_evening:g}c/kWh.", title="AmpX energy"
             )
         if ok:
             self.brain.record("energy_actions")

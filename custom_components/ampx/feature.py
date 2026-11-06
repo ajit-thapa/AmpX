@@ -1,4 +1,4 @@
-"""Base class for Cortex features."""
+"""Base class for AmpX features."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.core import HomeAssistant
 
 if TYPE_CHECKING:
-    from .runtime import Cortex
+    from .runtime import AmpX
 
 
 class Feature:
@@ -16,7 +16,7 @@ class Feature:
 
     name = ""
 
-    def __init__(self, brain: Cortex) -> None:
+    def __init__(self, brain: AmpX) -> None:
         self.brain = brain
         self.hass: HomeAssistant = brain.hass
         self._unsubs: list[Callable[[], None]] = []

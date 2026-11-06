@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Set up Cortex",
+        "title": "Set up AmpX",
         "description": "A shared brain for voice, memory, safety and energy. Speakers and energy entities are set afterwards under Configure.",
         "data": {
           "name": "Name"
@@ -10,13 +10,13 @@
       }
     },
     "abort": {
-      "single_instance_allowed": "Cortex is already set up."
+      "single_instance_allowed": "AmpX is already set up."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Cortex",
+        "title": "AmpX",
         "menu_options": {
           "profile": "Your home: names, photos, extra sensors",
           "general": "Voice and rules",
@@ -76,7 +76,7 @@
           "ev_charger_kw": "EV charger power",
           "battery_efficiency": "Battery round-trip efficiency",
           "house_off_grid": "House rule: never buy grid power for the house outside the cheap window (the EV may use off-peak grid)",
-          "decision_engine": "Decision engine: cortex (Cortex decides) or hermes (Hermes decides; Cortex shows and suggests)"
+          "decision_engine": "Decision engine: ampx (AmpX decides) or hermes (Hermes decides; AmpX shows and suggests)"
         }
       },
       "tariff": {
@@ -164,7 +164,7 @@
       },
       "profile": {
         "title": "Your home",
-        "description": "Names and photos used on the Cortex panel, plus extra sensors to show. Photos can also be uploaded from the panel (Settings).",
+        "description": "Names and photos used on the AmpX panel, plus extra sensors to show. Photos can also be uploaded from the panel (Settings).",
         "data": {
           "battery_name": "Home battery name",
           "ev_name": "EV name",

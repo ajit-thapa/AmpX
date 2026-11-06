@@ -7,17 +7,17 @@ import pytest
 import voluptuous as vol
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
 
-from custom_components.cortex.const import DEFAULTS, DOMAIN
-from custom_components.cortex.migrate import LEGACY
-from custom_components.cortex.learning import detect_chains, detect_routines, service_for
-from custom_components.cortex.heating import lead_minutes
-from custom_components.cortex.visitors import parse_look
+from custom_components.ampx.const import DEFAULTS, DOMAIN
+from custom_components.ampx.migrate import LEGACY
+from custom_components.ampx.learning import detect_chains, detect_routines, service_for
+from custom_components.ampx.heating import lead_minutes
+from custom_components.ampx.visitors import parse_look
 
 UTC = timezone.utc
 
 
 async def _setup(hass: HomeAssistant, **opts):
-    entry = MockConfigEntry(domain=DOMAIN, title="Cortex", data={}, options={**DEFAULTS, **LEGACY, **opts})
+    entry = MockConfigEntry(domain=DOMAIN, title="AmpX", data={}, options={**DEFAULTS, **LEGACY, **opts})
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -163,7 +163,7 @@ async def test_visitor_parcel_flow(hass: HomeAssistant):
     assert entry["kind"] == "parcel"
     assert "front porch" in seen[0]["instructions"]
     assert seen[0]["attachments"][0]["media_content_id"] == "media-source://camera/camera.porch"
-    assert hass.states.get("sensor.cortex_parcels_waiting").state == "1"
+    assert hass.states.get("sensor.ampx_parcels_waiting").state == "1"
     await hass.services.async_call(DOMAIN, "parcels_collected", {}, blocking=True)
     assert brain.visitors.parcels_waiting == 0
 
@@ -247,7 +247,7 @@ async def test_backup_and_restore(hass: HomeAssistant, tmp_path):
     brain.routines.delete("r1")
     assert not brain.book.items and not brain.routines.items
     res = await hass.services.async_call(DOMAIN, "restore", {}, blocking=True, return_response=True)
-    assert res["restored"].startswith("cortex-")
+    assert res["restored"].startswith("ampx-")
     assert [m.text for m in brain.book.items] == ["Wi-Fi is on the fridge"]
     assert "r1" in brain.routines.items
     with pytest.raises(HomeAssistantError):
@@ -271,7 +271,7 @@ async def test_learning_accept_creates_routine(hass: HomeAssistant):
         DOMAIN, "accept_suggestion", {"id": sid}, blocking=True, return_response=True
     )
     assert routine["routine"]["name"] in brain.routines.items
-    assert hass.states.get("sensor.cortex_routine_suggestions").state == str(waiting - 1)
+    assert hass.states.get("sensor.ampx_routine_suggestions").state == str(waiting - 1)
 
 
 # ---- watches with AI / voice room ---------------------------------------------
@@ -310,7 +310,7 @@ async def test_overview_carries_studio_sources(hass: HomeAssistant, hass_ws_clie
     brain = await _setup(hass)
     assert brain.snapshot["low_solar"] == 30.0
     client = await hass_ws_client(hass)
-    await client.send_json({"id": 1, "type": "cortex/overview"})
+    await client.send_json({"id": 1, "type": "ampx/overview"})
     msg = await client.receive_json()
     assert msg["success"]
     studio = msg["result"]["studio"]
@@ -353,26 +353,26 @@ async def test_panel_set_options_and_manual_dispatch(hass: HomeAssistant, hass_w
             sent.append((d, s, dict(call.data)))
         hass.services.async_register(domain, svc, rec)
     ws = await hass_ws_client(hass)
-    await ws.send_json({"id": 1, "type": "cortex/overview"})
+    await ws.send_json({"id": 1, "type": "ampx/overview"})
     ctl = (await ws.receive_json())["result"]["control"]
     assert ctl["autopilot_mode"] == "shadow" and "export_kw" in ctl
     # change mode (rejects unknown keys and out of range values)
-    await ws.send_json({"id": 2, "type": "cortex/set_options", "options": {"secret_key": 1}})
+    await ws.send_json({"id": 2, "type": "ampx/set_options", "options": {"secret_key": 1}})
     assert not (await ws.receive_json())["success"]
-    await ws.send_json({"id": 3, "type": "cortex/set_options", "options": {"export_kw": 99}})
+    await ws.send_json({"id": 3, "type": "ampx/set_options", "options": {"export_kw": 99}})
     assert not (await ws.receive_json())["success"]
-    await ws.send_json({"id": 4, "type": "cortex/set_options", "options": {"autopilot_mode": "off", "auto_topup": False, "export_kw": 6.5}})
+    await ws.send_json({"id": 4, "type": "ampx/set_options", "options": {"autopilot_mode": "off", "auto_topup": False, "export_kw": 6.5}})
     assert (await ws.receive_json())["success"]
     await hass.async_block_till_done()
     entry = hass.config_entries.async_entries(DOMAIN)[0]
     assert entry.options["autopilot_mode"] == "off" and entry.options["export_kw"] == 6.5
     # manual discharge uses the numbers from the panel
-    await ws.send_json({"id": 5, "type": "cortex/action", "action": "manual_export", "kw": 4.0, "soc": 35})
+    await ws.send_json({"id": 5, "type": "ampx/action", "action": "manual_export", "kw": 4.0, "soc": 35})
     assert (await ws.receive_json())["result"]["result"] == "started"
     assert ("number", "set_value", {"entity_id": LEGACY["dispatch_power"], "value": 4.0}) in sent
     assert ("number", "set_value", {"entity_id": LEGACY["discharge_target"], "value": 35.0}) in sent
     assert any(d == "select" and x.get("option") == "Force Discharge" for d, _, x in sent)
-    await ws.send_json({"id": 6, "type": "cortex/action", "action": "manual_stop"})
+    await ws.send_json({"id": 6, "type": "ampx/action", "action": "manual_stop"})
     assert (await ws.receive_json())["result"]["result"] == "stopped"
 
 
@@ -384,11 +384,11 @@ async def test_panel_object_actions_use_target_not_id(hass: HomeAssistant, hass_
     item = brain.add_reminder("Call plumber", dt_util.now() + timedelta(hours=1))
     brain.routines.save({"name": "tidy", "steps": [{"service": "light.turn_off", "target": {"entity_id": "light.x"}}]})
     ws = await hass_ws_client(hass)
-    await ws.send_json({"id": 1, "type": "cortex/memory_delete", "target": mem.id})
+    await ws.send_json({"id": 1, "type": "ampx/memory_delete", "target": mem.id})
     assert (await ws.receive_json())["result"]["deleted"]
-    await ws.send_json({"id": 2, "type": "cortex/cancel", "kind": "reminder", "target": item["id"]})
+    await ws.send_json({"id": 2, "type": "ampx/cancel", "kind": "reminder", "target": item["id"]})
     assert (await ws.receive_json())["result"]["ok"]
-    await ws.send_json({"id": 3, "type": "cortex/action", "action": "delete_routine", "target": "tidy"})
+    await ws.send_json({"id": 3, "type": "ampx/action", "action": "delete_routine", "target": "tidy"})
     assert (await ws.receive_json())["success"] and "tidy" not in brain.routines.items
 
 
@@ -396,17 +396,17 @@ async def test_overview_advice_plans_and_settings(hass: HomeAssistant, hass_ws_c
     async_mock_service(hass, "notify", "send_message")
     brain = await _setup(hass)
     ws = await hass_ws_client(hass)
-    await ws.send_json({"id": 1, "type": "cortex/overview"})
+    await ws.send_json({"id": 1, "type": "ampx/overview"})
     res = (await ws.receive_json())["result"]
     assert res["advice"] and res["plans"] == [] and "health_ignore" in res["settings"]
     plan = {"id": "p1", "name": "Flat", "supply": 100, "import_default": 30, "fit_default": 5,
             "import": [{"from": 10, "to": 14, "rate": 10, "days": "all"}], "junk": 1}
-    await ws.send_json({"id": 2, "type": "cortex/plans_save", "plans": [plan]})
+    await ws.send_json({"id": 2, "type": "ampx/plans_save", "plans": [plan]})
     out = await ws.receive_json()
     assert out["success"] and "junk" not in out["result"]["plans"][0] and brain.plans[0]["name"] == "Flat"
-    await ws.send_json({"id": 3, "type": "cortex/plans_save", "plans": [{**plan, "supply": -5}]})
+    await ws.send_json({"id": 3, "type": "ampx/plans_save", "plans": [{**plan, "supply": -5}]})
     assert not (await ws.receive_json())["success"]
-    await ws.send_json({"id": 4, "type": "cortex/set_options", "options": {"health_ignore": ["switch.x"], "ai_per_hour": 20}})
+    await ws.send_json({"id": 4, "type": "ampx/set_options", "options": {"health_ignore": ["switch.x"], "ai_per_hour": 20}})
     assert (await ws.receive_json())["success"]
     await hass.async_block_till_done()
     assert hass.config_entries.async_entries(DOMAIN)[0].options["health_ignore"] == ["switch.x"]
@@ -458,7 +458,7 @@ async def test_health_skips_energy_counters_and_does_not_repeat(hass: HomeAssist
     async_mock_service(hass, "notify", "send_message")
     brain = await _setup(hass)
     pushes = []
-    async def push(text, title="Cortex"):
+    async def push(text, title="AmpX"):
         pushes.append(text)
         return True
     brain.speaker.push = push
@@ -477,9 +477,9 @@ async def test_push_categories_can_be_muted_and_are_logged(hass: HomeAssistant):
     sent = async_mock_service(hass, "notify", "mobile_app_phone")
     entry_brain = await _setup(hass, notify="notify.mobile_app_phone", mute_push=["health"])
     sp = entry_brain.speaker
-    assert sp.category("Cortex house health") == "health" and sp.category("Cortex autopilot") == "autopilot"
-    assert await sp.push("Door battery at 9%", title="Cortex house health") is False
-    assert await sp.push("Export started", title="Cortex energy") is True
+    assert sp.category("AmpX house health") == "health" and sp.category("AmpX autopilot") == "autopilot"
+    assert await sp.push("Door battery at 9%", title="AmpX house health") is False
+    assert await sp.push("Export started", title="AmpX energy") is True
     assert [p["category"] for p in sp.push_log] == ["energy", "health"]
     assert sp.push_log[1]["muted"] and sp.push_log[0]["sent"] and len(sent) == 1
 
@@ -523,7 +523,7 @@ async def test_planner_runs_publishes_and_autopilot_can_follow(hass: HomeAssista
     assert plan and plan["summary"] and plan["follow"] and len(plan["rows"]) == 96
     brain.refresh()
     ws = await hass_ws_client(hass)
-    await ws.send_json({"id": 1, "type": "cortex/overview"})
+    await ws.send_json({"id": 1, "type": "ampx/overview"})
     res = (await ws.receive_json())["result"]
     assert res["plan"]["summary"] == plan["summary"] and res["control"]["use_planner"] is True
     d = await brain.autopilot.decide("topup", False)
@@ -534,10 +534,10 @@ async def test_same_notification_is_not_pushed_again(hass: HomeAssistant):
     sent = async_mock_service(hass, "notify", "mobile_app_phone")
     brain = await _setup(hass, notify="notify.mobile_app_phone")
     sp = brain.speaker
-    assert await sp.push("Grid top-up started: solar short by 12.4 kWh.", title="Cortex energy")
-    assert not await sp.push("Grid top-up started: solar short by 9.1 kWh.", title="Cortex energy")  # same message, new number
+    assert await sp.push("Grid top-up started: solar short by 12.4 kWh.", title="AmpX energy")
+    assert not await sp.push("Grid top-up started: solar short by 9.1 kWh.", title="AmpX energy")  # same message, new number
     assert sp.push_log[0]["repeat"] and len(sent) == 1
-    assert await sp.push("Supply charge covered ($1.67 earned).", title="Cortex energy")
+    assert await sp.push("Supply charge covered ($1.67 earned).", title="AmpX energy")
     assert len(sent) == 2
 
 
@@ -578,7 +578,7 @@ async def test_house_rule_guard(hass: HomeAssistant):
 
 
 async def test_decision_engine_hermes_blocks_writes_and_watches(hass: HomeAssistant):
-    """Hermes decides: Cortex writes nothing to the battery or EV, only alerts on a house-rule breach."""
+    """Hermes decides: AmpX writes nothing to the battery or EV, only alerts on a house-rule breach."""
     async_mock_service(hass, "notify", "send_message")
     sent = []
     for domain, svc in (("number", "set_value"), ("select", "select_option"), ("button", "press")):
@@ -604,9 +604,9 @@ async def test_decision_engine_hermes_blocks_writes_and_watches(hass: HomeAssist
 
 
 def test_decision_engine_validator_accepts_only_two_values():
-    from custom_components.cortex.websocket import CONTROL_OPTIONS
-    from custom_components.cortex.const import CONF_ENGINE
+    from custom_components.ampx.websocket import CONTROL_OPTIONS
+    from custom_components.ampx.const import CONF_ENGINE
     check = CONTROL_OPTIONS[CONF_ENGINE]
-    assert check("hermes") == "hermes" and check("cortex") == "cortex"
+    assert check("hermes") == "hermes" and check("ampx") == "ampx"
     with pytest.raises(vol.Invalid):
         check("both")

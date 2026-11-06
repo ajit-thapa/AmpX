@@ -1,6 +1,6 @@
 {
-  "domain": "cortex",
-  "name": "Cortex",
+  "domain": "ampx",
+  "name": "AmpX",
   "after_dependencies": [
     "assist_satellite",
     "conversation",
@@ -12,10 +12,10 @@
   "codeowners": ["@ajit-thapa"],
   "config_flow": true,
   "dependencies": ["websocket_api"],
-  "documentation": "https://github.com/ajit-thapa/Cortex",
+  "documentation": "https://github.com/ajit-thapa/AmpX",
   "integration_type": "service",
   "iot_class": "calculated",
-  "issue_tracker": "https://github.com/ajit-thapa/Cortex/issues",
+  "issue_tracker": "https://github.com/ajit-thapa/AmpX/issues",
   "requirements": [],
   "version": "0.23.0"
 }
