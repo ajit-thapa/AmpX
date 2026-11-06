@@ -1,4 +1,4 @@
-/* Cortex Energy Studio. Vanilla custom element: live power flow, rate ribbon,
+/* AmpX Energy Studio. Vanilla custom element: live power flow, rate ribbon,
    24h chart, plan, history & analytics and house status. No build step, no libraries. */
 const C = {
   solar: "#F5B800", grid: "#6F7BE8", batt: "#2DB67C", ev: "#3E9BEA", home: "#FF5401",
@@ -75,11 +75,11 @@ const CAT_ICON = { fact: "📌", preference: "⭐", person: "👤", place: "📍
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fx = (v, n = 1) => (v === null || v === undefined || Number.isNaN(v) ? "–" : Number(v).toFixed(n));
 
-class CortexStudio extends HTMLElement {
+class AmpXStudio extends HTMLElement {
   constructor() {
     super();
     let t = "now", sub = {};
-    try { t = localStorage.getItem("cortex-studio-tab") || "now"; sub = JSON.parse(localStorage.getItem("cortex-studio-sub") || "{}"); } catch (e) { /* ignore */ }
+    try { t = localStorage.getItem("ampx-studio-tab") || "now"; sub = JSON.parse(localStorage.getItem("ampx-studio-sub") || "{}"); } catch (e) { /* ignore */ }
     this._sub = sub && typeof sub === "object" ? sub : {};
     if (ALIAS[t]) { this._sub[ALIAS[t][0]] = ALIAS[t][1]; t = ALIAS[t][0]; }
     this._tab = TABS.some(x => x[0] === t) || t === "settings" ? t : "now";
@@ -105,9 +105,9 @@ class CortexStudio extends HTMLElement {
   // ---- data -----------------------------------------------------------
   async _load() {
     try {
-      this._data = await this._hass.callWS({ type: "cortex/overview" });
+      this._data = await this._hass.callWS({ type: "ampx/overview" });
     } catch (e) {
-      this._root.querySelector("#view").textContent = "Cortex is not loaded: " + (e.message || e.code);
+      this._root.querySelector("#view").textContent = "AmpX is not loaded: " + (e.message || e.code);
       return;
     }
     const a = this._root.activeElement;
@@ -242,7 +242,7 @@ class CortexStudio extends HTMLElement {
   async _loadSeries() {
     const s = this._data.studio || {};
     const ids = [s.pv, s.grid, s.battery, s.ev, s.soc].filter(Boolean);
-    if (!ids.length) { const el = this._root.querySelector("#chart"); if (el) el.innerHTML = '<div class="muted">Pick your solar, grid and battery power sensors in Cortex options to see this chart.</div>'; return; }
+    if (!ids.length) { const el = this._root.querySelector("#chart"); if (el) el.innerHTML = '<div class="muted">Pick your solar, grid and battery power sensors in AmpX options to see this chart.</div>'; return; }
     const end = new Date(), start = new Date(end.getTime() - 24 * 3600 * 1000);
     try {
       const res = await this._hass.callWS({
@@ -281,10 +281,10 @@ class CortexStudio extends HTMLElement {
     this._root.innerHTML = `<style>${CSS}</style>
       <div class="bg" aria-hidden="true"></div>
       <header class="top">
-        <div class="brand"><img class="logo" src="/cortex_static/icon.svg" alt="" width="40" height="40"><div><h1>Cortex</h1><div class="sub" id="greet"></div></div></div>
+        <div class="brand"><img class="logo" src="/ampx_static/icon.svg" alt="" width="40" height="40"><div><h1>AmpX</h1><div class="sub" id="greet"></div></div></div>
         <nav id="tabs" aria-label="Sections"></nav>
         <div class="tools"><span id="clock" class="clock"></span>
-          <button class="ib" id="chatbtn" aria-label="Ask Cortex" title="Ask Cortex">${icon("chat")}</button>
+          <button class="ib" id="chatbtn" aria-label="Ask AmpX" title="Ask AmpX">${icon("chat")}</button>
           <button class="ib" id="bell" aria-label="Alerts" title="Alerts">${icon("bell")}<i class="badge" id="badge" hidden></i></button>
           <button class="ib" id="theme" aria-label="Switch theme"></button>
           <button class="ib" id="gear" aria-label="Settings" title="Settings">${icon("gear")}</button></div>
@@ -301,14 +301,14 @@ class CortexStudio extends HTMLElement {
     this._root.querySelector("#chatbtn").onclick = () => { this._go("assistant"); const i = this._root.querySelector("#chatin"); if (i) i.focus(); };
     this._root.querySelector("#theme").onclick = () => {
       const next = { auto: "light", light: "dark", dark: "auto" }[this._themePref()];
-      try { localStorage.setItem("cortex-studio-theme", next); } catch (e) { /* ignore */ }
+      try { localStorage.setItem("ampx-studio-theme", next); } catch (e) { /* ignore */ }
       this._applyTheme(); this._paintChart();
     };
     this._applyTheme();
     this._w = 0;
     if (window.ResizeObserver) { this._ro = new ResizeObserver(() => { const w = this.clientWidth; if (Math.abs(w - this._w) > 24) { this._w = w; if (this._tab === "now") this._paintLive(); if (this._key() === "energy/today") this._paintChart(); } }); this._ro.observe(this); }
   }
-  _themePref() { try { return localStorage.getItem("cortex-studio-theme") || "auto"; } catch (e) { return "auto"; } }
+  _themePref() { try { return localStorage.getItem("ampx-studio-theme") || "auto"; } catch (e) { return "auto"; } }
   _applyTheme() {
     const pref = this._themePref(), hd = this._hass && this._hass.themes ? this._hass.themes.darkMode : undefined;
     const dark = pref === "dark" || (pref === "auto" && (hd !== undefined ? !!hd : !!(window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches)));
@@ -321,7 +321,7 @@ class CortexStudio extends HTMLElement {
     if (tab.includes("/")) [tab, sub] = tab.split("/");
     this._tab = tab;
     if (sub) this._sub[tab] = sub;
-    try { localStorage.setItem("cortex-studio-tab", tab); localStorage.setItem("cortex-studio-sub", JSON.stringify(this._sub)); } catch (e) { /* ignore */ }
+    try { localStorage.setItem("ampx-studio-tab", tab); localStorage.setItem("ampx-studio-sub", JSON.stringify(this._sub)); } catch (e) { /* ignore */ }
     this._render();
     this._fetchFor(true);
     try { this._root.querySelector("#view").scrollIntoView({ block: "start" }); } catch (e) { /* ignore */ }
@@ -399,11 +399,11 @@ class CortexStudio extends HTMLElement {
   _insight() {
     const d = this._data, sec = d.security || { ok: true, issues: [] }, last = ((d.autopilot || {}).decisions || [])[0];
     const pf = this._pf();
-    if (!pf.battery.soc && !pf.solar.power && !pf.grid) return { tone: "act", ic: "gear", title: "Finish setting up Cortex", text: "Pick your solar, grid and battery sensors, then your tariff.", go: "settings" };
+    if (!pf.battery.soc && !pf.solar.power && !pf.grid) return { tone: "act", ic: "gear", title: "Finish setting up AmpX", text: "Pick your solar, grid and battery sensors, then your tariff.", go: "settings" };
     if ((d.health || []).length) return { tone: "warn", ic: "bell", title: d.health.length > 1 ? `${d.health.length} things need attention` : "Needs attention", text: d.health[0] + (d.health.length > 1 ? ` and ${d.health.length - 1} more` : ""), go: "house" };
     if (!sec.ok) return { tone: "warn", ic: "bell", title: "Security", text: (sec.issues || [])[0] || "Check doors and locks", go: "house" };
     const tip = (d.advice || []).find(t => t.level !== "info");
-    if (tip) return { tone: tip.level === "warn" ? "warn" : "act", ic: tip.level === "warn" ? "bell" : "bolt", title: tip.text, text: tip.why || "Cortex suggests", go: "now" };
+    if (tip) return { tone: tip.level === "warn" ? "warn" : "act", ic: tip.level === "warn" ? "bell" : "bolt", title: tip.text, text: tip.why || "AmpX suggests", go: "now" };
     if (last) return { tone: "ok", ic: "spark", title: `Autopilot: ${last.window === "topup" ? "top-up" : "evening export"} ${last.do ? "go" : "hold"}`, text: last.reason || "", go: "plan" };
     return { tone: "ok", ic: "check", title: "All systems normal", text: "Nothing needs your attention right now.", go: null };
   }
@@ -439,7 +439,7 @@ class CortexStudio extends HTMLElement {
         <div class="ribbon" title="Import rate by hour">${hours}</div>
         <div class="ticks"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>
         <div class="nextline" id="nextline"></div><div class="prog"><i id="np"></i></div></div>
-      <div class="card wide"><div class="chead"><h2>Cortex suggests</h2><button class="ghost" data-go="energy/today">Today's energy ↗</button></div>${this._adviceHtml()}</div>
+      <div class="card wide"><div class="chead"><h2>AmpX suggests</h2><button class="ghost" data-go="energy/today">Today's energy ↗</button></div>${this._adviceHtml()}</div>
     </section>`;
   }
 
@@ -623,7 +623,7 @@ class CortexStudio extends HTMLElement {
   /** Placeholder for a view whose entities aren't chosen yet, with a link to the right options page. */
   _needSetup(title, text) {
     return `<div class="card wide"><h2>${esc(title)}</h2><div class="muted" style="margin:6px 0 12px">${esc(text)}</div>
-      <a class="lnk" href="/config/integrations/integration/cortex" target="_top">Open Cortex options ↗</a></div>`;
+      <a class="lnk" href="/config/integrations/integration/ampx" target="_top">Open AmpX options ↗</a></div>`;
   }
   _evCtlCard() {
     const EV = this._disc().ev, sw = this._rates().sw, win = EV.start && EV.end;
@@ -934,7 +934,7 @@ class CortexStudio extends HTMLElement {
   _ctlCards() {
     const d = this._data, c = d.control; if (!c) return "";
     const mode = this._ctlMode(), manual = mode === "manual";
-    const MODES = [["manual", "✋", "Manual", "You decide. Cortex never starts or stops the battery."],
+    const MODES = [["manual", "✋", "Manual", "You decide. AmpX never starts or stops the battery."],
       ["timers", "⏱", "Timers", "Fixed windows: grid top-up in the shoulder, export in the evening."],
       ["advise", "💡", "Advise", "Autopilot plans each window and tells you. It takes no action."],
       ["auto", "🤖", "Autopilot", "Your local AI plans inside hard limits, then acts by itself."]];
@@ -956,6 +956,8 @@ class CortexStudio extends HTMLElement {
       <div class="ctl2">
         <div><h3>Limits <span class="muted">used by timers, Autopilot and manual dispatch</span></h3>
           ${slider("export_kw", "Export power", 0.5, 10, 0.5, "kW")}${slider("export_floor", "Export floor, battery stops at", 10, 90, 1, "%")}${slider("topup_kw", "Top-up power", 0.5, 10, 0.5, "kW")}
+          <div class="evfirst"><div class="row"><span><b>Decision engine</b><span class="muted">AmpX decides and writes the battery and EV, or Hermes decides and writes; AmpX then only shows Hermes's decisions and suggests.</span></span><div class="seg"><button data-engine="ampx" class="${(c.decision_engine || "ampx") === "ampx" ? "on" : ""}">AmpX</button><button data-engine="hermes" class="${c.decision_engine === "hermes" ? "on" : ""}">Hermes</button></div></div>
+            ${c.decision_engine === "hermes" ? `<div class="evnote">${icon("home")}<span>Hermes is in control. AmpX does not write battery or EV settings. The house rule is watched and you get an alert on a breach.</span></div>` : ""}</div>
           <div class="evfirst"><label class="row"><span><b>House rule</b><span class="muted">Outside ${wl(this._rates().sw)} the house never buys grid power: exports stop at what the house needs until then, and an off-peak EV charges from the grid while the battery covers only the house.</span></span>${this._toggle(`data-optrule="1"`, c.house_rule)}</label>
             ${d.energy.house_note ? `<div class="evnote">${icon("home")}<span>${esc(d.energy.house_note)}</span></div>` : ""}</div>
           <div class="evfirst"><label class="row"><span><b>EV first</b><span class="muted">While the EV charges during an export, the battery feeds the car first. It exports until the daily supply charge is covered, then only ${Math.round((c.ev_trickle_kw ?? 0.2) * 1000)} W to cover the inverter.</span></span>${this._toggle(`data-optev="1"`, c.ev_priority)}</label>
@@ -981,7 +983,7 @@ class CortexStudio extends HTMLElement {
     const label = { timers: "Timers", advise: "Advise", auto: "Autopilot" }[mode];
     if (!blocks) return "";
     return `<div class="card wide"><h2>Inverter and battery settings</h2>
-      ${manual ? "" : `<div class="lockbar"><span>🔒 Locked while Cortex runs <b>${label}</b>, so it and your edits don't fight.</span><button id="to-manual">Switch to Manual</button></div>`}
+      ${manual ? "" : `<div class="lockbar"><span>🔒 Locked while AmpX runs <b>${label}</b>, so it and your edits don't fight.</span><button id="to-manual">Switch to Manual</button></div>`}
       <div class="grps ${manual ? "" : "locked"}">${blocks}</div>
       <div class="muted" style="margin-top:8px">These write straight to your battery and inverter entities.</div></div>`;
   }
@@ -989,7 +991,7 @@ class CortexStudio extends HTMLElement {
     const r = this._root, q = s => r.querySelector(s), msg = (t, bad) => { const m = q("#ctl-msg"); if (m) { m.textContent = t; m.className = "toast" + (t ? " show" : "") + (bad ? " bad" : ""); } };
     const presets = { manual: { autopilot_mode: "off", auto_topup: false, auto_export: false }, timers: { autopilot_mode: "off", auto_topup: true, auto_export: true },
       advise: { autopilot_mode: "shadow", auto_topup: false, auto_export: false }, auto: { autopilot_mode: "auto" } };
-    const save = async options => { msg("Saving…"); try { await this._hass.callWS({ type: "cortex/set_options", options }); msg("Saved. Cortex is reloading…"); setTimeout(() => this._load(), 3500); } catch (e) { msg("Failed: " + (e.message || e.code), true); } };
+    const save = async options => { msg("Saving…"); try { await this._hass.callWS({ type: "ampx/set_options", options }); msg("Saved. AmpX is reloading…"); setTimeout(() => this._load(), 3500); } catch (e) { msg("Failed: " + (e.message || e.code), true); } };
     r.querySelectorAll("[data-cm]").forEach(b => b.onclick = () => { if (b.dataset.cm !== this._ctlMode()) save(presets[b.dataset.cm]); });
     const tm = q("#to-manual"); if (tm) tm.onclick = () => save(presets.manual);
     const key = { export_kw: "export_kw", topup_kw: "topup_kw", export_floor: "export_floor_soc" };
@@ -1001,7 +1003,8 @@ class CortexStudio extends HTMLElement {
     r.querySelectorAll("[data-optb]").forEach(i => i.onchange = () => save({ autopilot_use_ai: i.checked }));
     r.querySelectorAll("[data-optev]").forEach(i => i.onchange = () => save({ ev_priority: i.checked }));
     r.querySelectorAll("[data-optrule]").forEach(i => i.onchange = () => save({ house_off_grid: i.checked }));
-    const act = async (action, extra) => { msg("Sending…"); try { const x = await this._hass.callWS({ type: "cortex/action", action, ...extra }); msg(typeof x.result === "string" ? x.result : "Done"); } catch (e) { msg("Failed: " + (e.message || e.code), true); } setTimeout(() => this._load(), 1500); };
+    r.querySelectorAll("[data-engine]").forEach(b => b.onclick = () => save({ decision_engine: b.dataset.engine }));
+    const act = async (action, extra) => { msg("Sending…"); try { const x = await this._hass.callWS({ type: "ampx/action", action, ...extra }); msg(typeof x.result === "string" ? x.result : "Done"); } catch (e) { msg("Failed: " + (e.message || e.code), true); } setTimeout(() => this._load(), 1500); };
     const val = k => parseFloat((q(`[data-opt="${k}"]`) || {}).value);
     const click = (id, fn) => { const el = q(id); if (el) el.onclick = fn; };
     click("#m-exp", () => act("manual_export", { kw: val("export_kw"), soc: val("export_floor") }));
@@ -1030,7 +1033,7 @@ class CortexStudio extends HTMLElement {
     if (!tips.length) return '<div class="muted">No tips right now.</div>';
     const ic = { warn: "bell", act: "bolt", info: "spark" };
     return `<div class="tips">${tips.map(t => `<div class="tip-row ${t.level}"><span class="tic">${icon(ic[t.level] || "spark")}</span><div><b>${esc(t.text)}</b>${t.why ? `<span>${esc(t.why)}</span>` : ""}</div></div>`).join("")}</div>
-      <div class="muted" style="margin-top:10px">Instant checks, no AI needed. <button class="ghost" data-go="assistant">Ask Cortex ↗</button></div>`;
+      <div class="muted" style="margin-top:10px">Instant checks, no AI needed. <button class="ghost" data-go="assistant">Ask AmpX ↗</button></div>`;
   }
   /** Today's energy split by path, rebuilt hour by hour from the meter counters. */
   _splitToday() {
@@ -1098,7 +1101,7 @@ class CortexStudio extends HTMLElement {
     q("#pl-add").onclick = () => { this._plansDraft.push({ id: "p" + Date.now().toString(36), name: "New plan", supply: 110, import_default: 30, import: [{ from: 10, to: 14, rate: 15, days: "all" }], fit_default: 5, fit: [] }); this._paintPlans(); };
     q("#pl-save").onclick = async () => {
       const m = q("#pl-msg"), show = (t, bad) => { m.textContent = t; m.className = "toast show" + (bad ? " bad" : ""); };
-      try { const x = await this._hass.callWS({ type: "cortex/plans_save", plans: this._plansDraft }); this._data.plans = x.plans; show("Saved."); this._paintCompare(); }
+      try { const x = await this._hass.callWS({ type: "ampx/plans_save", plans: this._plansDraft }); this._data.plans = x.plans; show("Saved."); this._paintCompare(); }
       catch (e) { show("Failed: " + (e.message || e.code), true); }
     };
   }
@@ -1106,7 +1109,7 @@ class CortexStudio extends HTMLElement {
   // ---- DEVICES (all) ---------------------------------------------------------
   _viewDevices() {
     return `<section class="grid">
-      <div class="card wide"><div class="chead"><h2>Devices</h2><span class="muted">Energy hardware Cortex reads and controls</span></div><div id="devs"><div class="muted">Loading devices…</div></div></div>
+      <div class="card wide"><div class="chead"><h2>Devices</h2><span class="muted">Energy hardware AmpX reads and controls</span></div><div id="devs"><div class="muted">Loading devices…</div></div></div>
       ${this._sysCards()}
     </section>`;
   }
@@ -1115,8 +1118,8 @@ class CortexStudio extends HTMLElement {
   _viewSettings() {
     const st = this._data.settings || {}, muted = new Set(this._data.mute_push || []);
     return `<section class="grid">
-      <div class="card wide sethead"><div><h2>Settings</h2><div class="muted">How Cortex behaves. Device controls live under Devices; plans under Energy → Compare plans.</div></div>
-        <a class="lnk" href="/config/integrations/integration/cortex" target="_top">All integration options ↗</a></div>
+      <div class="card wide sethead"><div><h2>Settings</h2><div class="muted">How AmpX behaves. Device controls live under Devices; plans under Energy → Compare plans.</div></div>
+        <a class="lnk" href="/config/integrations/integration/ampx" target="_top">All integration options ↗</a></div>
       <div class="card w6"><h2>AI and chat</h2>
         <div class="row"><span>Answer style</span><span class="seg" id="set-style">${[["brief", "Brief"], ["normal", "Normal"], ["detailed", "Detailed"]].map(([k, l]) => `<button data-style="${k}" class="${(st.style || "brief") === k ? "on" : ""}">${l}</button>`).join("")}</span></div>
         <div class="row col"><span>Household instructions <span class="muted">followed in every chat, e.g. "Call me Sam. Use 24-hour time."</span></span>
@@ -1126,7 +1129,7 @@ class CortexStudio extends HTMLElement {
         <div class="row"><span>AI calls allowed per hour</span><div class="nstep"><input type="number" id="set-aph" min="0" max="120" step="1" value="${st.ai_per_hour ?? 12}"></div></div>
         <div class="row"><span>Speakers</span><b class="${st.speakers ? "ok" : "bad"}">${st.speakers ? "set up" : "none chosen"}</b></div>
         <div class="row"><span>Camera vision (AI Task)</span><b class="${st.ai_task ? "ok" : "bad"}">${st.ai_task ? "set up" : "not set up"}</b></div></div>
-      <div class="card w6"><h2>Phone notifications</h2><div class="muted" style="margin-bottom:6px">Choose what Cortex pushes to your phone. Everything is still listed under the bell.</div>
+      <div class="card w6"><h2>Phone notifications</h2><div class="muted" style="margin-bottom:6px">Choose what AmpX pushes to your phone. Everything is still listed under the bell.</div>
         ${PUSH_CATS.map(([k, l]) => `<label class="row"><span>${l}</span>${this._toggle(`data-mute="${k}"`, !muted.has(k))}</label>`).join("")}</div>
       ${this._homeCard()}${this._photoCard()}${this._tariffCard()}${this._checkCard()}
       <div class="toast wide" id="set-msg" style="grid-column:1/-1"></div>
@@ -1141,7 +1144,7 @@ class CortexStudio extends HTMLElement {
       ${num("battery_kwh", "Battery capacity", b.capacity, 1, 500, 0.1, "kWh")}${num("battery_reserve_pct", "Battery reserve", b.reserve, 0, 100, 1, "%")}
       ${num("battery_efficiency", "Round-trip efficiency", b.efficiency, 50, 100, 1, "%")}${num("ev_kwh", "EV battery", e.capacity, 1, 300, 0.1, "kWh")}
       ${num("ev_charger_kw", "Charger power", e.charger_kw, 1, 50, 0.1, "kW")}
-      <div class="rowend" style="margin-top:8px"><span class="muted">Entities are picked in Cortex options.</span><button id="home-save">Save</button></div></div>`;
+      <div class="rowend" style="margin-top:8px"><span class="muted">Entities are picked in AmpX options.</span><button id="home-save">Save</button></div></div>`;
   }
   _photoCard() {
     const ph = this._pf().photos, slot = (k, l, sub) => `<div class="phslot"><div class="phthumb">${ph[k] ? `<img src="${esc(ph[k])}" alt="" onerror="this.remove()">` : icon("camera")}</div>
@@ -1169,11 +1172,11 @@ class CortexStudio extends HTMLElement {
       ["Solar forecast", pf.solar.today], ["Daily energy counters", d.pv && d.import && d.export], ["Public holidays", pf.holidays], ["EV battery level", pf.ev.soc],
       ["Charger power", pf.charger.power], ["Phone notifications", pf.notify], ["Speakers", (this._data.settings || {}).speakers]];
     const miss = items.filter(x => !ok(x[1])).length;
-    return `<div class="card wide"><div class="chead"><h2>Setup check <span class="muted">${miss ? miss + " not set" : "all set"}</span></h2><a class="lnk" href="/config/integrations/integration/cortex" target="_top">Pick entities ↗</a></div>
+    return `<div class="card wide"><div class="chead"><h2>Setup check <span class="muted">${miss ? miss + " not set" : "all set"}</span></h2><a class="lnk" href="/config/integrations/integration/ampx" target="_top">Pick entities ↗</a></div>
       <div class="checks">${items.map(([l, v]) => `<span class="chk ${ok(v) ? "ok" : ""}">${ok(v) ? icon("check") : "○"} ${l}</span>`).join("")}</div>
       <div class="muted" style="margin-top:8px">Only what you set is used; pages without their entities show a short setup note instead.</div></div>`;
   }
-  /** Resize a picked image in the browser, then store it through Cortex. */
+  /** Resize a picked image in the browser, then store it through AmpX. */
   _uploadPhoto(kind) {
     const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/png,image/jpeg,image/webp,image/gif";
     inp.onchange = () => {
@@ -1187,7 +1190,7 @@ class CortexStudio extends HTMLElement {
         cv.width = Math.round(im.naturalWidth * k); cv.height = Math.round(im.naturalHeight * k);
         cv.getContext("2d").drawImage(im, 0, 0, cv.width, cv.height);
         const data = cv.toDataURL(png ? "image/png" : "image/jpeg", 0.86);
-        try { await this._hass.callWS({ type: "cortex/upload", kind, data }); this._toast("Saved. Cortex is reloading…"); this._dc = null; setTimeout(() => this._load(), 3000); }
+        try { await this._hass.callWS({ type: "ampx/upload", kind, data }); this._toast("Saved. AmpX is reloading…"); this._dc = null; setTimeout(() => this._load(), 3000); }
         catch (e) { this._toast("Upload failed: " + (e.message || e.code), true); }
       };
       im.onerror = () => { URL.revokeObjectURL(url); this._toast("That file isn't an image this browser can read.", true); };
@@ -1196,7 +1199,7 @@ class CortexStudio extends HTMLElement {
     inp.click();
   }
   async _removePhoto(kind) {
-    try { await this._hass.callWS({ type: "cortex/upload", kind }); this._toast("Photo removed."); setTimeout(() => this._load(), 3000); }
+    try { await this._hass.callWS({ type: "ampx/upload", kind }); this._toast("Photo removed."); setTimeout(() => this._load(), 3000); }
     catch (e) { this._toast("Failed: " + (e.message || e.code), true); }
   }
   _toast(text, bad) {
@@ -1207,7 +1210,7 @@ class CortexStudio extends HTMLElement {
   }
   _saveOpts(opts, msgSel = "#set-msg") {
     const m = this._root.querySelector(msgSel), msg = (t, bad) => { if (m) { m.textContent = t; m.className = "toast show" + (bad ? " bad" : ""); } };
-    return this._hass.callWS({ type: "cortex/set_options", options: opts }).then(() => { msg("Saved. Cortex is reloading…"); setTimeout(() => this._load(), 3500); }, e => msg("Failed: " + (e.message || e.code), true));
+    return this._hass.callWS({ type: "ampx/set_options", options: opts }).then(() => { msg("Saved. AmpX is reloading…"); setTimeout(() => this._load(), 3500); }, e => msg("Failed: " + (e.message || e.code), true));
   }
   _wireSettings() {
     const r = this._root, q = s => r.querySelector(s), d = this._data, save = o => this._saveOpts(o);
@@ -1291,7 +1294,7 @@ class CortexStudio extends HTMLElement {
       const ids = byDev[t.dataset.watch] || [], set = new Set(ignore);
       ids.forEach(id => (t.checked ? set.delete(id) : set.add(id)));
       const m = el.querySelector("#dev-msg");
-      try { await this._hass.callWS({ type: "cortex/set_options", options: { health_ignore: [...set] } }); m.textContent = t.checked ? "House health watches it again." : "House health will ignore it."; m.className = "toast show"; setTimeout(() => this._load(), 3500); }
+      try { await this._hass.callWS({ type: "ampx/set_options", options: { health_ignore: [...set] } }); m.textContent = t.checked ? "House health watches it again." : "House health will ignore it."; m.className = "toast show"; setTimeout(() => this._load(), 3500); }
       catch (e) { m.textContent = "Failed: " + (e.message || e.code); m.className = "toast show bad"; }
     });
   }
@@ -1304,19 +1307,19 @@ class CortexStudio extends HTMLElement {
     return this._agentList;
   }
   _chatState() {
-    if (!this._chat) { try { this._chat = JSON.parse(sessionStorage.getItem("cortex-chat") || "null"); } catch (e) { /* ignore */ } }
+    if (!this._chat) { try { this._chat = JSON.parse(sessionStorage.getItem("ampx-chat") || "null"); } catch (e) { /* ignore */ } }
     if (!this._chat) this._chat = { msgs: [], cid: null };
     return this._chat;
   }
   _chatPrefs() {
-    let p = {}; try { p = JSON.parse(localStorage.getItem("cortex-chat-prefs") || "{}"); } catch (e) { /* ignore */ }
+    let p = {}; try { p = JSON.parse(localStorage.getItem("ampx-chat-prefs") || "{}"); } catch (e) { /* ignore */ }
     return { speak: "off", cat: "energy", mine: [], ...p };
   }
-  _setChatPrefs(ch) { const p = { ...this._chatPrefs(), ...ch }; try { localStorage.setItem("cortex-chat-prefs", JSON.stringify(p)); } catch (e) { /* ignore */ } return p; }
+  _setChatPrefs(ch) { const p = { ...this._chatPrefs(), ...ch }; try { localStorage.setItem("ampx-chat-prefs", JSON.stringify(p)); } catch (e) { /* ignore */ } return p; }
   _chatCard() {
     const pr = this._chatPrefs(), mic = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
     const cats = [["energy", "Energy"], ["ev", "EV"], ["house", "House"], ["routines", "Routines"], ["remind", "Reminders"], ["mine", "My prompts"]];
-    return `<div class="card wide chat"><div class="chead"><h2>${icon("spark")} Ask Cortex</h2>
+    return `<div class="card wide chat"><div class="chead"><h2>${icon("spark")} Ask AmpX</h2>
         <div class="chtools"><select id="chat-agent" aria-label="Agent"></select>
           <select id="chat-speak" aria-label="Speak replies"><option value="off">Silent</option><option value="device">Speak here</option><option value="house">Speak on speakers</option></select>
           <button class="ghost" id="chat-export" title="Download this chat">Export</button><button class="ghost" id="chat-new">New chat</button></div></div>
@@ -1324,7 +1327,7 @@ class CortexStudio extends HTMLElement {
       <div class="pcats seg">${cats.map(([k, l]) => `<button data-pcat="${k}" class="${pr.cat === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div class="qp" id="qp"></div>
       <form class="chatf" id="chatf">${mic ? `<button type="button" class="mic" id="chatmic" aria-label="Speak your message">${icon("mic")}</button>` : ""}
-        <input id="chatin" autocomplete="off" placeholder="Ask anything, or tell Cortex what to do…" aria-label="Message">
+        <input id="chatin" autocomplete="off" placeholder="Ask anything, or tell AmpX what to do…" aria-label="Message">
         <button type="button" class="star" id="chatstar" aria-label="Save as one of my prompts" title="Save as my prompt">${icon("star")}</button>
         <button type="submit" aria-label="Send" id="chatsend">${icon("send")}</button></form></div>`;
   }
@@ -1354,7 +1357,7 @@ class CortexStudio extends HTMLElement {
         ${m.who === "ai" ? `<div class="macts"><button class="ghost" data-mcopy="${i}">Copy</button><button class="ghost" data-mspeak="${i}">Speak</button>${i === lastAi ? '<button class="ghost" data-mretry="1">Retry</button>' : ""}${m.t ? `<span class="muted">${m.t}</span>` : ""}</div>` : ""}</div>`).join("")
         + (this._chatBusy ? '<div class="msg ai typing"><i></i><i></i><i></i></div>' : "")
       : `<div class="empty">${icon("spark")}<b>Ask about your energy, house or reminders.</b>
-          <span>Cortex can control the battery, give tips, look at cameras, announce on speakers, set reminders and watches, and create or run routines. With Assist turned on for your agent it can also control any exposed device.</span></div>`;
+          <span>AmpX can control the battery, give tips, look at cameras, announce on speakers, set reminders and watches, and create or run routines. With Assist turned on for your agent it can also control any exposed device.</span></div>`;
     const say = t => this._speak(t);
     el.querySelectorAll("[data-mcopy]").forEach(b => b.onclick = () => { try { navigator.clipboard.writeText(c.msgs[b.dataset.mcopy].text); b.textContent = "Copied"; } catch (e) { /* ignore */ } });
     el.querySelectorAll("[data-mspeak]").forEach(b => b.onclick = () => say(c.msgs[b.dataset.mspeak].text, true));
@@ -1363,10 +1366,10 @@ class CortexStudio extends HTMLElement {
   }
   _speak(text, force) {
     const mode = this._chatPrefs().speak, plain = String(text).replace(/\*\*|`/g, "");
-    if (mode === "house") { this._hass.callService("cortex", "say", { message: plain }).catch(() => {}); return; }
+    if (mode === "house") { this._hass.callService("ampx", "say", { message: plain }).catch(() => {}); return; }
     if ((mode === "device" || force) && window.speechSynthesis) { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(plain); u.lang = this._hass.language || "en"; speechSynthesis.speak(u); }
   }
-  _keepChat() { const c = this._chatState(); try { sessionStorage.setItem("cortex-chat", JSON.stringify({ msgs: c.msgs.slice(-40), cid: c.cid })); } catch (e) { /* ignore */ } }
+  _keepChat() { const c = this._chatState(); try { sessionStorage.setItem("ampx-chat", JSON.stringify({ msgs: c.msgs.slice(-40), cid: c.cid })); } catch (e) { /* ignore */ } }
   async _chatSend(text) {
     const q = s => this._root.querySelector(s), c = this._chatState();
     text = (text || "").trim(); if (!text || this._chatBusy) return;
@@ -1387,10 +1390,10 @@ class CortexStudio extends HTMLElement {
     const r = this._root, q = s => r.querySelector(s), c = this._chatState(), pr = this._chatPrefs();
     this._agents().then(list => {
       const sel = q("#chat-agent"); if (!sel) return;
-      let pick = null; try { pick = localStorage.getItem("cortex-chat-agent"); } catch (e) { /* ignore */ }
+      let pick = null; try { pick = localStorage.getItem("ampx-chat-agent"); } catch (e) { /* ignore */ }
       const def = pick ?? ((this._data.settings || {}).agent || "");
       sel.innerHTML = '<option value="">Default agent</option>' + list.map(a => `<option value="${esc(a.id)}"${a.id === def ? " selected" : ""}>${esc(a.name)}</option>`).join("");
-      sel.onchange = () => { try { localStorage.setItem("cortex-chat-agent", sel.value); } catch (e) { /* ignore */ } c.cid = null; };
+      sel.onchange = () => { try { localStorage.setItem("ampx-chat-agent", sel.value); } catch (e) { /* ignore */ } c.cid = null; };
     });
     const sp = q("#chat-speak"); sp.value = pr.speak; sp.onchange = () => this._setChatPrefs({ speak: sp.value });
     r.querySelectorAll("[data-pcat]").forEach(b => b.onclick = () => { this._setChatPrefs({ cat: b.dataset.pcat }); r.querySelectorAll("[data-pcat]").forEach(x => x.classList.toggle("on", x === b)); this._paintPrompts(); });
@@ -1398,8 +1401,8 @@ class CortexStudio extends HTMLElement {
     q("#chatstar").onclick = () => { const v = q("#chatin").value.trim(); if (!v) return; const m = this._chatPrefs().mine.filter(x => x !== v); m.unshift(v); this._setChatPrefs({ mine: m.slice(0, 20), cat: "mine" }); r.querySelectorAll("[data-pcat]").forEach(x => x.classList.toggle("on", x.dataset.pcat === "mine")); this._paintPrompts(); };
     q("#chat-new").onclick = () => { c.msgs = []; c.cid = null; this._keepChat(); this._paintChat(); };
     q("#chat-export").onclick = () => {
-      const txt = c.msgs.map(m => `[${m.t || ""}] ${m.who === "me" ? "You" : "Cortex"}: ${m.text}`).join("\n\n") || "(empty chat)";
-      const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([txt], { type: "text/plain" })); a.download = `cortex-chat-${new Date().toISOString().slice(0, 10)}.txt`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      const txt = c.msgs.map(m => `[${m.t || ""}] ${m.who === "me" ? "You" : "AmpX"}: ${m.text}`).join("\n\n") || "(empty chat)";
+      const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([txt], { type: "text/plain" })); a.download = `ampx-chat-${new Date().toISOString().slice(0, 10)}.txt`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     };
     const micB = q("#chatmic");
     if (micB) micB.onclick = () => {
@@ -1526,7 +1529,7 @@ class CortexStudio extends HTMLElement {
 
   _sysCards() {
     const list = this._pf().automations.map(id => { const st = this._st(id); return st ? `<label class="row"><span>${esc(st.attributes.friendly_name || id)}</span><input type="checkbox" class="sw" data-auto="${id}" ${st.state === "on" ? "checked" : ""}></label>` : ""; }).join("");
-    return list ? `<div class="card w6"><h2>Your energy automations</h2>${list}<div class="muted" style="margin-top:6px">Turn these off before letting Cortex run the same job.</div></div>` : "";
+    return list ? `<div class="card w6"><h2>Your energy automations</h2>${list}<div class="muted" style="margin-top:6px">Turn these off before letting AmpX run the same job.</div></div>` : "";
   }
   _wireExtras() {
     const call = (d, sv, data) => this._hass.callService(d, sv, data).catch(() => {});
@@ -1653,7 +1656,7 @@ class CortexStudio extends HTMLElement {
   }
   _wirePlan() {
     this._root.querySelectorAll("[data-optplan]").forEach(i => i.onchange = () => this._saveOpts({ autopilot_planner: i.checked }, "#plan-msg"));
-    const act = async action => { try { await this._hass.callWS({ type: "cortex/action", action }); } catch (e) { /* shown next load */ } this._load(); };
+    const act = async action => { try { await this._hass.callWS({ type: "ampx/action", action }); } catch (e) { /* shown next load */ } this._load(); };
     const t = this._root.querySelector("#ap-topup"), x = this._root.querySelector("#ap-export");
     if (t) t.onclick = () => act("autopilot_topup");
     if (x) x.onclick = () => act("autopilot_export");
@@ -1680,7 +1683,7 @@ class CortexStudio extends HTMLElement {
     </section>`;
   }
   async _act(msg, note) {
-    try { const r = await this._hass.callWS({ type: "cortex/action", ...msg }); if (note) this._note = note(r.result); }
+    try { const r = await this._hass.callWS({ type: "ampx/action", ...msg }); if (note) this._note = note(r.result); }
     catch (e) { this._note = "Failed: " + (e.message || e.code); }
     await this._load();
   }
@@ -1690,7 +1693,7 @@ class CortexStudio extends HTMLElement {
     const r = this._root, click = (id, fn) => { const el = r.querySelector(id); if (el) el.onclick = fn; };
     click("#seccheck", () => this._act({ action: "security_check" }, x => x.text));
     click("#collected", () => this._act({ action: "parcels_collected" }));
-    click("#hush", () => this._ws({ type: "cortex/hush", minutes: this._data.hushed ? 0 : 60 }));
+    click("#hush", () => this._ws({ type: "ampx/hush", minutes: this._data.hushed ? 0 : 60 }));
     r.querySelectorAll("[data-savespot]").forEach(b => b.onclick = () => {
       const i = r.querySelector(`[data-spot="${b.dataset.savespot}"]`);
       this._act({ action: "set_spot", camera: b.dataset.savespot, spot: i.value.trim() }, () => "Saved");
@@ -1704,7 +1707,7 @@ class CortexStudio extends HTMLElement {
     const mem = this._list(d.memories.slice().reverse(), m => `<div class="mem"><span>${CAT_ICON[m.category] || "📌"}</span><span class="t">${esc(m.text)}</span><button class="ghost" data-del="${m.id}">✕</button></div>`, "Nothing remembered yet.");
     const rem = this._list(d.reminders, r => `<div class="row"><span>${esc(r.message)}</span><span class="muted">${new Date(r.at).toLocaleString([], { hour: "2-digit", minute: "2-digit", weekday: "short" })} <button class="ghost" data-cancel="reminder:${r.id}">✕</button></span></div>`, "No reminders.");
     const wat = this._list(d.watches, w => `<div class="row"><span>${esc(w.entity_id)}${w.to_state ? " → " + esc(w.to_state) : ""}</span><button class="ghost" data-cancel="watch:${w.id}">✕</button></div>`, "No watches.");
-    const sug = this._list(d.suggestions || [], x => `<div class="mem"><span>💡</span><span class="t">${esc(x.text)}</span><button data-acc="${x.id}">Automate</button><button class="ghost" data-dis="${x.id}">✕</button></div>`, "No suggestions yet. Cortex learns from the entities you list under Configure.");
+    const sug = this._list(d.suggestions || [], x => `<div class="mem"><span>💡</span><span class="t">${esc(x.text)}</span><button data-acc="${x.id}">Automate</button><button class="ghost" data-dis="${x.id}">✕</button></div>`, "No suggestions yet. AmpX learns from the entities you list under Configure.");
     const rout = this._list(d.routines || [], r => `<div class="row"><span>${esc(r.name)} <span class="muted">${r.schedule ? "at " + esc(r.schedule.at) + " " + esc(r.schedule.days) : r.on_state ? "when " + esc(r.on_state.entity_id) + " is " + esc(r.on_state.to) : "on demand"}</span></span>
       <span><button data-run="${esc(r.name)}">Run</button> <button class="ghost" data-delr="${esc(r.name)}">✕</button></span></div>`, "No routines. Ask the assistant to make one, or accept a suggestion.");
     const speech = this._list((d.speech || []).slice(0, 8), s => `<div class="row"><span>${esc(s.text)}</span><span class="muted">${s.time.slice(11, 16)} ${s.spoken ? "🔊" : "🔇 " + esc(s.reason || "")}</span></div>`, "Nothing said yet.");
@@ -1727,16 +1730,16 @@ class CortexStudio extends HTMLElement {
   }
   _wireAssistant() {
     const r = this._root, click = (id, fn) => { const el = r.querySelector(id); if (el) el.onclick = fn; };
-    r.querySelectorAll("[data-del]").forEach(b => b.onclick = () => this._ws({ type: "cortex/memory_delete", target: b.dataset.del }));
-    r.querySelectorAll("[data-cancel]").forEach(b => b.onclick = () => { const [kind, id] = b.dataset.cancel.split(":"); this._ws({ type: "cortex/cancel", kind, target: id }); });
+    r.querySelectorAll("[data-del]").forEach(b => b.onclick = () => this._ws({ type: "ampx/memory_delete", target: b.dataset.del }));
+    r.querySelectorAll("[data-cancel]").forEach(b => b.onclick = () => { const [kind, id] = b.dataset.cancel.split(":"); this._ws({ type: "ampx/cancel", kind, target: id }); });
     r.querySelectorAll("[data-acc]").forEach(b => b.onclick = () => this._act({ action: "accept_suggestion", target: b.dataset.acc }, () => "Routine created"));
     r.querySelectorAll("[data-dis]").forEach(b => b.onclick = () => this._act({ action: "dismiss_suggestion", target: b.dataset.dis }));
     r.querySelectorAll("[data-run]").forEach(b => b.onclick = () => this._act({ action: "run_routine", target: b.dataset.run }, () => "Ran " + b.dataset.run));
     r.querySelectorAll("[data-delr]").forEach(b => b.onclick = () => this._act({ action: "delete_routine", target: b.dataset.delr }));
     click("#backup", () => this._act({ action: "backup" }, x => "Saved " + String(x).split("/").pop()));
     click("#weekly", () => this._act({ action: "weekly_report" }, () => "Weekly report sent"));
-    click("#hush", () => this._ws({ type: "cortex/hush", minutes: this._data.hushed ? 0 : 60 }));
-    const add = () => { const t = r.querySelector("#mtext").value.trim(); if (t) this._ws({ type: "cortex/memory_add", text: t, category: r.querySelector("#mcat").value }); };
+    click("#hush", () => this._ws({ type: "ampx/hush", minutes: this._data.hushed ? 0 : 60 }));
+    const add = () => { const t = r.querySelector("#mtext").value.trim(); if (t) this._ws({ type: "ampx/memory_add", text: t, category: r.querySelector("#mcat").value }); };
     click("#madd", add);
     const mt = r.querySelector("#mtext"); if (mt) mt.onkeydown = e => { if (e.key === "Enter") add(); };
     this._flash();
@@ -1832,7 +1835,7 @@ function barChart(days, series, o = {}) {
 
 // ---- battery visuals: Neovolt ESS tower and SUV, optional PNG overrides --------
 const levelColor = p => (p === null ? "#757575" : p < 20 ? C.peak : p < 40 ? C.off_peak : C.shoulder);
-// Drop transparent PNGs here to replace the drawings: /config/www/cortex/<name>.png
+// Drop transparent PNGs here to replace the drawings: /config/www/ampx/<name>.png
 const BIMG = { house: "", ev: "" }; // photos from Settings; empty = the drawing
 const CAR_BODY = "M26 132C20 126 18 106 21 94C24 86 38 80 62 72C100 52 142 26 192 18C222 14 262 14 294 22C324 30 348 58 364 72C382 78 410 86 420 98C426 106 426 120 422 132L416 140L34 140Z";
 const CAR_GLASS = "M348 70C332 44 312 33 288 27L196 26C160 30 120 52 88 70Z";
@@ -2407,4 +2410,4 @@ a.lnk{color:var(--o-deep);font-weight:600;text-decoration:none;display:inline-fl
 
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.001s!important;animation-iteration-count:1!important;transition-duration:.001s!important}}
 `;
-if (!customElements.get("cortex-studio")) customElements.define("cortex-studio", CortexStudio); // a second load of this module must not throw
+if (!customElements.get("ampx-studio")) customElements.define("ampx-studio", AmpXStudio); // a second load of this module must not throw

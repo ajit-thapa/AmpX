@@ -14,11 +14,11 @@ from datetime import timedelta
 
 from .const import CONF_AS_NOTES, CONF_AS_STYLE, DOMAIN
 from .memory import CATEGORIES
-from .runtime import Cortex
+from .runtime import AmpX
 
 PROMPT = (
     "You share a household memory with every other assistant in the house. "
-    "Use cortex tools to remember durable facts the user tells you, recall them "
+    "Use ampx tools to remember durable facts the user tells you, recall them "
     "before answering questions about the household, and set reminders. "
     "Energy questions: use energy_status instead of guessing; for why the battery did something, use autopilot_status. "
     "For what to do right now with energy, use energy_advice. To start or stop battery export or grid charging, or change "
@@ -38,7 +38,7 @@ def _out(data: dict[str, Any]) -> Any:
 class _Tool(llm.Tool):
     integration = DOMAIN  # required for custom tools from HA 2027.10
 
-    def __init__(self, brain: Cortex) -> None:
+    def __init__(self, brain: AmpX) -> None:
         self.brain = brain
 
 
@@ -219,7 +219,7 @@ class BatteryControlTool(_Tool):
                 "shadow": {"autopilot_mode": "shadow", "auto_topup": False, "auto_export": False},
                 "auto": {"autopilot_mode": "auto"}}[mode]
         entry = self.brain.entry
-        hass.config_entries.async_update_entry(entry, options={**entry.options, **opts})  # Cortex reloads
+        hass.config_entries.async_update_entry(entry, options={**entry.options, **opts})  # AmpX reloads
         return _out({"result": f"battery control set to {mode}"})
 
 
@@ -306,7 +306,7 @@ class WatchTool(_Tool):
 
 class QuietTool(_Tool):
     name = "quiet"
-    description = "Stop Cortex speaking for a number of minutes (0 to resume)."
+    description = "Stop AmpX speaking for a number of minutes (0 to resume)."
     parameters = vol.Schema({vol.Required("minutes"): vol.All(vol.Coerce(int), vol.Range(min=0, max=1440))})
 
     async def async_call(self, hass, tool_input, llm_context) -> dict[str, Any]:
@@ -328,7 +328,7 @@ class BriefingTool(_Tool):
 
 class RunRoutineTool(_Tool):
     name = "run_routine"
-    description = "Run a saved Cortex routine by name (for example goodnight or leaving)."
+    description = "Run a saved AmpX routine by name (for example goodnight or leaving)."
     parameters = vol.Schema({vol.Required("name"): str})
 
     async def async_call(self, hass, tool_input, llm_context) -> dict[str, Any]:
@@ -348,11 +348,11 @@ class SecurityCheckTool(_Tool):
         return _out(self.brain.security.check())
 
 
-class CortexAPI(llm.API):
-    """The ``cortex`` LLM API."""
+class AmpXAPI(llm.API):
+    """The ``ampx`` LLM API."""
 
-    def __init__(self, hass: HomeAssistant, brain: Cortex) -> None:
-        super().__init__(hass=hass, id=DOMAIN, name="Cortex")
+    def __init__(self, hass: HomeAssistant, brain: AmpX) -> None:
+        super().__init__(hass=hass, id=DOMAIN, name="AmpX")
         self.brain = brain
 
     async def async_get_api_instance(self, llm_context: llm.LLMContext) -> llm.APIInstance:

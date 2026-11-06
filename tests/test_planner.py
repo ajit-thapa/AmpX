@@ -2,9 +2,9 @@
 
 from datetime import date, datetime
 
-from custom_components.cortex import autopilot_rules as rules
-from custom_components.cortex.planner import BatterySpec, Plan, best_plan, simulate
-from custom_components.cortex.tariff import FixedTOU, Plan as Tariff, battery_budget
+from custom_components.ampx import autopilot_rules as rules
+from custom_components.ampx.planner import BatterySpec, Plan, best_plan, simulate
+from custom_components.ampx.tariff import FixedTOU, Plan as Tariff, battery_budget
 
 LOAD = [0.6] * 6 + [1.0] * 4 + [0.8] * 6 + [1.6] * 5 + [1.0] * 3
 

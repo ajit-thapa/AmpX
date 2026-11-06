@@ -1,4 +1,4 @@
-"""Backup and restore of everything Cortex remembers."""
+"""Backup and restore of everything AmpX remembers."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ class Backup(Feature):
     name = "backup"
 
     def folder(self) -> Path:
-        return Path(self.hass.config.path("cortex_backups"))
+        return Path(self.hass.config.path("ampx_backups"))
 
     def payload(self) -> dict[str, Any]:
         return {
@@ -37,9 +37,9 @@ class Backup(Feature):
 
         def write() -> str:
             folder.mkdir(parents=True, exist_ok=True)
-            path = folder / f"cortex-{stamp}.json"
+            path = folder / f"ampx-{stamp}.json"
             path.write_text(json.dumps(payload, indent=2, default=str))
-            for old in sorted(folder.glob("cortex-*.json"))[:-KEEP]:
+            for old in sorted(folder.glob("ampx-*.json"))[:-KEEP]:
                 old.unlink()
             return str(path)
 
@@ -51,7 +51,7 @@ class Backup(Feature):
         folder = self.folder()
 
         def names() -> list[str]:
-            return sorted(p.name for p in folder.glob("cortex-*.json")) if folder.exists() else []
+            return sorted(p.name for p in folder.glob("ampx-*.json")) if folder.exists() else []
 
         return await self.hass.async_add_executor_job(names)
 
@@ -69,7 +69,7 @@ class Backup(Feature):
             payload = json.loads(raw)
             data = payload["data"]
         except (ValueError, KeyError) as err:
-            raise HomeAssistantError(f"{name} is not a valid Cortex backup") from err
+            raise HomeAssistantError(f"{name} is not a valid AmpX backup") from err
         await self.brain.import_data(data)
         if with_options and payload.get("options"):
             self.hass.config_entries.async_update_entry(

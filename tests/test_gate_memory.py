@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 
-from custom_components.cortex.gate import SpeechGate
-from custom_components.cortex.memory import MemoryBook
+from custom_components.ampx.gate import SpeechGate
+from custom_components.ampx.memory import MemoryBook
 
 NOON = datetime(2026, 11, 2, 12)
 NIGHT = datetime(2026, 11, 2, 23)
