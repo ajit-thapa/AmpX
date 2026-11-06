@@ -91,6 +91,10 @@ CONF_LOW_SOLAR = "low_solar_kwh"
 CONF_TOPUP_KW = "topup_kw"
 CONF_EXPORT_KW = "export_kw"
 CONF_EXPORT_MIN_SOC = "export_min_soc"
+CONF_ENGINE = "decision_engine"  # cortex | hermes: who makes energy decisions
+ENGINE_CORTEX = "cortex"
+ENGINE_HERMES = "hermes"
+EVENT_SNAPSHOT = "cortex_energy_snapshot"  # fired every refresh when Hermes decides
 CONF_HOUSE_RULE = "house_off_grid"  # never buy grid power for the house outside the cheap window
 CONF_EV_PRIORITY = "ev_priority"  # while the EV charges, export only enough to cover the supply charge
 CONF_BATT_MAX_KW = "battery_max_kw"  # most the battery can deliver at once
@@ -219,6 +223,7 @@ DEFAULTS: dict[str, object] = {
     CONF_EXPORT_KW: 5.0,
     CONF_EXPORT_MIN_SOC: 35.0,
     CONF_HOUSE_RULE: True,
+    CONF_ENGINE: ENGINE_CORTEX,
     CONF_EV_PRIORITY: True,
     CONF_BATT_MAX_KW: 5.0,
     CONF_EV_TRICKLE_KW: 0.2,

@@ -24,6 +24,10 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_ENGINE,
+    ENGINE_CORTEX,
+    ENGINE_HERMES,
+    EVENT_SNAPSHOT,
     CONF_AGENT,
     CONF_RESERVE,
     CONF_ST_BATT,
@@ -318,6 +322,13 @@ class Cortex:
         grid, batt = kw(CONF_ST_GRID, CONF_ST_GRID_INVERT), kw(CONF_ST_BATT, CONF_ST_BATT_INVERT)
         return {"pv": pv, "grid": grid, "batt": batt, "ev": ev, "load": max(pv + grid - batt, 0.0)}
 
+    def engine(self) -> str:
+        return self.opts.get(CONF_ENGINE) or ENGINE_CORTEX
+
+    def hermes(self) -> bool:
+        """True when Hermes makes the energy decisions: Cortex stops writing and forwards data."""
+        return self.engine() == ENGINE_HERMES
+
     def control_mode(self) -> str:
         mode = self.autopilot.mode
         if mode in ("auto", "shadow"):
@@ -337,6 +348,13 @@ class Cortex:
             self.timeline.record("soc_max", snap["battery_soc"])
         if snap.get("pv_today") is not None:
             self.timeline.record("pv_forecast", snap["pv_today"])
+        if self.hermes():
+            self.hass.bus.async_fire(EVENT_SNAPSHOT, {
+                "snapshot": snap,
+                "flows": self.live_flows(),
+                "shoulder_window": snap.get("shoulder_window"),
+                "generated": dt_util.now().isoformat(),
+            })
         self.notify_update()
 
     @callback

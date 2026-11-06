@@ -279,6 +279,7 @@ CONTROL_OPTIONS = {
     CONF_AS_STYLE: vol.In(AS_STYLES),
     CONF_EV_PRIORITY: bool,
     CONF_HOUSE_RULE: bool,
+    CONF_ENGINE: vol.In((ENGINE_CORTEX, ENGINE_HERMES)),
     CONF_EV_TRICKLE_KW: vol.All(vol.Coerce(float), vol.Range(min=0, max=2)),
     CONF_BATT_MAX_KW: vol.All(vol.Coerce(float), vol.Range(min=1, max=50)),
     CONF_AS_NOTES: vol.All(str, vol.Length(max=600)),

@@ -75,7 +75,8 @@
           "ev_gate": "Gate EV charging to the cheap window",
           "ev_charger_kw": "EV charger power",
           "battery_efficiency": "Battery round-trip efficiency",
-          "house_off_grid": "House rule: never buy grid power for the house outside the cheap window (the EV may use off-peak grid)"
+          "house_off_grid": "House rule: never buy grid power for the house outside the cheap window (the EV may use off-peak grid)",
+          "decision_engine": "Decision engine: cortex (Cortex decides) or hermes (Hermes decides; Cortex shows and suggests)"
         }
       },
       "tariff": {

@@ -128,6 +128,7 @@ SECTIONS: dict[str, dict[str, Any]] = {
         CONF_EXPORT_KW: _num(0.5, 30, 0.1, "kW"),
         CONF_EXPORT_MIN_SOC: _num(0, 100, 1, "%"),
         CONF_HOUSE_RULE: sel.BooleanSelector(),
+        CONF_ENGINE: sel.SelectSelector(sel.SelectSelectorConfig(options=[ENGINE_CORTEX, ENGINE_HERMES], mode=sel.SelectSelectorMode.LIST)),
         CONF_EV_PRIORITY: sel.BooleanSelector(),
         CONF_BATT_MAX_KW: _num(1, 50, 0.1, "kW"),
         CONF_EV_TRICKLE_KW: _num(0, 2, 0.05, "kW"),

@@ -12,6 +12,8 @@ from homeassistant.util import dt as dt_util
 
 from . import planner, tariff
 from .const import (
+    CONF_ENGINE,
+    ENGINE_CORTEX,
     CONF_AP_PLANNER,
     CONF_BATT_MAX_KW,
     CONF_CYCLE_COST,
@@ -223,6 +225,7 @@ class EnergyBrain:
         data["budget"] = tariff.battery_budget(now, soc, bat_kwh, reserve, plan, self.house_kwh_day, self.supply_left(), self.profile)
         data["ev_guard"] = self.ev_guard_note
         data["house_rule"] = bool(o.get(CONF_HOUSE_RULE))
+        data["decision_engine"] = o.get(CONF_ENGINE) or ENGINE_CORTEX
         data["house_note"] = self.house_note
         data["storage_summary"] = self._storage_summary(data, bat_kwh, ev_kwh)
         data["summary"] = self._summary(data)
@@ -411,6 +414,8 @@ class EnergyBrain:
         (default 200 W) so the inverter's own use never comes from the grid."""
         now = now or dt_util.now()
         o = self.brain.opts
+        if self.brain.hermes():
+            return None
         if not o.get(CONF_EV_PRIORITY):
             return None
         mode_id = o.get(CONF_MODE)
@@ -457,6 +462,23 @@ class EnergyBrain:
         self.brain.log("energy", msg)
         await self.brain.speaker.push(msg, title="Cortex energy")
 
+    async def _watch_house(self, now: datetime) -> str | None:
+        """Hermes decides: Cortex only checks the house rule and tells the owner on a breach."""
+        if not self.brain.opts.get(CONF_HOUSE_RULE):
+            return None
+        plan = self.plan()
+        per = tariff.period(now, plan, self.is_holiday(now.date()))
+        if per == tariff.SHOULDER:
+            return None
+        live = self.brain.live_flows()
+        house_import = live["grid"] - (live["ev"] if per == tariff.OFF_PEAK else 0.0)
+        if house_import > 0.5:
+            await self._tell_once("hermes_breach", f"House rule: {house_import:.1f} kW from the grid outside "
+                                                   f"{plan.shoulder_window[0]:02d}:00 to {plan.shoulder_window[1]:02d}:00. "
+                                                   "Hermes is in control; check its decisions.")
+            return "breach"
+        return "ok"
+
     async def house_guard(self, now: datetime | None = None) -> str | None:
         """The house rule: outside the cheap window the house never buys grid power.
 
@@ -470,6 +492,8 @@ class EnergyBrain:
         """
         now = now or dt_util.now()
         o = self.brain.opts
+        if self.brain.hermes():
+            return await self._watch_house(now)
         if not o.get(CONF_HOUSE_RULE):
             self.house_note = None
             return await self._end_house_only() if self.house_only else None
@@ -534,6 +558,9 @@ class EnergyBrain:
 
     # ---- actions --------------------------------------------------------
     async def _set(self, domain: str, service: str, key: str, **data: Any) -> bool:
+        if self.brain.hermes():  # Hermes decides and writes; Cortex only shows and suggests
+            _LOGGER.debug("Decision engine is Hermes: not writing %s.%s", domain, service)
+            return False
         entity_id = self.brain.opts.get(key)
         if not entity_id:
             return False
