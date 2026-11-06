@@ -956,6 +956,8 @@ class CortexStudio extends HTMLElement {
       <div class="ctl2">
         <div><h3>Limits <span class="muted">used by timers, Autopilot and manual dispatch</span></h3>
           ${slider("export_kw", "Export power", 0.5, 10, 0.5, "kW")}${slider("export_floor", "Export floor, battery stops at", 10, 90, 1, "%")}${slider("topup_kw", "Top-up power", 0.5, 10, 0.5, "kW")}
+          <div class="evfirst"><div class="row"><span><b>Decision engine</b><span class="muted">Cortex decides and writes the battery and EV, or Hermes decides and writes; Cortex then only shows Hermes's decisions and suggests.</span></span><div class="seg"><button data-engine="cortex" class="${(c.decision_engine || "cortex") === "cortex" ? "on" : ""}">Cortex</button><button data-engine="hermes" class="${c.decision_engine === "hermes" ? "on" : ""}">Hermes</button></div></div>
+            ${c.decision_engine === "hermes" ? `<div class="evnote">${icon("home")}<span>Hermes is in control. Cortex does not write battery or EV settings. The house rule is watched and you get an alert on a breach.</span></div>` : ""}</div>
           <div class="evfirst"><label class="row"><span><b>House rule</b><span class="muted">Outside ${wl(this._rates().sw)} the house never buys grid power: exports stop at what the house needs until then, and an off-peak EV charges from the grid while the battery covers only the house.</span></span>${this._toggle(`data-optrule="1"`, c.house_rule)}</label>
             ${d.energy.house_note ? `<div class="evnote">${icon("home")}<span>${esc(d.energy.house_note)}</span></div>` : ""}</div>
           <div class="evfirst"><label class="row"><span><b>EV first</b><span class="muted">While the EV charges during an export, the battery feeds the car first. It exports until the daily supply charge is covered, then only ${Math.round((c.ev_trickle_kw ?? 0.2) * 1000)} W to cover the inverter.</span></span>${this._toggle(`data-optev="1"`, c.ev_priority)}</label>
@@ -1001,6 +1003,7 @@ class CortexStudio extends HTMLElement {
     r.querySelectorAll("[data-optb]").forEach(i => i.onchange = () => save({ autopilot_use_ai: i.checked }));
     r.querySelectorAll("[data-optev]").forEach(i => i.onchange = () => save({ ev_priority: i.checked }));
     r.querySelectorAll("[data-optrule]").forEach(i => i.onchange = () => save({ house_off_grid: i.checked }));
+    r.querySelectorAll("[data-engine]").forEach(b => b.onclick = () => save({ decision_engine: b.dataset.engine }));
     const act = async (action, extra) => { msg("Sending…"); try { const x = await this._hass.callWS({ type: "cortex/action", action, ...extra }); msg(typeof x.result === "string" ? x.result : "Done"); } catch (e) { msg("Failed: " + (e.message || e.code), true); } setTimeout(() => this._load(), 1500); };
     const val = k => parseFloat((q(`[data-opt="${k}"]`) || {}).value);
     const click = (id, fn) => { const el = q(id); if (el) el.onclick = fn; };

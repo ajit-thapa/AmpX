@@ -4,6 +4,7 @@ from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 import pytest
+import voluptuous as vol
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
 
 from custom_components.cortex.const import DEFAULTS, DOMAIN
@@ -574,3 +575,38 @@ async def test_house_rule_guard(hass: HomeAssistant):
     assert await brain.energy.house_guard(now) == "ended" and hass.states.get(mode).state == "Normal"
     # inside the cheap window the rule does nothing
     assert await brain.energy.house_guard(now.replace(hour=11)) is None
+
+
+async def test_decision_engine_hermes_blocks_writes_and_watches(hass: HomeAssistant):
+    """Hermes decides: Cortex writes nothing to the battery or EV, only alerts on a house-rule breach."""
+    async_mock_service(hass, "notify", "send_message")
+    sent = []
+    for domain, svc in (("number", "set_value"), ("select", "select_option"), ("button", "press")):
+        async def rec(call, d=domain, s=svc):
+            sent.append((d, s, dict(call.data)))
+        hass.services.async_register(domain, svc, rec)
+    brain = await _setup(hass, decision_engine="hermes")
+    o, en = brain.opts, brain.energy
+    assert brain.hermes() and brain.engine() == "hermes"
+    # every energy write goes through one gate
+    assert await en._set("number", "set_value", "dispatch_power", value=5.0) is False
+    await hass.async_block_till_done()
+    assert not sent
+    # watch only: grid import in peak alerts, nothing is written
+    hass.states.async_set(o["studio_grid"], "3.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set(o["studio_ev"], "0", {"unit_of_measurement": "kW"})
+    peak = dt_util.now().replace(hour=18, minute=0)
+    assert await en._watch_house(peak) == "breach"
+    await hass.async_block_till_done()
+    assert not sent
+    # snapshot tells the consumer who decides
+    assert en.snapshot()["decision_engine"] == "hermes"
+
+
+def test_decision_engine_validator_accepts_only_two_values():
+    from custom_components.cortex.websocket import CONTROL_OPTIONS
+    from custom_components.cortex.const import CONF_ENGINE
+    check = CONTROL_OPTIONS[CONF_ENGINE]
+    assert check("hermes") == "hermes" and check("cortex") == "cortex"
+    with pytest.raises(vol.Invalid):
+        check("both")
