@@ -230,7 +230,7 @@ class AmpXStudio extends HTMLElement {
 
   /** Live flows in kW. Conventions: grid + = import, battery + = charging. */
   _flows() {
-    const s = this._data.studio || {};
+    const s = (this._data && this._data.studio) || {};
     const pv = Math.max(this._kw(s.pv) ?? 0, 0);
     const grid = this._kw(s.grid, s.grid_invert) ?? 0;
     const batt = this._kw(s.battery, s.battery_invert) ?? 0;
@@ -240,7 +240,7 @@ class AmpXStudio extends HTMLElement {
   }
 
   async _loadSeries() {
-    const s = this._data.studio || {};
+    const s = (this._data && this._data.studio) || {};
     const ids = [s.pv, s.grid, s.battery, s.ev, s.soc].filter(Boolean);
     if (!ids.length) { const el = this._root.querySelector("#chart"); if (el) el.innerHTML = '<div class="muted">Pick your solar, grid and battery power sensors in AmpX options to see this chart.</div>'; return; }
     const end = new Date(), start = new Date(end.getTime() - 24 * 3600 * 1000);
@@ -1932,7 +1932,8 @@ function battImg(root) {
   const key = root.dataset.b, im = new Image();
   im.onload = () => {
     root._img = "ok";
-    const wrap = root.querySelector(".bimg"), pic = wrap.querySelector("img");
+    const wrap = root.querySelector(".bimg"), pic = wrap && wrap.querySelector("img");
+    if (!wrap || !pic) return;
     const plain = key === "ev", src = plain ? BIMG.ev : (cutout(im) || BIMG[key]);
     pic.src = src; wrap.style.setProperty("--m", `url("${src}")`);
     wrap.hidden = false; root.querySelector(".battsvg").style.display = "none"; root.classList.add("photo");
