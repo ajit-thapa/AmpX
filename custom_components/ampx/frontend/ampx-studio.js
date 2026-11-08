@@ -234,9 +234,14 @@ class AmpXStudio extends HTMLElement {
     const pv = Math.max(this._kw(s.pv) ?? 0, 0);
     const grid = this._kw(s.grid, s.grid_invert) ?? 0;
     const batt = this._kw(s.battery, s.battery_invert) ?? 0;
+    // EV charger (TWCG3) draws on top of the house. The house meter excludes it, so
+    // home = house load and total draw = home + EV. Without a house load sensor,
+    // fall back to the balance (pv + grid - batt) minus EV.
     const ev = Math.max(this._kw(s.ev) ?? 0, 0);
-    const load = Math.max(pv + grid - batt, 0);
-    return { pv, grid, batt, ev, load, home: Math.max(load - ev, 0) };
+    const houseNow = this._kw(s.load);
+    const balance = Math.max(pv + grid - batt, 0);
+    const home = houseNow !== null ? Math.max(houseNow, 0) : Math.max(balance - ev, 0);
+    return { pv, grid, batt, ev, load: home + ev, home };
   }
 
   async _loadSeries() {
