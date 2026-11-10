@@ -106,7 +106,7 @@ async def test_peak_stops_a_running_grid_charge(hass: HomeAssistant):
     assert await brain.energy.house_guard(when(11, 0)) is None  # cheap window: charging is the plan
     assert hass.states.get(MODE).state == ladder.CHARGE
     flows(hass, grid_kw=5.2, ev_kw=0.0, batt_discharge_kw=-4.0)
-    assert await brain.energy.house_guard(when(17, 0)) == "charge_stopped"  # peak is 16:00 to 20:00 by default
+    assert await brain.energy.house_guard(when(17, 30)) == "charge_stopped"  # peak is 16:00 to 20:00 by default
     assert hass.states.get(MODE).state == ladder.NORMAL
     assert brain.journal.last["rule"] == ladder.PEAK_GUARD
 
@@ -123,6 +123,16 @@ async def test_export_outside_the_paying_window_is_capped_unless_the_owner_start
     assert brain.energy.dispatch_source == ladder.MANUAL
     assert await brain.energy.house_guard(when(22, 1)) is None
     assert hass.states.get(MODE).state == ladder.DISCHARGE and brain.journal.last["rule"] == ladder.MANUAL
+
+
+async def test_no_guard_alert_in_the_two_minutes_after_a_window_ends(hass: HomeAssistant):
+    _record(hass)
+    brain = await _setup(hass, autopilot_mode="auto")
+    hass.states.async_set(SOC, "90")
+    assert await brain.energy.start_export(True, 5.0, 40, source=ladder.AUTOPILOT) == "started"
+    assert await brain.energy.house_guard(when(21, 0)) is None  # the evening feed-in ended this minute
+    assert hass.states.get(MODE).state == ladder.DISCHARGE
+    assert await brain.energy.house_guard(when(21, 3)) == "export_capped"  # nothing stopped it: the cap does
 
 
 async def test_reserve_stops_a_forced_export_even_without_the_house_rule(hass: HomeAssistant):

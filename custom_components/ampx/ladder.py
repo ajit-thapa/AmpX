@@ -73,6 +73,7 @@ class Inputs:
     held_s: float = float("inf")    # seconds since house-only began
     export_pays: bool = False       # feed-in is at the plan's best rate
     source: str | None = None       # who started the running dispatch: MANUAL, PLAN, AUTOPILOT or unknown
+    edge: bool = False              # a tariff window changed in the last two minutes: scheduled stops run first
 
 
 @dataclass(frozen=True)
@@ -91,7 +92,7 @@ def evaluate(i: Inputs) -> Verdict:
         return Verdict(STALE, action, f"{i.stale}: the inverter runs the battery until readings return")
 
     # 2. peak: never charge the battery from the grid
-    if i.period == PEAK and i.mode == CHARGE:
+    if i.period == PEAK and i.mode == CHARGE and not i.edge:
         return Verdict(PEAK_GUARD, STOP_CHARGE, "peak rate: no grid charging")
 
     guard = i.house_rule and i.period != SHOULDER and i.spare_kwh is not None
@@ -111,7 +112,7 @@ def evaluate(i: Inputs) -> Verdict:
             return Verdict(RESERVE, STOP_DISCHARGE, f"battery at the {i.reserve:.0f}% reserve")
         if guard and i.spare_kwh <= SPARE_KWH:
             return Verdict(HOUSE_RULE, STOP_DISCHARGE, "the battery holds only what the house needs until the cheap window")
-        if not i.export_pays and i.source != MANUAL:
+        if not i.export_pays and i.source != MANUAL and not i.edge:
             return Verdict(EXPORT_CAP, STOP_DISCHARGE, "feed-in is low: the battery covers the house, nothing is exported")
 
     # peak, second part: an EV the battery can't carry. Advice, so it comes after the battery actions.

@@ -340,6 +340,15 @@ def test_no_export_when_it_does_not_pay_unless_the_owner_started_it():
     assert v(mode=L.DISCHARGE, export_pays=True, source=L.AUTOPILOT).rule == L.AUTOPILOT
 
 
+def test_scheduled_stops_get_to_run_first_at_a_window_edge():
+    """Timers and Autopilot stop their own dispatch seconds after a window ends: no guard, no alert, before that."""
+    assert v(period=PEAK, mode=L.CHARGE, edge=True, source=L.AUTOPILOT).rule == L.AUTOPILOT
+    assert v(mode=L.DISCHARGE, export_pays=False, edge=True, source=L.PLAN).rule == L.PLAN
+    # the floors never wait
+    assert v(mode=L.DISCHARGE, spare_kwh=0.2, export_pays=False, edge=True).rule == L.HOUSE_RULE
+    assert v(mode=L.DISCHARGE, soc=20.0, export_pays=False, edge=True).rule == L.RESERVE
+
+
 def test_peak_ev_the_battery_cannot_carry_is_flagged_after_battery_actions():
     out = v(period=PEAK, ev_kw=7.0, spare_kwh=1.0)
     assert (out.rule, out.action) == (L.PEAK_GUARD, L.PAUSE_EV)
@@ -466,6 +475,7 @@ class Inputs:
     held_s: float = float("inf")    # seconds since house-only began
     export_pays: bool = False       # feed-in is at the plan's best rate
     source: str | None = None       # who started the running dispatch: MANUAL, PLAN, AUTOPILOT or unknown
+    edge: bool = False              # a tariff window changed in the last two minutes: scheduled stops run first
 
 
 @dataclass(frozen=True)
@@ -484,7 +494,7 @@ def evaluate(i: Inputs) -> Verdict:
         return Verdict(STALE, action, f"{i.stale}: the inverter runs the battery until readings return")
 
     # 2. peak: never charge the battery from the grid
-    if i.period == PEAK and i.mode == CHARGE:
+    if i.period == PEAK and i.mode == CHARGE and not i.edge:
         return Verdict(PEAK_GUARD, STOP_CHARGE, "peak rate: no grid charging")
 
     guard = i.house_rule and i.period != SHOULDER and i.spare_kwh is not None
@@ -504,7 +514,7 @@ def evaluate(i: Inputs) -> Verdict:
             return Verdict(RESERVE, STOP_DISCHARGE, f"battery at the {i.reserve:.0f}% reserve")
         if guard and i.spare_kwh <= SPARE_KWH:
             return Verdict(HOUSE_RULE, STOP_DISCHARGE, "the battery holds only what the house needs until the cheap window")
-        if not i.export_pays and i.source != MANUAL:
+        if not i.export_pays and i.source != MANUAL and not i.edge:
             return Verdict(EXPORT_CAP, STOP_DISCHARGE, "feed-in is low: the battery covers the house, nothing is exported")
 
     # peak, second part: an EV the battery can't carry. Advice, so it comes after the battery actions.
@@ -947,7 +957,7 @@ async def test_peak_stops_a_running_grid_charge(hass: HomeAssistant):
     assert await brain.energy.house_guard(when(11, 0)) is None  # cheap window: charging is the plan
     assert hass.states.get(MODE).state == ladder.CHARGE
     flows(hass, grid_kw=5.2, ev_kw=0.0, batt_discharge_kw=-4.0)
-    assert await brain.energy.house_guard(when(17, 0)) == "charge_stopped"  # peak is 16:00 to 20:00 by default
+    assert await brain.energy.house_guard(when(17, 30)) == "charge_stopped"  # peak is 16:00 to 20:00 by default
     assert hass.states.get(MODE).state == ladder.NORMAL
     assert brain.journal.last["rule"] == ladder.PEAK_GUARD
 
@@ -964,6 +974,16 @@ async def test_export_outside_the_paying_window_is_capped_unless_the_owner_start
     assert brain.energy.dispatch_source == ladder.MANUAL
     assert await brain.energy.house_guard(when(22, 1)) is None
     assert hass.states.get(MODE).state == ladder.DISCHARGE and brain.journal.last["rule"] == ladder.MANUAL
+
+
+async def test_no_guard_alert_in_the_two_minutes_after_a_window_ends(hass: HomeAssistant):
+    _record(hass)
+    brain = await _setup(hass, autopilot_mode="auto")
+    hass.states.async_set(SOC, "90")
+    assert await brain.energy.start_export(True, 5.0, 40, source=ladder.AUTOPILOT) == "started"
+    assert await brain.energy.house_guard(when(21, 0)) is None  # the evening feed-in ended this minute
+    assert hass.states.get(MODE).state == ladder.DISCHARGE
+    assert await brain.energy.house_guard(when(21, 3)) == "export_capped"  # nothing stopped it: the cap does
 
 
 async def test_reserve_stops_a_forced_export_even_without_the_house_rule(hass: HomeAssistant):
@@ -1124,14 +1144,18 @@ New methods (replace the body of `house_guard`, keep `_watch_house`, `_tell_once
         usable = None if soc is None else max(soc - res, 0.0) / 100 * cap
         live = self.brain.live_flows()
         held = (now - self._house_only_at).total_seconds() if self._house_only_at else float("inf")
+        period, pays = tariff.period(now, plan, self.is_holiday(now.date())), tariff.export_pays(now, plan)
+        before = now - timedelta(seconds=EDGE_S)
+        edge = (period != tariff.period(before, plan, self.is_holiday(before.date()))
+                or pays != tariff.export_pays(before, plan))
         inputs = ladder.Inputs(
             stale=self.stale_reason(now, forced or self.house_only),
-            period=tariff.period(now, plan, self.is_holiday(now.date())),
+            period=period,
             mode=mode, soc=soc, reserve=res, house_rule=bool(o.get(CONF_HOUSE_RULE)),
             spare_kwh=None if usable is None else usable - need,
             ev_kw=live["ev"], acting=self.brain.control_mode() in ("auto", "timers"),
             house_only=self.house_only, held_s=held,
-            export_pays=tariff.export_pays(now, plan), source=self.dispatch_source,
+            export_pays=pays, source=self.dispatch_source, edge=edge,
         )
         return inputs, {"plan": plan, "need": need, "res": res, "ev": live["ev"], "home": max(live["load"] - live["ev"], 0.0)}
 
@@ -1210,7 +1234,7 @@ New methods (replace the body of `house_guard`, keep `_watch_house`, `_tell_once
         return "house_only"
 ```
 
-with module constant `SOURCE_GRACE_S = 180`. `_end_house_only` also sets `self._house_only_at = None`.
+with module constants `SOURCE_GRACE_S = 180` and `EDGE_S = 120`. `_end_house_only` also sets `self._house_only_at = None`.
 
 `ev_guard`: return None first when `self.brain.hermes() or self.brain.observe()`. Replace from `covered = ...` to the end:
 

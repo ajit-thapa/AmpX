@@ -75,6 +75,15 @@ def test_no_export_when_it_does_not_pay_unless_the_owner_started_it():
     assert v(mode=L.DISCHARGE, export_pays=True, source=L.AUTOPILOT).rule == L.AUTOPILOT
 
 
+def test_scheduled_stops_get_to_run_first_at_a_window_edge():
+    """Timers and Autopilot stop their own dispatch seconds after a window ends: no guard, no alert, before that."""
+    assert v(period=PEAK, mode=L.CHARGE, edge=True, source=L.AUTOPILOT).rule == L.AUTOPILOT
+    assert v(mode=L.DISCHARGE, export_pays=False, edge=True, source=L.PLAN).rule == L.PLAN
+    # the floors never wait
+    assert v(mode=L.DISCHARGE, spare_kwh=0.2, export_pays=False, edge=True).rule == L.HOUSE_RULE
+    assert v(mode=L.DISCHARGE, soc=20.0, export_pays=False, edge=True).rule == L.RESERVE
+
+
 def test_peak_ev_the_battery_cannot_carry_is_flagged_after_battery_actions():
     out = v(period=PEAK, ev_kw=7.0, spare_kwh=1.0)
     assert (out.rule, out.action) == (L.PEAK_GUARD, L.PAUSE_EV)

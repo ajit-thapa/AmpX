@@ -76,6 +76,7 @@ _LOGGER = logging.getLogger(__name__)
 UNKNOWN = ("unknown", "unavailable", "none", "")
 OBSERVED = "observe only: nothing sent"
 SOURCE_GRACE_S = 180  # how long a just-started dispatch may take to show in the inverter's mode
+EDGE_S = 120  # after a tariff window changes, timers and Autopilot get this long to stop their own dispatch
 
 
 def hour(value: Any) -> int:
@@ -537,14 +538,18 @@ class EnergyBrain:
         usable = None if soc is None else max(soc - res, 0.0) / 100 * cap
         live = self.brain.live_flows()
         held = (now - self._house_only_at).total_seconds() if self._house_only_at else float("inf")
+        period, pays = tariff.period(now, plan, self.is_holiday(now.date())), tariff.export_pays(now, plan)
+        before = now - timedelta(seconds=EDGE_S)
+        edge = (period != tariff.period(before, plan, self.is_holiday(before.date()))
+                or pays != tariff.export_pays(before, plan))
         inputs = ladder.Inputs(
             stale=self.stale_reason(now, forced or self.house_only),
-            period=tariff.period(now, plan, self.is_holiday(now.date())),
+            period=period,
             mode=mode, soc=soc, reserve=res, house_rule=bool(o.get(CONF_HOUSE_RULE)),
             spare_kwh=None if usable is None else usable - need,
             ev_kw=live["ev"], acting=self.brain.control_mode() in ("auto", "timers"),
             house_only=self.house_only, held_s=held,
-            export_pays=tariff.export_pays(now, plan), source=self.dispatch_source,
+            export_pays=pays, source=self.dispatch_source, edge=edge,
         )
         return inputs, {"plan": plan, "need": need, "res": res, "ev": live["ev"], "home": max(live["load"] - live["ev"], 0.0)}
 
