@@ -68,6 +68,7 @@ from .heating import Heating
 from .learning import Learning
 from .motion_lights import MotionLights
 from .routines import Routines
+from .sealion7_feature import Sealion7Feature
 from .security import Security
 from .timeline import Timeline
 from .visitors import PROMPT as LOOK_PROMPT, Visitors
@@ -116,6 +117,7 @@ class AmpX:
         self.briefing = Briefing(self)
         self.backup = Backup(self)
         self.autopilot = Autopilot(self)
+        self.sealion7 = Sealion7Feature(self)
         self._ai_calls: deque[datetime] = deque()
         self.snapshot: dict[str, Any] = {}
         self.health: list[str] = []
@@ -129,6 +131,7 @@ class AmpX:
         return (
             self.timeline, self.routines, self.learning, self.motion_lights,
             self.heating, self.security, self.visitors, self.briefing, self.backup, self.autopilot,
+            self.sealion7,
         )
 
     # ---- lifecycle ------------------------------------------------------

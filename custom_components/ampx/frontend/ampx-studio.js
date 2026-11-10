@@ -61,7 +61,7 @@ const TABS = [["now", "Now", "bolt"], ["energy", "Energy", "chart"], ["devices",
 // Second level: one home for each thing, so nothing is shown twice.
 const SUBS = {
   energy: [["today", "Today"], ["plan", "Plan"], ["history", "History"], ["compare", "Compare plans"]],
-  devices: [["battery", "Battery"], ["ev", "EV"], ["charger", "Charger"], ["all", "All devices"]],
+  devices: [["battery", "Battery"], ["ev", "EV"], ["sealion7", "Sealion 7"], ["charger", "Charger"], ["all", "All devices"]],
   assistant: [["memory", "Memory"], ["reminders", "Reminders"], ["routines", "Routines"], ["suggestions", "Suggestions"], ["tools", "Tools"]],
 };
 // Old tab names (links, saved state) and where they live now
@@ -95,7 +95,7 @@ class AmpXStudio extends HTMLElement {
       this._timer = setInterval(() => this._load(), 30000);
     } else if (this._data && Date.now() - (this._lastPaint || 0) > 1500) {
       this._lastPaint = Date.now();
-      ({ now: () => this._paintLive(), "devices/battery": () => this._battWidgets(), "devices/ev": () => this._paintEv(), "devices/charger": () => this._paintWc(),
+      ({ now: () => this._paintLive(), "devices/battery": () => this._battWidgets(), "devices/ev": () => this._paintEv(), "devices/sealion7": () => this._paintSealion7(), "devices/charger": () => this._paintWc(),
          "energy/today": () => this._paintVisuals() })[this._key()]?.();
     }
   }
@@ -348,7 +348,7 @@ class AmpXStudio extends HTMLElement {
     const views = {
       now: () => this._viewNow(), house: () => this._viewHouse(), settings: () => this._viewSettings(),
       "energy/today": () => this._viewToday(), "energy/plan": () => this._viewPlan(), "energy/history": () => this._viewAnalytics(), "energy/compare": () => this._viewCompare(),
-      "devices/battery": () => this._viewBattery(), "devices/ev": () => this._viewEv(), "devices/charger": () => this._viewCharger(), "devices/all": () => this._viewDevices(),
+      "devices/battery": () => this._viewBattery(), "devices/ev": () => this._viewEv(), "devices/sealion7": () => this._viewSealion7(), "devices/charger": () => this._viewCharger(), "devices/all": () => this._viewDevices(),
     };
     const sn = subs && this._tab !== "assistant" ? `<nav class="subnav" aria-label="${esc(this._tab)} sections">${subs.map(([s2, l]) => `<button data-sub="${s2}" class="${this._subOf(this._tab) === s2 ? "on" : ""}">${l}</button>`).join("")}</nav>` : "";
     view.innerHTML = sn + (this._tab === "assistant" ? this._viewAssistant() : views[k]());
@@ -364,6 +364,7 @@ class AmpXStudio extends HTMLElement {
       "energy/compare": () => { this._wirePlans(); if (this._en) this._paintCompare(); },
       "devices/battery": () => { this._battWidgets(); this._paintMore("battery"); this._wireCtl(); },
       "devices/ev": () => { this._wireEv(); this._paintEv(); },
+      "devices/sealion7": () => { this._wireSealion7(); this._paintSealion7(); },
       "devices/charger": () => this._paintWc(),
       "devices/all": () => { this._wireExtras(); this._loadDevices(); },
     };
@@ -752,6 +753,114 @@ class AmpXStudio extends HTMLElement {
     svg.innerHTML = `${grid}${hrs}<path d="${soc} L${x(N - 1)} ${ys(0)} L${x(0)} ${ys(0)} Z" fill="${C.ev}" opacity=".15"/>
       <path d="${soc}" fill="none" stroke="${C.ev}" stroke-width="2.5"/><path d="${line(s.power, yp)}" fill="none" stroke="${C.solar}" stroke-width="2"/>
       <text x="${W - R + 4}" y="${yp(maxP) + 10}" class="ax">${maxP.toFixed(0)}</text>`;
+  }
+
+  // ---- BYD SEALION 7 (plug-in hybrid): own card set, same look as the EV view ----------
+  _sl7() { return (this._data && this._data.sealion7) || { configured: false, missing: [], warnings: [], entities: {} }; }
+  _sl7Action(s) {
+    if (!s.action) return "Waiting for data";
+    const lab = { start: "Start charging", stop: "Stop charging", hold: "Hold", none: "Unplugged" }[s.action] || s.action;
+    return s.enabled ? lab : "Would: " + lab.toLowerCase();
+  }
+  _sl7Stats(s) {
+    const hrs = s.minutes_to_target;
+    return [
+      ["Power", s.charging && s.power_kw !== null ? fx(s.power_kw) + " kW" : "–", C.ev],
+      ["Voltage", s.voltage !== null && s.voltage !== undefined ? fx(s.voltage, 0) + " V" : "–", C.solar],
+      ["Current", s.current_a !== null && s.current_a !== undefined ? fx(s.current_a, 1) + " A" : "–", C.solar],
+      ["Pure EV range", s.pure_range_km !== null && s.pure_range_km !== undefined ? fx(s.pure_range_km, 0) + " km" : "–", C.shoulder],
+      ["Total range", s.total_range_km !== null && s.total_range_km !== undefined ? fx(s.total_range_km, 0) + " km" : "–", C.shoulder],
+      ["Fuel", s.fuel_pct !== null && s.fuel_pct !== undefined ? fx(s.fuel_pct, 0) + "%" : "–", C.off_peak],
+      ["To target", hrs === null || hrs === undefined ? "–" : hrs === 0 ? "reached" : fmtH(hrs / 60), C.off_peak],
+    ];
+  }
+  _viewSealion7() {
+    const s = this._sl7(), name = "BYD Sealion 7";
+    const hero = s.configured ? `<section class="grid">
+      <div class="card evhero wide"><div class="stage">
+          <div class="carbox"><div class="carpic nophoto">${carSvg("hero")}</div>
+            <div class="cartop"><span class="carname">${esc(name)}</span><span class="ctr"><span id="sl7-state" class="pill"></span></span></div>
+            <div class="carbar"><div class="barbg"><i id="sl7-fill"></i><u id="sl7-mark"></u></div>
+              <div class="barlbl"><b id="sl7-big"></b><span id="sl7-sub" class="muted"></span></div></div></div>
+          <div class="evside"><div class="stats" id="sl7-stats"></div></div></div></div>
+      <div class="card w6"><h2>Decision <span id="sl7-mode" class="pill"></span></h2>
+        <div class="big" id="sl7-action"></div>
+        <div class="muted" id="sl7-reason" style="margin:4px 0 8px"></div>
+        <div id="sl7-warn"></div><div id="sl7-slow"></div>
+        <div class="muted" id="sl7-last" style="margin-top:8px"></div></div>
+      ${this._sl7ControlCard(s)}
+      ${this._sl7SensorCard(s)}
+    </section>` : `<section class="grid">
+      <div class="card wide"><h2>${esc(name)}</h2><div class="muted" style="margin:6px 0 12px">Set the sensors and charger entities below. AmpX stays in observe mode until you turn on control.</div></div>
+      ${this._sl7ControlCard(s)}${this._sl7SensorCard(s)}</section>`;
+    return hero;
+  }
+  _sl7ControlCard(s) {
+    const t = s.target ?? 80, mn = s.min_soc ?? 20, kwh = s.kwh ?? 40;
+    return `<div class="card w6"><h2>Control</h2>
+      <div class="row"><span>Mode</span><div class="seg"><button data-sl7mode="observe" class="${s.enabled ? "" : "on"}">Observe</button><button data-sl7mode="control" class="${s.enabled ? "on" : ""}">Control</button></div></div>
+      <div class="muted" style="margin:0 0 8px">Observe shows what AmpX would do. Control lets AmpX press the car's start and stop.</div>
+      <div class="row"><span>Charge to</span><b id="sl7-target-big">${t}%</b></div>
+      <input type="range" id="sl7-target" min="20" max="100" step="1" value="${t}" class="slider">
+      <div class="seg" style="margin:8px 0">${[60, 80, 90, 100].map(v => `<button data-sl7tgt="${v}">${v}%</button>`).join("")}</div>
+      <div class="row"><span>Never below</span><input type="number" id="sl7-min" min="0" max="50" step="1" value="${mn}" style="width:90px"></div>
+      <div class="row"><span>Battery size (kWh)</span><input type="number" id="sl7-kwh" min="10" max="120" step="0.5" value="${kwh}" style="width:90px"></div>
+      <div class="row"><span>Cheap window</span><input type="text" id="sl7-window" value="${esc(s.window || "10-14")}" style="width:90px"></div>
+      <div class="row"><span>Peak (no grid charging)</span><input type="text" id="sl7-peak" value="${esc(s.peak || "14-21")}" style="width:90px"></div>
+      <div class="seg" style="margin-top:8px"><button id="sl7-save">Save</button></div>
+      <div class="muted" id="sl7-msg" style="margin-top:6px"></div></div>`;
+  }
+  _sl7SensorCard(s) {
+    const labels = { ev_soc: "Battery level", ev_plug: "Plug", sl7_power: "Charging power", sl7_voltage: "Voltage",
+      sl7_current: "Current", sl7_charging: "Charging (on/off)", sl7_pure_range: "Pure EV range (km)",
+      sl7_total_range: "Total range (km)", sl7_fuel: "Fuel %", sl7_schedule: "Car's own schedule", ev_start_button: "Start charging", sl7_stop: "Stop charging" };
+    const e = s.entities || {};
+    return `<div class="card wide"><h2>Sensors and charger <span class="muted">entity IDs</span></h2>
+      <div class="muted" style="margin-bottom:8px">Missing: ${(s.missing || []).length ? esc(s.missing.join(", ")) : "none"}</div>
+      ${Object.keys(labels).map(k => `<div class="row"><span>${labels[k]}</span><input type="text" data-sl7ent="${k}" value="${esc(e[k] || "")}" placeholder="sensor.byd_sealion_7_…" style="width:min(340px,60vw)"></div>`).join("")}
+      <div class="seg" style="margin-top:8px"><button id="sl7-save-ents">Save sensors</button></div></div>`;
+  }
+  _paintSealion7() {
+    const q = s => this._root.querySelector(s); if (!q("#sl7-state")) return;
+    const s = this._sl7();
+    const state = s.charging ? "Charging" : s.plugged ? "Plugged in" : "Unplugged";
+    const pill = q("#sl7-state"); pill.textContent = state; pill.style.setProperty("--pc", s.charging ? C.shoulder : s.plugged ? C.off_peak : "#8a8279");
+    const mode = q("#sl7-mode"); mode.textContent = s.enabled ? "Control" : "Observe"; mode.style.setProperty("--pc", s.enabled ? C.shoulder : "#8a8279");
+    const soc = s.soc ?? 0, tgt = s.target ?? 80;
+    const fill = q("#sl7-fill"); fill.style.width = Math.max(0, Math.min(soc, 100)) + "%"; fill.style.backgroundColor = s.charging ? C.shoulder : C.ev;
+    q("#sl7-mark").style.left = tgt + "%";
+    q("#sl7-big").textContent = s.soc === null || s.soc === undefined ? "–" : Math.round(soc) + "%";
+    q("#sl7-sub").textContent = (s.needed_kwh !== null && s.needed_kwh !== undefined ? `${fx(s.needed_kwh, 1)} kWh to ${tgt}%` : `target ${tgt}%`) + (s.charging ? " · ⚡ charging" : "");
+    q("#sl7-stats").innerHTML = this._sl7Stats(s).map(([l, v, col]) => `<div class="stat" style="border-color:${col}"><span class="muted">${l}</span><b>${v}</b></div>`).join("");
+    q("#sl7-action").textContent = this._sl7Action(s);
+    q("#sl7-reason").textContent = s.reason || "";
+    q("#sl7-warn").innerHTML = (s.warnings || []).map(w => `<div class="row"><span class="bad">⚠ ${esc(w)}</span></div>`).join("");
+    q("#sl7-slow").innerHTML = s.slow_alert ? `<div class="row"><span class="bad">⚠ ${esc(s.slow_alert)}</span></div>` : "";
+    const la = s.last_action;
+    q("#sl7-last").textContent = la ? `Last: ${la.action} at ${new Date(la.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} (${la.result})` : "No action sent yet.";
+  }
+  _wireSealion7() {
+    const q = s => this._root.querySelector(s);
+    const slider = q("#sl7-target"), big = q("#sl7-target-big");
+    if (slider) {
+      slider.oninput = () => { big.textContent = slider.value + "%"; };
+      this._root.querySelectorAll("[data-sl7tgt]").forEach(b => b.onclick = () => { slider.value = b.dataset.sl7tgt; big.textContent = slider.value + "%"; });
+    }
+    this._root.querySelectorAll("[data-sl7mode]").forEach(b => b.onclick = () => {
+      const want = b.dataset.sl7mode === "control";
+      if (want && !confirm("Let AmpX press the car's start and stop charging buttons?")) return;
+      this._saveOpts({ sl7_enabled: want }, "#sl7-msg");
+    });
+    const save = q("#sl7-save");
+    if (save) save.onclick = () => this._saveOpts({
+      sl7_target: Number(q("#sl7-target").value), sl7_min: Number(q("#sl7-min").value),
+      sl7_kwh: Number(q("#sl7-kwh").value), sl7_window: q("#sl7-window").value.trim(), sl7_peak: q("#sl7-peak").value.trim(),
+    }, "#sl7-msg");
+    const ents = q("#sl7-save-ents");
+    if (ents) ents.onclick = () => {
+      const o = {}; this._root.querySelectorAll("[data-sl7ent]").forEach(i => { o[i.dataset.sl7ent] = i.value.trim(); });
+      this._saveOpts(o, "#sl7-msg");
+    };
   }
 
   _battWidgets() {

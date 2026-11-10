@@ -115,6 +115,22 @@ CONF_PHOTO_BATTERY = "photo_battery"
 CONF_PHOTO_BG = "photo_background"
 PHOTO_KINDS = {"ev": CONF_PHOTO_EV, "battery": CONF_PHOTO_BATTERY, "background": CONF_PHOTO_BG}
 CONF_EV_CHARGER_KW = "ev_charger_kw"
+# BYD Sealion 7 system (sealion7.py / sealion7_feature.py). SOC, plug and start reuse the EV keys above.
+CONF_SL7_ENABLED = "sl7_enabled"      # False = observe only (decisions shown, nothing sent to the car)
+CONF_SL7_TARGET = "sl7_target"
+CONF_SL7_MIN = "sl7_min"
+CONF_SL7_KWH = "sl7_kwh"
+CONF_SL7_WINDOW = "sl7_window"        # "10-14" grid-charge window
+CONF_SL7_PEAK = "sl7_peak"            # "14-21" never charge from grid
+CONF_SL7_POWER = "sl7_power"
+CONF_SL7_VOLTAGE = "sl7_voltage"
+CONF_SL7_CURRENT = "sl7_current"
+CONF_SL7_CHARGING = "sl7_charging"
+CONF_SL7_PURE_RANGE = "sl7_pure_range"
+CONF_SL7_TOTAL_RANGE = "sl7_total_range"
+CONF_SL7_FUEL = "sl7_fuel"
+CONF_SL7_SCHEDULE = "sl7_schedule"    # car's own scheduled charging switch/binary sensor
+CONF_SL7_STOP = "sl7_stop"            # button or switch that stops charging
 CONF_EFFICIENCY = "battery_efficiency"
 CONF_ST_DAY_CHARGE = "studio_day_charge"
 CONF_ST_DAY_DISCHARGE = "studio_day_discharge"
@@ -216,6 +232,21 @@ DEFAULTS: dict[str, object] = {
     CONF_BATTERY_KWH: 13.5,
     CONF_EV_KWH: 60.0,
     CONF_EV_CHARGER_KW: 7.0,
+    CONF_SL7_ENABLED: False,
+    CONF_SL7_TARGET: 80.0,
+    CONF_SL7_MIN: 20.0,
+    CONF_SL7_KWH: 40.0,
+    CONF_SL7_WINDOW: "10-14",
+    CONF_SL7_PEAK: "14-21",
+    CONF_SL7_POWER: "",
+    CONF_SL7_VOLTAGE: "",
+    CONF_SL7_CURRENT: "",
+    CONF_SL7_CHARGING: "",
+    CONF_SL7_PURE_RANGE: "",
+    CONF_SL7_TOTAL_RANGE: "",
+    CONF_SL7_FUEL: "",
+    CONF_SL7_SCHEDULE: "",
+    CONF_SL7_STOP: "",
     CONF_EFFICIENCY: 90.0,
     CONF_RESERVE: 20.0,
     CONF_LOW_SOLAR: 20.0,
