@@ -61,7 +61,7 @@ const TABS = [["now", "Now", "bolt"], ["energy", "Energy", "chart"], ["devices",
 // Second level: one home for each thing, so nothing is shown twice.
 const SUBS = {
   energy: [["today", "Today"], ["plan", "Plan"], ["history", "History"], ["compare", "Compare plans"]],
-  devices: [["battery", "Battery"], ["ev", "EV"], ["sealion7", "Sealion 7"], ["charger", "Charger"], ["all", "All devices"]],
+  devices: [["battery", "Battery"], ["ev", "EV"], ["charger", "Charger"], ["all", "All devices"]],
   assistant: [["memory", "Memory"], ["reminders", "Reminders"], ["routines", "Routines"], ["suggestions", "Suggestions"], ["tools", "Tools"]],
 };
 // Old tab names (links, saved state) and where they live now
@@ -95,7 +95,7 @@ class AmpXStudio extends HTMLElement {
       this._timer = setInterval(() => this._load(), 30000);
     } else if (this._data && Date.now() - (this._lastPaint || 0) > 1500) {
       this._lastPaint = Date.now();
-      ({ now: () => this._paintLive(), "devices/battery": () => this._battWidgets(), "devices/ev": () => this._paintEv(), "devices/sealion7": () => this._paintSealion7(), "devices/charger": () => this._paintWc(),
+      ({ now: () => this._paintLive(), "devices/battery": () => this._battWidgets(), "devices/ev": () => this._paintEv(), "devices/charger": () => this._paintWc(),
          "energy/today": () => this._paintVisuals() })[this._key()]?.();
     }
   }
@@ -348,7 +348,7 @@ class AmpXStudio extends HTMLElement {
     const views = {
       now: () => this._viewNow(), house: () => this._viewHouse(), settings: () => this._viewSettings(),
       "energy/today": () => this._viewToday(), "energy/plan": () => this._viewPlan(), "energy/history": () => this._viewAnalytics(), "energy/compare": () => this._viewCompare(),
-      "devices/battery": () => this._viewBattery(), "devices/ev": () => this._viewEv(), "devices/sealion7": () => this._viewSealion7(), "devices/charger": () => this._viewCharger(), "devices/all": () => this._viewDevices(),
+      "devices/battery": () => this._viewBattery(), "devices/ev": () => this._viewEv(), "devices/charger": () => this._viewCharger(), "devices/all": () => this._viewDevices(),
     };
     const sn = subs && this._tab !== "assistant" ? `<nav class="subnav" aria-label="${esc(this._tab)} sections">${subs.map(([s2, l]) => `<button data-sub="${s2}" class="${this._subOf(this._tab) === s2 ? "on" : ""}">${l}</button>`).join("")}</nav>` : "";
     view.innerHTML = sn + (this._tab === "assistant" ? this._viewAssistant() : views[k]());
@@ -364,7 +364,6 @@ class AmpXStudio extends HTMLElement {
       "energy/compare": () => { this._wirePlans(); if (this._en) this._paintCompare(); },
       "devices/battery": () => { this._battWidgets(); this._paintMore("battery"); this._wireCtl(); },
       "devices/ev": () => { this._wireEv(); this._paintEv(); },
-      "devices/sealion7": () => { this._wireSealion7(); this._paintSealion7(); },
       "devices/charger": () => this._paintWc(),
       "devices/all": () => { this._wireExtras(); this._loadDevices(); },
     };
@@ -760,7 +759,7 @@ class AmpXStudio extends HTMLElement {
   _sl7Action(s) {
     if (!s.action) return "Waiting for data";
     const lab = { start: "Start charging", stop: "Stop charging", hold: "Hold", none: "Unplugged" }[s.action] || s.action;
-    return s.enabled ? lab : "Would: " + lab.toLowerCase();
+    return s.enabled && !s.blocked ? lab : "Would: " + lab.toLowerCase();
   }
   _sl7Stats(s) {
     const hrs = s.minutes_to_target;
@@ -800,13 +799,14 @@ class AmpXStudio extends HTMLElement {
     return `<div class="card w6"><h2>Control</h2>
       <div class="row"><span>Mode</span><div class="seg"><button data-sl7mode="observe" class="${s.enabled ? "" : "on"}">Observe</button><button data-sl7mode="control" class="${s.enabled ? "on" : ""}">Control</button></div></div>
       <div class="muted" style="margin:0 0 8px">Observe shows what AmpX would do. Control lets AmpX press the car's start and stop.</div>
+      ${s.blocked ? `<div class="evnote">${icon("home")}<span>${s.blocked === "hermes" ? "Hermes is the decision engine, so AmpX presses nothing on the car." : "AmpX is in observe mode (Battery, Observe only), so nothing is sent to the car."}</span></div>` : ""}
       <div class="row"><span>Charge to</span><b id="sl7-target-big">${t}%</b></div>
       <input type="range" id="sl7-target" min="20" max="100" step="1" value="${t}" class="slider">
       <div class="seg" style="margin:8px 0">${[60, 80, 90, 100].map(v => `<button data-sl7tgt="${v}">${v}%</button>`).join("")}</div>
       <div class="row"><span>Never below</span><input type="number" id="sl7-min" min="0" max="50" step="1" value="${mn}" style="width:90px"></div>
       <div class="row"><span>Battery size (kWh)</span><input type="number" id="sl7-kwh" min="10" max="120" step="0.5" value="${kwh}" style="width:90px"></div>
-      <div class="row"><span>Cheap window</span><input type="text" id="sl7-window" value="${esc(s.window || "10-14")}" style="width:90px"></div>
-      <div class="row"><span>Peak (no grid charging)</span><input type="text" id="sl7-peak" value="${esc(s.peak || "14-21")}" style="width:90px"></div>
+      <div class="row"><span>Cheap window<span class="muted"> blank follows your tariff</span></span><input type="text" id="sl7-window" value="${esc(s.window || "")}" placeholder="${esc(s.window_now || "10-14")}" style="width:90px"></div>
+      <div class="row"><span>Peak, no grid charging<span class="muted"> blank follows your tariff</span></span><input type="text" id="sl7-peak" value="${esc(s.peak || "")}" placeholder="${esc(s.peak_now || "none today")}" style="width:90px"></div>
       <div class="seg" style="margin-top:8px"><button id="sl7-save">Save</button></div>
       <div class="muted" id="sl7-msg" style="margin-top:6px"></div></div>`;
   }
@@ -825,7 +825,8 @@ class AmpXStudio extends HTMLElement {
     const s = this._sl7();
     const state = s.charging ? "Charging" : s.plugged ? "Plugged in" : "Unplugged";
     const pill = q("#sl7-state"); pill.textContent = state; pill.style.setProperty("--pc", s.charging ? C.shoulder : s.plugged ? C.off_peak : "#8a8279");
-    const mode = q("#sl7-mode"); mode.textContent = s.enabled ? "Control" : "Observe"; mode.style.setProperty("--pc", s.enabled ? C.shoulder : "#8a8279");
+    const live = s.enabled && !s.blocked;
+    const mode = q("#sl7-mode"); mode.textContent = live ? "Control" : "Observe"; mode.style.setProperty("--pc", live ? C.shoulder : "#8a8279");
     const soc = s.soc ?? 0, tgt = s.target ?? 80;
     const fill = q("#sl7-fill"); fill.style.width = Math.max(0, Math.min(soc, 100)) + "%"; fill.style.backgroundColor = s.charging ? C.shoulder : C.ev;
     q("#sl7-mark").style.left = tgt + "%";
@@ -1031,11 +1032,29 @@ class AmpXStudio extends HTMLElement {
       B.cellT.length ? '<div class="card wide flat"><h2>Cell temperatures, 24 h (°C)</h2><div id="bt-tmp"></div></div>' : ""].join("");
     return `<section class="grid">
       ${this._ctlCards()}
+      ${this._journalCard()}
       <div class="card w4"><div class="chead"><h2>${esc(name)}</h2><button class="ghost" data-photo="battery" title="Upload a photo of your battery">${icon("camera")}</button></div><div data-bhost="house"></div></div>
       <div class="card w8"><h2>Charge level, 48 h (%)</h2><div id="bt-soc"></div></div>
       ${details ? `<details class="card wide more"><summary><b>Battery details</b><span class="muted">found on your battery and inverter devices</span></summary>
         <div class="grid inner">${details}</div></details>` : ""}
     </section>`;
+  }
+
+  /** Which rule of the decision ladder drove the battery, what it did and why. Newest first. */
+  _journalCard() {
+    const rows = (this._data.journal || []).slice(0, 12);
+    const RULE = { stale: "Readings stale", peak_guard: "Peak guard", ev_grid: "EV on grid", reserve: "Reserve", house_rule: "House rule",
+      export_cap: "No export", manual: "Manual", plan: "Day plan", autopilot: "Autopilot", self_consumption: "Self-consumption" };
+    const ACT = { hand_back: "Handed back to the inverter", stop_charge: "Stopped grid charging", house_only: "Battery on house only",
+      resume: "Back to normal", stop_discharge: "Stopped export", pause_ev: "Pause the EV", topup: "Grid top-up", export: "Export", hold: "Hold", none: "" };
+    const guard = ["stale", "peak_guard", "reserve", "house_rule", "export_cap"];
+    const col = r => guard.includes(r) ? C.off_peak : r === "self_consumption" ? "#8a8279" : C.shoulder;
+    const when = t => String(t || "").slice(5, 16).replace("T", " ");
+    const row = x => `<div class="row"><span><span class="pill" style="--pc:${col(x.rule)}">${esc(RULE[x.rule] || x.rule)}</span>
+        ${x.observe ? '<span class="pill">would</span>' : ""} <b>${esc(ACT[x.action] ?? x.action)}</b> <span class="muted">${esc(x.reason || "")}</span></span>
+      <span class="muted">${x.soc === null || x.soc === undefined ? "" : Math.round(x.soc) + "% · "}${esc(when(x.time))}</span></div>`;
+    return `<div class="card wide" id="journal"><h2>Decision journal <span class="muted">which rule drove the battery, and why</span></h2>
+      ${this._list(rows, row, "No decisions logged yet. The first appears within a minute.")}</div>`;
   }
 
   // ---- BATTERY CONTROL: automatic or manual ----------------------------
@@ -1048,7 +1067,7 @@ class AmpXStudio extends HTMLElement {
   _ctlCards() {
     const d = this._data, c = d.control; if (!c) return "";
     const mode = this._ctlMode(), manual = mode === "manual";
-    const MODES = [["manual", "✋", "Manual", "You decide. AmpX never starts or stops the battery."],
+    const MODES = [["manual", "✋", "Manual", "You decide. AmpX starts nothing. Peak, reserve and house rule limits still stop a dispatch."],
       ["timers", "⏱", "Timers", "Fixed windows: grid top-up in the shoulder, export in the evening."],
       ["advise", "💡", "Advise", "Autopilot plans each window and tells you. It takes no action."],
       ["auto", "🤖", "Autopilot", "Your local AI plans inside hard limits, then acts by itself."]];
@@ -1070,6 +1089,8 @@ class AmpXStudio extends HTMLElement {
       <div class="ctl2">
         <div><h3>Limits <span class="muted">used by timers, Autopilot and manual dispatch</span></h3>
           ${slider("export_kw", "Export power", 0.5, 10, 0.5, "kW")}${slider("export_floor", "Export floor, battery stops at", 10, 90, 1, "%")}${slider("topup_kw", "Top-up power", 0.5, 10, 0.5, "kW")}
+          <div class="evfirst"><label class="row"><span><b>Observe only</b><span class="muted">AmpX decides and logs every decision, but sends nothing to the battery or the car. Turn it off to let AmpX control them.</span></span>${this._toggle(`data-optobs="1"`, c.observe)}</label>
+            ${c.observe ? `<div class="evnote">${icon("home")}<span>Observe mode: nothing is sent. The decision journal below shows what AmpX would do.</span></div>` : ""}</div>
           <div class="evfirst"><div class="row"><span><b>Decision engine</b><span class="muted">AmpX decides and writes the battery and EV, or Hermes decides and writes; AmpX then only shows Hermes's decisions and suggests.</span></span><div class="seg"><button data-engine="ampx" class="${(c.decision_engine || "ampx") === "ampx" ? "on" : ""}">AmpX</button><button data-engine="hermes" class="${c.decision_engine === "hermes" ? "on" : ""}">Hermes</button></div></div>
             ${c.decision_engine === "hermes" ? `<div class="evnote">${icon("home")}<span>Hermes is in control. AmpX does not write battery or EV settings. The house rule is watched and you get an alert on a breach.</span></div>` : ""}</div>
           <div class="evfirst"><label class="row"><span><b>House rule</b><span class="muted">Outside ${wl(this._rates().sw)} the house never buys grid power: exports stop at what the house needs until then, and an off-peak EV charges from the grid while the battery covers only the house.</span></span>${this._toggle(`data-optrule="1"`, c.house_rule)}</label>
@@ -1117,6 +1138,10 @@ class AmpXStudio extends HTMLElement {
     r.querySelectorAll("[data-optb]").forEach(i => i.onchange = () => save({ autopilot_use_ai: i.checked }));
     r.querySelectorAll("[data-optev]").forEach(i => i.onchange = () => save({ ev_priority: i.checked }));
     r.querySelectorAll("[data-optrule]").forEach(i => i.onchange = () => save({ house_off_grid: i.checked }));
+    r.querySelectorAll("[data-optobs]").forEach(i => i.onchange = () => {
+      if (!i.checked && !confirm("Let AmpX send commands to the battery and the car?")) { i.checked = true; return; }
+      save({ observe_only: i.checked });
+    });
     r.querySelectorAll("[data-engine]").forEach(b => b.onclick = () => save({ decision_engine: b.dataset.engine }));
     const act = async (action, extra) => { msg("Sending…"); try { const x = await this._hass.callWS({ type: "ampx/action", action, ...extra }); msg(typeof x.result === "string" ? x.result : "Done"); } catch (e) { msg("Failed: " + (e.message || e.code), true); } setTimeout(() => this._load(), 1500); };
     const val = k => parseFloat((q(`[data-opt="${k}"]`) || {}).value);

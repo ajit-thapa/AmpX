@@ -25,6 +25,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_ENGINE,
+    CONF_OBSERVE,
     ENGINE_AMPX,
     ENGINE_HERMES,
     EVENT_SNAPSHOT,
@@ -59,12 +60,13 @@ from .const import (
     SIGNAL_UPDATE,
     STORAGE_VERSION,
 )
-from . import advisor
+from . import advisor, ladder
 from .autopilot import Autopilot
 from .backup import Backup
 from .briefing import Briefing
 from .energy import EnergyBrain
 from .heating import Heating
+from .journal import Journal
 from .learning import Learning
 from .motion_lights import MotionLights
 from .routines import Routines
@@ -108,6 +110,7 @@ class AmpX:
         self.speaker = Speaker(hass, self, self.gate)
         self.energy = EnergyBrain(hass, self)
         self.timeline = Timeline(self)
+        self.journal = Journal(self)
         self.routines = Routines(self)
         self.learning = Learning(self)
         self.motion_lights = MotionLights(self)
@@ -129,7 +132,7 @@ class AmpX:
     @property
     def features(self):
         return (
-            self.timeline, self.routines, self.learning, self.motion_lights,
+            self.timeline, self.journal, self.routines, self.learning, self.motion_lights,
             self.heating, self.security, self.visitors, self.briefing, self.backup, self.autopilot,
             self.sealion7,
         )
@@ -332,6 +335,10 @@ class AmpX:
         """True when Hermes makes the energy decisions: AmpX stops writing and forwards data."""
         return self.engine() == ENGINE_HERMES
 
+    def observe(self) -> bool:
+        """True when AmpX only watches: it decides and logs, but writes nothing to the battery or EV."""
+        return bool(self.opts.get(CONF_OBSERVE))
+
     def control_mode(self) -> str:
         mode = self.autopilot.mode
         if mode in ("auto", "shadow"):
@@ -533,7 +540,7 @@ class AmpX:
 
         async def top_start(_n: datetime) -> None:
             if o[CONF_AUTO_TOPUP] and not self.autopilot.controls:
-                await self.energy.start_topup()
+                await self.energy.start_topup(source=ladder.PLAN)
 
         async def top_stop(_n: datetime) -> None:
             if o[CONF_AUTO_TOPUP] and not self.autopilot.controls:
@@ -541,7 +548,7 @@ class AmpX:
 
         async def exp_start(_n: datetime) -> None:
             if o[CONF_AUTO_EXPORT] and not self.autopilot.controls:
-                await self.energy.start_export()
+                await self.energy.start_export(source=ladder.PLAN)
 
         async def exp_stop(_n: datetime) -> None:
             if o[CONF_AUTO_EXPORT] and not self.autopilot.controls:

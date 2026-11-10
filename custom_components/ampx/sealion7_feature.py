@@ -1,7 +1,9 @@
 """BYD Sealion 7 feature: reads the car and charger, runs sealion7.decide, optionally starts or stops charging.
 
 Observe mode (the default) only computes and shows decisions. Control mode also presses the
-start/stop entities. Logic lives in sealion7.py; this file only does Home Assistant I/O.
+start/stop entities, unless Hermes is the decision engine or AmpX as a whole is in observe mode.
+The cheap and peak windows follow the tariff unless set for the car. Logic lives in
+sealion7.py; this file only does Home Assistant I/O.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ from .const import (
     CONF_SL7_VOLTAGE,
     CONF_SL7_WINDOW,
 )
+from . import tariff
 from .feature import Feature
 from .sealion7 import (
     ACTION_START,
@@ -67,6 +70,11 @@ def parse_window(text: str, default: Window) -> Window:
     if not (0 <= a <= 24 and 0 <= b <= 24):
         return default
     return Window(a % 24, b % 24)
+
+
+def span(windows: tuple[Window, ...]) -> str:
+    """The window in effect as "10-14", or "" when there is none today."""
+    return f"{windows[0].start}-{windows[0].end}" if windows else ""
 
 
 class Sealion7Feature(Feature):
@@ -103,19 +111,30 @@ class Sealion7Feature(Feature):
     def enabled(self) -> bool:
         return bool(self.opts.get(CONF_SL7_ENABLED))
 
-    def config(self) -> Config:
-        o = self.opts
+    def blocked(self) -> str | None:
+        """Why AmpX may not press the car's buttons even in control mode."""
+        if self.brain.hermes():
+            return "hermes"
+        return "observe" if self.brain.observe() else None
+
+    def config(self, now: datetime | None = None) -> Config:
+        """Charging limits. Windows follow the tariff unless set here; a day without peak has no peak window."""
+        now = now or dt_util.now()
+        o, energy = self.opts, self.brain.energy
+        plan = energy.plan()
         try:
             target = float(o.get(CONF_SL7_TARGET) or 80)
             minimum = float(o.get(CONF_SL7_MIN) or 20)
             kwh = float(o.get(CONF_SL7_KWH) or 40)
         except (TypeError, ValueError):
             target, minimum, kwh = 80.0, 20.0, 40.0
+        peak = parse_window(o.get(CONF_SL7_PEAK), Window(*plan.peak_window))
+        peak_today = tariff.peak_day(now.date(), plan, energy.is_holiday(now.date()))
         return Config(
             target_soc=target,
             min_soc=minimum,
-            allowed=(parse_window(o.get(CONF_SL7_WINDOW), Window(10, 14)),),
-            peak=(parse_window(o.get(CONF_SL7_PEAK), Window(14, 21)),),
+            allowed=(parse_window(o.get(CONF_SL7_WINDOW), Window(*plan.shoulder_window)),),
+            peak=(peak,) if peak_today else (),
             kwh=kwh,
         )
 
@@ -175,7 +194,7 @@ class Sealion7Feature(Feature):
         if not self.opts.get(CONF_EV_SOC):
             self.decision, self.car = None, None
             return
-        car, cfg = self.read_car(), self.config()
+        car, cfg = self.read_car(), self.config(now)
         self.car = car
         self.decision = decide(car, now, cfg)
         self.slow_alert = self.watch.update(car, now, cfg)
@@ -183,7 +202,7 @@ class Sealion7Feature(Feature):
             self.brain.log("ev", self.slow_alert)
 
         action = self.decision.action
-        if action not in (ACTION_START, ACTION_STOP) or not self.enabled():
+        if action not in (ACTION_START, ACTION_STOP) or not self.enabled() or self.blocked():
             return
         if self._cool_until and now < self._cool_until:
             return
@@ -224,8 +243,11 @@ class Sealion7Feature(Feature):
             "target": cfg.target_soc,
             "min_soc": cfg.min_soc,
             "kwh": cfg.kwh,
-            "window": self.opts.get(CONF_SL7_WINDOW),
-            "peak": self.opts.get(CONF_SL7_PEAK),
+            "blocked": self.blocked(),
+            "window": self.opts.get(CONF_SL7_WINDOW) or "",  # the car's own override; blank follows the tariff
+            "peak": self.opts.get(CONF_SL7_PEAK) or "",
+            "window_now": span(cfg.allowed),
+            "peak_now": span(cfg.peak),
             "soc": soc,
             "plugged": car.plugged if car else False,
             "charging": car.charging if car else False,

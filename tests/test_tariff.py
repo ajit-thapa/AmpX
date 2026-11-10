@@ -56,3 +56,10 @@ def test_shortfall_and_storage():
 def test_schedule_rows():
     rows = t.schedule(date(2026, 11, 2), PLAN)
     assert len(rows) == 24 and rows[11][1] == 11.11 and rows[18][2] == 28.0
+
+
+def test_export_pays_only_at_the_best_feed_in_rate():
+    assert t.export_pays(at(3, 18), PLAN)  # 28c from 17:00 to 21:00
+    assert not t.export_pays(at(3, 12), PLAN)  # 3c
+    flat = t.Plan(fit_evening=5.0, fit_morning=5.0, fit_off_peak=5.0)
+    assert t.export_pays(at(3, 12), flat)  # a flat feed-in never blocks an export

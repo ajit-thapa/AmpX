@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
-from . import planner, tariff
+from . import ladder, planner, safety, tariff
 from .const import (
     CONF_ENGINE,
     ENGINE_AMPX,
@@ -19,6 +19,8 @@ from .const import (
     CONF_CYCLE_COST,
     CONF_EV_ENERGY,
     CONF_ST_DAY_LOAD,
+    CONF_ST_BATT,
+    CONF_ST_GRID,
     CONF_ST_DAY_PV,
     CONF_BATTERY_KWH,
     CONF_EV_PRIORITY,
@@ -72,6 +74,9 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 UNKNOWN = ("unknown", "unavailable", "none", "")
+OBSERVED = "observe only: nothing sent"
+SOURCE_GRACE_S = 180  # how long a just-started dispatch may take to show in the inverter's mode
+EDGE_S = 120  # after a tariff window changes, timers and Autopilot get this long to stop their own dispatch
 
 
 def hour(value: Any) -> int:
@@ -111,6 +116,12 @@ class EnergyBrain:
         self.profile: list[float] | None = None  # house kWh per hour of day, EV charging removed
         self.holidays: set[date] = set()  # public holidays for the next year, from the calendar
         self.plan_result: dict[str, Any] | None = None
+        self.watch = safety.FreezeWatch()
+        self.gate = safety.CommandGate()
+        self.verdict: ladder.Verdict | None = None  # the decision ladder's latest answer
+        self.dispatch_source: str | None = None  # who started the running dispatch: manual, plan or autopilot
+        self._source_at: datetime | None = None
+        self._house_only_at: datetime | None = None
 
     # ---- inputs ---------------------------------------------------------
     def plan(self) -> tariff.Plan:
@@ -414,7 +425,7 @@ class EnergyBrain:
         (default 200 W) so the inverter's own use never comes from the grid."""
         now = now or dt_util.now()
         o = self.brain.opts
-        if self.brain.hermes():
+        if self.brain.hermes() or self.brain.observe():
             return None
         if not o.get(CONF_EV_PRIORITY):
             return None
@@ -431,7 +442,9 @@ class EnergyBrain:
                                        self.plan(), self.house_kwh_day, self.supply_left(), self.profile)
         short = budget is not None and budget["house"] > budget["usable"]  # the house alone needs all that's left
         covered = self.supply_left() <= 0.004 or short
-        extra = float(o.get(CONF_EV_TRICKLE_KW) or 0.0) if covered else float(o[CONF_EXPORT_KW])
+        pays = tariff.export_pays(now, self.plan())
+        trickle = covered or not pays  # nothing worth exporting: just cover the EV and the house
+        extra = float(o.get(CONF_EV_TRICKLE_KW) or 0.0) if trickle else float(o[CONF_EXPORT_KW])
         want = round(min(float(o.get(CONF_BATT_MAX_KW) or 10.0), ev + home + extra), 1)
         if covered and not short and self.earned.get("covered") != self.earned["day"]:
             self.earned["covered"] = self.earned["day"]
@@ -442,16 +455,22 @@ class EnergyBrain:
         if short:
             self.ev_guard_note = (f"EV first: battery needed for the house until {budget['until']} "
                                   f"({budget['house']:.0f} kWh, {budget['usable']:.0f} kWh usable), so exporting only {extra * 1000:.0f} W.")
+        elif covered:
+            self.ev_guard_note = (f"EV first: supply charge covered. Battery {want:.1f} kW covers the EV ({ev:.1f} kW) and house, "
+                                  f"exporting about {extra * 1000:.0f} W.")
+        elif pays:
+            self.ev_guard_note = (f"EV first: battery {want:.1f} kW covers the EV ({ev:.1f} kW) and house, "
+                                  f"exporting the rest until ${self.supply_left():.2f} supply is covered.")
         else:
-            self.ev_guard_note = (
-                f"EV first: supply charge covered. Battery {want:.1f} kW covers the EV ({ev:.1f} kW) and house, "
-                f"exporting about {extra * 1000:.0f} W." if covered else
-                f"EV first: battery {want:.1f} kW covers the EV ({ev:.1f} kW) and house, "
-                f"exporting the rest until ${self.supply_left():.2f} supply is covered.")
+            self.ev_guard_note = (f"EV first: feed-in is low now. Battery {want:.1f} kW covers the EV ({ev:.1f} kW) and house, "
+                                  f"exporting about {extra * 1000:.0f} W.")
         power = self._num(CONF_POWER)
-        if power is None or abs(power - want) >= 0.1:
-            await self._set("number", "set_value", CONF_POWER, value=want)
-            return "trickle" if covered else "adjusted"
+        reason = "ev_first:trickle" if trickle else "ev_first:export"
+        # raising keeps the EV and house off the grid, so it never waits; lowering waits out the dwell
+        if self.gate.allow(power, want, now, reason, urgent=power is None or want > power):
+            if await self._set("number", "set_value", CONF_POWER, value=want):
+                self.gate.sent(now, reason)
+            return "trickle" if trickle else "adjusted"
         return "ok"
 
     async def _tell_once(self, key: str, msg: str) -> None:
@@ -479,80 +498,145 @@ class EnergyBrain:
             return "breach"
         return "ok"
 
-    async def house_guard(self, now: datetime | None = None) -> str | None:
-        """The house rule: outside the cheap window the house never buys grid power.
+    def stale_reason(self, now: datetime, forced: bool) -> str | None:
+        """Why the readings can't be trusted right now, or None.
 
-        * A forced export stops once the battery holds only what the house needs until the
-          next cheap window (any mode, manual included).
-        * While the EV charges off-peak and the battery has nothing to spare, AmpX runs the
-          battery at the house's load so the grid charges the car and the house stays on the
-          battery (only when AmpX controls the battery: timers or Autopilot).
-        * In peak the EV may not use the grid either: AmpX asks to pause it if the battery
-          can't cover both.
-        """
-        now = now or dt_util.now()
+        The battery level may sit on one value for hours, so only its absence counts. The grid
+        reading moves while a dispatch is forced, so there a stuck value counts too. A rounded
+        grid reading can sit still under an export limit, though, while a frozen meter link
+        freezes every reading: so when battery power is known, it must be stuck as well."""
         o = self.brain.opts
-        if self.brain.hermes():
-            return await self._watch_house(now)
-        if not o.get(CONF_HOUSE_RULE):
-            self.house_note = None
-            return await self._end_house_only() if self.house_only else None
-        plan = self.plan()
+        mins = self.watch.after_s // 60
+        if o.get(CONF_SOC):
+            self.watch.update("soc", self._num(CONF_SOC), now)
+            if self.watch.state("soc", now, may_hold=True):
+                return f"battery level missing for {mins} min"
+        if not (forced and o.get(CONF_ST_GRID)):
+            self.watch.clear("grid")
+            self.watch.clear("batt")
+            return None
+        self.watch.update("grid", self._num(CONF_ST_GRID), now)
+        grid = self.watch.state("grid", now)
+        if o.get(CONF_ST_BATT):
+            self.watch.update("batt", self._num(CONF_ST_BATT), now)
+            if grid == "stuck" and self.watch.state("batt", now) is None:
+                return None
+        return f"grid reading {grid} for {mins} min" if grid else None
+
+    def ladder_inputs(self, now: datetime) -> tuple[ladder.Inputs, dict[str, Any]]:
+        """Facts for the decision ladder, plus the numbers its actions need."""
+        o, plan = self.brain.opts, self.plan()
         mode_id = o.get(CONF_MODE)
         state = self.hass.states.get(mode_id) if mode_id else None
         mode = state.state if state else None
-        cheap = tariff._in(now.hour, plan.shoulder_window)
-        per = tariff.period(now, plan, self.is_holiday(now.date()))
-        need = self.house_needs(now)["until_cheap"] or 0.0
+        forced = mode in (ladder.CHARGE, ladder.DISCHARGE)
+        if not forced and self._source_at and (now - self._source_at).total_seconds() > SOURCE_GRACE_S:
+            self.dispatch_source = None  # the dispatch ended on its own
         soc = self._num(CONF_SOC)
         cap, res = float(o[CONF_BATTERY_KWH]), float(o[CONF_RESERVE])
+        need = self.house_needs(now)["until_cheap"] or 0.0
         usable = None if soc is None else max(soc - res, 0.0) / 100 * cap
-        spare = None if usable is None else usable - need
         live = self.brain.live_flows()
-        ev, home = live["ev"], max(live["load"] - live["ev"], 0.0)
+        held = (now - self._house_only_at).total_seconds() if self._house_only_at else float("inf")
+        period, pays = tariff.period(now, plan, self.is_holiday(now.date())), tariff.export_pays(now, plan)
+        before = now - timedelta(seconds=EDGE_S)
+        edge = (period != tariff.period(before, plan, self.is_holiday(before.date()))
+                or pays != tariff.export_pays(before, plan))
+        inputs = ladder.Inputs(
+            stale=self.stale_reason(now, forced or self.house_only),
+            period=period,
+            mode=mode, soc=soc, reserve=res, house_rule=bool(o.get(CONF_HOUSE_RULE)),
+            spare_kwh=None if usable is None else usable - need,
+            ev_kw=live["ev"], acting=self.brain.control_mode() in ("auto", "timers"),
+            house_only=self.house_only, held_s=held,
+            export_pays=pays, source=self.dispatch_source, edge=edge,
+        )
+        return inputs, {"plan": plan, "need": need, "res": res, "ev": live["ev"], "home": max(live["load"] - live["ev"], 0.0)}
+
+    async def house_guard(self, now: datetime | None = None) -> str | None:
+        """Run the decision ladder once and carry out its verdict. Called every minute.
+
+        The rules and their order live in ladder.py: stale readings hand the battery back, peak
+        never charges it from the grid, an EV on the off-peak grid leaves the battery covering only
+        the house, a forced export stops at the reserve and at the house's share, and nothing is
+        exported while feed-in is low. Every verdict goes to the journal when it changes.
+
+        Under Hermes AmpX only watches the house rule. In observe mode the verdict is logged and
+        nothing is sent."""
+        now = now or dt_util.now()
+        if self.brain.hermes():
+            return await self._watch_house(now)
+        inputs, ctx = self.ladder_inputs(now)
+        verdict = self.verdict = ladder.evaluate(inputs)
+        writes = verdict.action in ladder.WRITES
+        observe = self.brain.observe()
+        self.brain.journal.note(verdict, now, soc=inputs.soc, mode=inputs.mode, observe=observe and writes)
         self.house_note = None
-        if cheap or spare is None:
-            return await self._end_house_only() if self.house_only else None
+        if observe:
+            return "observed" if writes else None
+        return await self._carry_out(verdict, ctx, now)
 
-        # 1. a forced export must leave the house's share in the battery
-        if mode == "Force Discharge" and not self.house_only and spare <= 0.5:
-            await self.stop(only_mode="Force Discharge")
+    async def _carry_out(self, v: ladder.Verdict, ctx: dict[str, Any], now: datetime) -> str | None:
+        cheap = f"{ctx['plan'].shoulder_window[0]:02d}:00"
+        if v.action == ladder.HAND_BACK:
+            self.house_only, self._house_only_at, self.ev_guard_note = False, None, None
+            await self.stop()
+            await self._tell_once("stale", f"Battery handed back to the inverter: {v.reason}.")
+            return "handed_back"
+        if v.action == ladder.STOP_CHARGE:
+            await self.stop(only_mode=ladder.CHARGE)
+            await self._tell_once("peak_charge", "Grid charging stopped: it is peak rate.")
+            return "charge_stopped"
+        if v.action == ladder.HOUSE_ONLY:
+            return await self._run_house_only(now, ctx)
+        if v.action == ladder.RESUME:
+            return await self._end_house_only()
+        if v.action == ladder.STOP_DISCHARGE:
+            await self.stop(only_mode=ladder.DISCHARGE)
             self.ev_guard_note = None
-            await self._tell_once("export", f"Export stopped: the battery keeps {need:.0f} kWh for the house until "
-                                            f"{plan.shoulder_window[0]:02d}:00, so the house won't buy grid power.")
+            if v.rule == ladder.EXPORT_CAP:
+                await self._tell_once("export_cap", "Export stopped: feed-in is low now, so the battery only covers the house.")
+                return "export_capped"
+            if v.rule == ladder.RESERVE:
+                await self._tell_once("reserve", f"Export stopped: battery at the {ctx['res']:.0f}% reserve.")
+            else:
+                await self._tell_once("export", f"Export stopped: the battery keeps {ctx['need']:.0f} kWh for the house until "
+                                                f"{cheap}, so the house won't buy grid power.")
             return "export_stopped"
-
-        acting = self.brain.control_mode() in ("auto", "timers")
-        # 2. EV charging off-peak with nothing to spare: battery for the house, grid for the car
-        if self.house_only or (ev >= 0.5 and per != tariff.PEAK and spare <= 0.5 and acting and mode in (None, "Normal")):
-            if ev < 0.3 or per == tariff.PEAK or not acting:
-                return await self._end_house_only()
-            want = round(min(float(o.get(CONF_BATT_MAX_KW) or 10.0), home + float(o.get(CONF_EV_TRICKLE_KW) or 0.0)), 1)
-            if not self.house_only:
-                await self._set("number", "set_value", CONF_DURATION, value=240)
-                await self._set("number", "set_value", CONF_DISCHARGE_TARGET, value=res)
-                await self._set("number", "set_value", CONF_POWER, value=want)
-                if not await self._set("select", "select_option", CONF_MODE, option="Force Discharge"):
-                    return "failed"
-                self.house_only = True
-                self.brain.log("energy", f"house rule: battery covers the house ({want:.1f} kW), grid charges the EV")
-            elif abs((self._num(CONF_POWER) or 0.0) - want) >= 0.1:
-                await self._set("number", "set_value", CONF_POWER, value=want)
-            self.house_note = (f"House rule: the battery covers only the house ({home:.1f} kW); the EV ({ev:.1f} kW) "
-                               f"charges from the off-peak grid so the battery keeps {need:.0f} kWh for the house.")
-            return "house_only"
-
-        # 3. peak: no grid for the EV either
-        if ev >= 0.5 and per == tariff.PEAK and spare - ev * 0.5 < 0:
-            self.house_note = f"Peak: the battery can't carry the EV ({ev:.1f} kW) and the house until {plan.shoulder_window[0]:02d}:00. Pause the EV."
+        if v.action == ladder.PAUSE_EV:
+            self.house_note = f"Peak: the battery can't carry the EV ({ctx['ev']:.1f} kW) and the house until {cheap}. Pause the EV."
             await self._tell_once("peak_ev", self.house_note)
             return "pause_ev"
         return None
 
+    async def _run_house_only(self, now: datetime, ctx: dict[str, Any]) -> str:
+        """Battery at the house's load, so the grid feeds only the EV."""
+        o = self.brain.opts
+        home, ev = ctx["home"], ctx["ev"]
+        want = round(min(float(o.get(CONF_BATT_MAX_KW) or 10.0), home + float(o.get(CONF_EV_TRICKLE_KW) or 0.0)), 1)
+        if not self.house_only:
+            await self._set("number", "set_value", CONF_DURATION, value=240)
+            await self._set("number", "set_value", CONF_DISCHARGE_TARGET, value=ctx["res"])
+            await self._set("number", "set_value", CONF_POWER, value=want)
+            if not await self._set("select", "select_option", CONF_MODE, option=ladder.DISCHARGE):
+                return "failed"
+            self.house_only, self._house_only_at = True, now
+            self.gate.sent(now, "house_only")
+            self.brain.log("energy", f"house rule: battery covers the house ({want:.1f} kW), grid charges the EV")
+        else:
+            current = self._num(CONF_POWER)
+            # raising keeps the house off the grid, so it never waits; lowering waits out the dwell
+            if self.gate.allow(current, want, now, "house_only", urgent=current is None or want > current):
+                if await self._set("number", "set_value", CONF_POWER, value=want):
+                    self.gate.sent(now, "house_only")
+        self.house_note = (f"House rule: the battery covers only the house ({home:.1f} kW); the EV ({ev:.1f} kW) "
+                           f"charges from the off-peak grid so the battery keeps {ctx['need']:.0f} kWh for the house.")
+        return "house_only"
+
     async def _end_house_only(self) -> str:
-        self.house_only = False
+        self.house_only, self._house_only_at = False, None
         self.house_note = None
-        await self.stop(only_mode="Force Discharge")
+        await self.stop(only_mode=ladder.DISCHARGE)
         self.brain.log("energy", "house rule: battery back to normal")
         return "ended"
 
@@ -560,6 +644,9 @@ class EnergyBrain:
     async def _set(self, domain: str, service: str, key: str, **data: Any) -> bool:
         if self.brain.hermes():  # Hermes decides and writes; AmpX only shows and suggests
             _LOGGER.debug("Decision engine is Hermes: not writing %s.%s", domain, service)
+            return False
+        if self.brain.observe():
+            _LOGGER.debug("Observe mode: not writing %s.%s", domain, service)
             return False
         entity_id = self.brain.opts.get(key)
         if not entity_id:
@@ -574,7 +661,7 @@ class EnergyBrain:
         return True
 
     async def start_topup(
-        self, force: bool = False, kw: float | None = None, target: float | None = None
+        self, force: bool = False, kw: float | None = None, target: float | None = None, source: str = ladder.MANUAL
     ) -> str:
         """Charge the battery from the grid during the cheap shoulder window."""
         snap = self.snapshot()
@@ -597,12 +684,14 @@ class EnergyBrain:
                 title="AmpX energy",
             )
         if ok:
+            self.dispatch_source, self._source_at = source, dt_util.now()
             self.brain.record("energy_actions")
             self.brain.log("energy", "battery action started")
-        return "started" if ok else "failed"
+            return "started"
+        return OBSERVED if self.brain.observe() else "failed"
 
     async def start_export(
-        self, force: bool = False, kw: float | None = None, floor: float | None = None
+        self, force: bool = False, kw: float | None = None, floor: float | None = None, source: str = ladder.MANUAL
     ) -> str:
         """Discharge to the grid during the evening feed-in window."""
         o = self.brain.opts
@@ -630,9 +719,11 @@ class EnergyBrain:
                 f"Evening export started at {plan.fit_evening:g}c/kWh.", title="AmpX energy"
             )
         if ok:
+            self.dispatch_source, self._source_at = source, dt_util.now()
             self.brain.record("energy_actions")
             self.brain.log("energy", "battery action started")
-        return "started" if ok else "failed"
+            return "started"
+        return OBSERVED if self.brain.observe() else "failed"
 
     async def stop(self, only_mode: str | None = None) -> str:
         """Stop forced dispatch (optionally only when currently in ``only_mode``)."""
@@ -641,8 +732,9 @@ class EnergyBrain:
         if only_mode and (state is None or state.state != only_mode):
             return "skipped: not in that mode"
         await self._set("button", "press", CONF_STOP)
-        await self._set("select", "select_option", CONF_MODE, option="Normal")
-        return "stopped"
+        if await self._set("select", "select_option", CONF_MODE, option=ladder.NORMAL):
+            self.dispatch_source, self._source_at = None, None
+        return OBSERVED if self.brain.observe() else "stopped"
 
     async def ev_plugged_in(self, window: tuple[int, int]) -> str:
         """Gate EV charging to the cheap window."""

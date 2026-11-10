@@ -145,6 +145,7 @@ async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
                 "cameras": sorted(s.entity_id for s in hass.states.async_all("camera")),
             },
             "timeline": list(brain.timeline.items)[:30],
+            "journal": list(brain.journal.items)[:30],
             "week": brain.timeline.week(),
             "security": brain.security.check(),
             "backups": await brain.backup.list(),
@@ -175,6 +176,8 @@ async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
                 "mode_entity": brain.opts.get("dispatch_mode"),
                 "ev_priority": bool(brain.opts.get(CONF_EV_PRIORITY)),
                 "house_rule": bool(brain.opts.get(CONF_HOUSE_RULE)),
+                "decision_engine": brain.engine(),
+                "observe": brain.observe(),
                 "batt_max_kw": float(brain.opts.get(CONF_BATT_MAX_KW) or 10),
                 "ev_trickle_kw": float(brain.opts.get(CONF_EV_TRICKLE_KW) or 0),
             },
@@ -281,6 +284,7 @@ CONTROL_OPTIONS = {
     CONF_EV_PRIORITY: bool,
     CONF_HOUSE_RULE: bool,
     CONF_ENGINE: vol.In((ENGINE_AMPX, ENGINE_HERMES)),
+    CONF_OBSERVE: vol.Schema(bool),  # a real true/false only: this switch decides whether AmpX writes at all
     CONF_EV_TRICKLE_KW: vol.All(vol.Coerce(float), vol.Range(min=0, max=2)),
     CONF_BATT_MAX_KW: vol.All(vol.Coerce(float), vol.Range(min=1, max=50)),
     CONF_AS_NOTES: vol.All(str, vol.Length(max=600)),
@@ -288,8 +292,8 @@ CONTROL_OPTIONS = {
     CONF_SL7_TARGET: vol.All(vol.Coerce(float), vol.Range(min=20, max=100)),
     CONF_SL7_MIN: vol.All(vol.Coerce(float), vol.Range(min=0, max=50)),
     CONF_SL7_KWH: vol.All(vol.Coerce(float), vol.Range(min=10, max=120)),
-    CONF_SL7_WINDOW: vol.Match(r"^\s*\d{1,2}\s*-\s*\d{1,2}\s*$"),
-    CONF_SL7_PEAK: vol.Match(r"^\s*\d{1,2}\s*-\s*\d{1,2}\s*$"),
+    CONF_SL7_WINDOW: vol.Any("", vol.Match(r"^\s*\d{1,2}\s*-\s*\d{1,2}\s*$")),  # blank: follow the tariff
+    CONF_SL7_PEAK: vol.Any("", vol.Match(r"^\s*\d{1,2}\s*-\s*\d{1,2}\s*$")),
     **{k: vol.All(str, vol.Length(max=120)) for k in (
         CONF_SL7_POWER, CONF_SL7_VOLTAGE, CONF_SL7_CURRENT, CONF_SL7_CHARGING, CONF_SL7_PURE_RANGE,
         CONF_SL7_TOTAL_RANGE, CONF_SL7_FUEL, CONF_SL7_SCHEDULE, CONF_SL7_STOP, CONF_EV_SOC, CONF_EV_PLUG, CONF_EV_START)},

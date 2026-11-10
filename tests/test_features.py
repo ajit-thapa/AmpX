@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+from freezegun import freeze_time
 
 from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
@@ -124,6 +125,9 @@ async def test_security_check(hass: HomeAssistant):
     assert len(out["issues"]) == 2
 
 
+# A fixed night instant, so the night window and the alert don't depend on the wall clock
+# (the test flaked near local midnight when real "now" fell in the window's dead second).
+@freeze_time("2026-11-10 02:00:00")
 async def test_night_watch_alerts_at_night_only(hass: HomeAssistant):
     pushes = async_mock_service(hass, "notify", "send_message")
     hass.states.async_set("notify.iphone_2", "unknown")
@@ -134,6 +138,7 @@ async def test_night_watch_alerts_at_night_only(hass: HomeAssistant):
     assert len(pushes) == 1 and "Bedroom window" in pushes[0].data["message"]
 
 
+@freeze_time("2026-11-10 12:00:00")
 async def test_night_watch_quiet_in_daytime(hass: HomeAssistant):
     pushes = async_mock_service(hass, "notify", "send_message")
     hass.states.async_set("notify.iphone_2", "unknown")
@@ -210,7 +215,9 @@ async def test_heating_prewarm(hass: HomeAssistant):
     modes = async_mock_service(hass, "climate", "set_hvac_mode")
     temps = async_mock_service(hass, "climate", "set_temperature")
     brain = await _setup(hass)
-    now = dt_util.now()
+    # A fixed mid-morning time, so "ready 30 min from now" never wraps past midnight (test was
+    # flaky in the hour before UTC midnight, when now+30 min rolled to an early hour in the past).
+    now = dt_util.now().replace(hour=6, minute=0, second=0, microsecond=0)
     ready = (now + timedelta(minutes=30)).strftime("%H:%M")
     hass.states.async_set("climate.lounge", "off", {"current_temperature": 18})
     brain.heating.save({"name": "lounge", "climate": "climate.lounge", "target": 21, "ready_by": ready, "rate": 0.05})
@@ -573,9 +580,11 @@ async def test_house_rule_guard(hass: HomeAssistant):
     assert hass.states.get(mode).state == "Force Discharge" and brain.energy.house_only
     assert ("number", "set_value", {"entity_id": LEGACY["dispatch_power"], "value": 1.2}) in sent  # 1 kW house + 200 W
     assert await brain.energy.ev_guard(now) is None  # EV-first does not take over
-    # EV done: back to normal
+    # EV done: the battery holds house-only through a short dip, then goes back to normal
     hass.states.async_set(LEGACY["studio_ev"], "0", {"unit_of_measurement": "kW"})
-    assert await brain.energy.house_guard(now) == "ended" and hass.states.get(mode).state == "Normal"
+    assert await brain.energy.house_guard(now) == "house_only"
+    later = now + timedelta(minutes=6)
+    assert await brain.energy.house_guard(later) == "ended" and hass.states.get(mode).state == "Normal"
     # inside the cheap window the rule does nothing
     assert await brain.energy.house_guard(now.replace(hour=11)) is None
 

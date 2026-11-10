@@ -21,7 +21,7 @@ PLATFORMS = ["sensor"]
 PANEL_URL = "ampx"
 FRONTEND_PATH = f"/{DOMAIN}_static"
 FILES_PATH = f"/{DOMAIN}_files"  # photos uploaded from the panel, kept in <config>/ampx
-FRONTEND_VERSION = "0.23.0"  # cache-buster for the panel scripts
+FRONTEND_VERSION = "0.24.0"  # cache-buster for the panel scripts
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:

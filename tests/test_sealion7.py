@@ -16,6 +16,7 @@ ACTION_HOLD, ACTION_NONE, ACTION_START, ACTION_STOP = (
 )
 CarState, SlowChargeWatch, decide = _mod.CarState, _mod.SlowChargeWatch, _mod.decide
 energy_needed_kwh, time_to_target_min = _mod.energy_needed_kwh, _mod.time_to_target_min
+Config, Window = _mod.Config, _mod.Window
 
 def at(hour, minute=0):
     return datetime(2026, 11, 10, hour, minute)
@@ -39,9 +40,18 @@ def test_never_starts_in_peak():
 def test_waits_outside_window_overnight():
     assert decide(car(soc=60), at(2)).action == ACTION_HOLD
 
-def test_min_soc_overrides_window():
+def test_below_minimum_charges_off_peak_but_never_in_peak():
+    assert decide(car(soc=10), at(2)).action == ACTION_START
     d = decide(car(soc=10), at(15))
-    assert d.action == ACTION_START  # car safety (min_soc) beats peak pause
+    assert d.action == ACTION_HOLD and "peak" in d.reason
+    assert decide(car(soc=10, charging=True), at(15)).action == ACTION_STOP
+
+
+def test_a_day_without_peak_has_no_peak_pause():
+    weekend = Config(peak=())
+    assert decide(car(), at(15), weekend).reason == "outside cheap window, waiting"
+    assert decide(car(soc=10), at(15), weekend).action == ACTION_START
+
 
 def test_stops_at_target():
     assert decide(car(soc=80, charging=True), at(11)).action == ACTION_STOP

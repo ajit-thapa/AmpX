@@ -152,6 +152,7 @@
       "autopilot": {
         "title": "Autopilot",
         "data": {
+          "observe_only": "Observe only (AmpX decides and logs, but sends nothing to the battery or EV)",
           "autopilot_mode": "Mode",
           "autopilot_planner": "Follow the 48-hour plan (off = plan is shown only)",
           "cycle_cost_c": "Battery wear cost per kWh discharged",
@@ -255,6 +256,21 @@
       },
       "last_event": {
         "name": "Last event"
+      },
+      "decision": {
+        "name": "Decision",
+        "state": {
+          "stale": "Readings stale",
+          "peak_guard": "Peak guard",
+          "ev_grid": "EV on grid",
+          "reserve": "Reserve",
+          "house_rule": "House rule",
+          "export_cap": "No export",
+          "manual": "Manual",
+          "plan": "Day plan",
+          "autopilot": "Autopilot",
+          "self_consumption": "Self-consumption"
+        }
       },
       "battery_plan": {
         "name": "Battery plan"

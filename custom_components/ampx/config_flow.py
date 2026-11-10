@@ -13,6 +13,7 @@ from homeassistant.helpers import selector as sel
 
 from .const import *  # noqa: F403 - option keys
 from .const import DEFAULTS, DOMAIN
+from .migrate import SCHEMA
 
 
 def _entity(*domains: str, multiple: bool = False) -> sel.EntitySelector:
@@ -61,6 +62,7 @@ SECTIONS: dict[str, dict[str, Any]] = {
         CONF_HEALTH_IGNORE: sel.EntitySelector(sel.EntitySelectorConfig(multiple=True)),
     },
     "autopilot": {
+        CONF_OBSERVE: sel.BooleanSelector(),
         CONF_AP_MODE: sel.SelectSelector(
             sel.SelectSelectorConfig(options=AP_MODES, mode=sel.SelectSelectorMode.LIST, translation_key="autopilot_mode")
         ),
@@ -199,7 +201,7 @@ class AmpXConfigFlow(ConfigFlow, domain=DOMAIN):
         if self._async_current_entries():
             return self.async_abort(reason="single_instance_allowed")
         if user_input is not None:
-            return self.async_create_entry(title=user_input[CONF_NAME], data={"schema": 2}, options=DEFAULTS)
+            return self.async_create_entry(title=user_input[CONF_NAME], data={"schema": SCHEMA}, options=DEFAULTS)
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({vol.Required(CONF_NAME, default="AmpX"): str}),

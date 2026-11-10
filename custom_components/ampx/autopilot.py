@@ -11,7 +11,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_point_in_time, async_track_time_change
 from homeassistant.util import dt as dt_util
 
-from . import autopilot_rules as rules
+from . import autopilot_rules as rules, ladder
 from .const import (
     AP_MODES,
     CONF_AP_LLM,
@@ -205,6 +205,9 @@ class Autopilot(Feature):
             decision["result"] = "no action"
         self.decisions.append(decision)
         text = rules.describe(decision)
+        rule = ladder.PLAN if decision.get("source") == "plan" else ladder.AUTOPILOT
+        action = (ladder.TOPUP if window == rules.TOPUP else ladder.EXPORT) if decision["do"] else ladder.HOLD
+        brain.journal.add(rule, action, text, soc=ctx.get("soc"), observe=decision["do"] and decision["result"] != "started")
         brain.log("autopilot", f"[{decision['source']}/{decision['result']}] {text}")
         brain.record("autopilot_decisions")
         brain.save()
@@ -229,11 +232,12 @@ class Autopilot(Feature):
 
     async def _act(self, d: dict[str, Any]) -> str:
         energy, cap = self.brain.energy, float(self.brain.opts[CONF_BATTERY_KWH])
+        source = ladder.PLAN if d.get("source") == "plan" else ladder.AUTOPILOT
         if d["window"] == rules.TOPUP:
-            result = await energy.start_topup(True, d["kw"], d["target_soc"])
+            result = await energy.start_topup(True, d["kw"], d["target_soc"], source=source)
             mode = "Force Charge"
         else:
-            result = await energy.start_export(True, d["kw"], d["floor_soc"])
+            result = await energy.start_export(True, d["kw"], d["floor_soc"], source=source)
             mode = "Force Discharge"
         if result == "started":
             self.active = {"mode": mode, "soc0": d.get("soc"), "cap": cap, "window": d["window"], "at": d["time"]}
