@@ -92,6 +92,7 @@ CONF_TOPUP_KW = "topup_kw"
 CONF_EXPORT_KW = "export_kw"
 CONF_EXPORT_MIN_SOC = "export_min_soc"
 CONF_ENGINE = "decision_engine"  # ampx | hermes: who makes energy decisions
+CONF_OBSERVE = "observe_only"  # AmpX decides and logs, but sends nothing to the battery or EV
 ENGINE_AMPX = "ampx"
 ENGINE_HERMES = "hermes"
 EVENT_SNAPSHOT = "ampx_energy_snapshot"  # fired every refresh when Hermes decides
@@ -255,6 +256,7 @@ DEFAULTS: dict[str, object] = {
     CONF_EXPORT_MIN_SOC: 35.0,
     CONF_HOUSE_RULE: True,
     CONF_ENGINE: ENGINE_AMPX,
+    CONF_OBSERVE: True,
     CONF_EV_PRIORITY: True,
     CONF_BATT_MAX_KW: 5.0,
     CONF_EV_TRICKLE_KW: 0.2,

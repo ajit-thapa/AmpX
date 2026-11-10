@@ -4,6 +4,9 @@ Versions up to 0.20 shipped with one home's entity ids, names and rates as defau
 the panel read a few of that home's sensors directly. Those values are copied into the
 entry's options once, only where the entry has no value of its own, so nothing changes
 for that install. New installs start blank.
+
+From 0.24 new installs also start in observe mode (AmpX decides and logs but sends nothing).
+An install from before that keeps controlling its battery: observe mode is switched off for it once.
 """
 
 from __future__ import annotations
@@ -13,7 +16,9 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-SCHEMA = 2  # entry.data["schema"]
+from .const import CONF_OBSERVE
+
+SCHEMA = 3  # entry.data["schema"]: 2 = blank defaults (0.21), 3 = observe mode (0.24)
 
 _N = "sensor.neovolt_online_"
 LEGACY: dict[str, Any] = {
@@ -85,17 +90,21 @@ _FILL_IF_BLANK = {"weather_entity": "weather.forecast_ingleburn"}
 
 def upgrade(options: dict[str, Any], data: dict[str, Any]) -> dict[str, Any] | None:
     """New options for an entry from before ``SCHEMA``, or None when nothing is needed."""
-    if data.get("schema", 1) >= SCHEMA:
+    have = data.get("schema", 1)
+    if have >= SCHEMA:
         return None
     out = dict(options)
-    for key, value in LEGACY.items():
-        if key not in out:
-            out[key] = value
-    if out.get("studio_ev") == "sensor.tesla_wall_connector_ev_charger":
-        out["studio_ev"] = "sensor.tesla_wall_connector_total_power"
-    for key, value in _FILL_IF_BLANK.items():
-        if not out.get(key):
-            out[key] = value
+    if have < 2:
+        for key, value in LEGACY.items():
+            if key not in out:
+                out[key] = value
+        if out.get("studio_ev") == "sensor.tesla_wall_connector_ev_charger":
+            out["studio_ev"] = "sensor.tesla_wall_connector_total_power"
+        for key, value in _FILL_IF_BLANK.items():
+            if not out.get(key):
+                out[key] = value
+    if have < 3:
+        out[CONF_OBSERVE] = False  # an install from before observe mode keeps controlling the battery
     return out
 
 

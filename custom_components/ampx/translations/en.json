@@ -152,6 +152,7 @@
       "autopilot": {
         "title": "Autopilot",
         "data": {
+          "observe_only": "Observe only (AmpX decides and logs, but sends nothing to the battery or EV)",
           "autopilot_mode": "Mode",
           "autopilot_planner": "Follow the 48-hour plan (off = plan is shown only)",
           "cycle_cost_c": "Battery wear cost per kWh discharged",

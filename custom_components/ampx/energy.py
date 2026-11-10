@@ -72,6 +72,7 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 UNKNOWN = ("unknown", "unavailable", "none", "")
+OBSERVED = "observe only: nothing sent"
 
 
 def hour(value: Any) -> int:
@@ -561,6 +562,9 @@ class EnergyBrain:
         if self.brain.hermes():  # Hermes decides and writes; AmpX only shows and suggests
             _LOGGER.debug("Decision engine is Hermes: not writing %s.%s", domain, service)
             return False
+        if self.brain.observe():
+            _LOGGER.debug("Observe mode: not writing %s.%s", domain, service)
+            return False
         entity_id = self.brain.opts.get(key)
         if not entity_id:
             return False
@@ -599,7 +603,8 @@ class EnergyBrain:
         if ok:
             self.brain.record("energy_actions")
             self.brain.log("energy", "battery action started")
-        return "started" if ok else "failed"
+            return "started"
+        return OBSERVED if self.brain.observe() else "failed"
 
     async def start_export(
         self, force: bool = False, kw: float | None = None, floor: float | None = None
@@ -632,7 +637,8 @@ class EnergyBrain:
         if ok:
             self.brain.record("energy_actions")
             self.brain.log("energy", "battery action started")
-        return "started" if ok else "failed"
+            return "started"
+        return OBSERVED if self.brain.observe() else "failed"
 
     async def stop(self, only_mode: str | None = None) -> str:
         """Stop forced dispatch (optionally only when currently in ``only_mode``)."""
@@ -642,7 +648,7 @@ class EnergyBrain:
             return "skipped: not in that mode"
         await self._set("button", "press", CONF_STOP)
         await self._set("select", "select_option", CONF_MODE, option="Normal")
-        return "stopped"
+        return OBSERVED if self.brain.observe() else "stopped"
 
     async def ev_plugged_in(self, window: tuple[int, int]) -> str:
         """Gate EV charging to the cheap window."""
