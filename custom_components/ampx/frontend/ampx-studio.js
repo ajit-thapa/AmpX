@@ -61,7 +61,7 @@ const TABS = [["now", "Now", "bolt"], ["energy", "Energy", "chart"], ["devices",
 // Second level: one home for each thing, so nothing is shown twice.
 const SUBS = {
   energy: [["today", "Today"], ["plan", "Plan"], ["history", "History"], ["compare", "Compare plans"]],
-  devices: [["battery", "Battery"], ["ev", "EV"], ["sealion7", "Sealion 7"], ["charger", "Charger"], ["all", "All devices"]],
+  devices: [["battery", "Battery"], ["ev", "EV"], ["charger", "Charger"], ["all", "All devices"]],
   assistant: [["memory", "Memory"], ["reminders", "Reminders"], ["routines", "Routines"], ["suggestions", "Suggestions"], ["tools", "Tools"]],
 };
 // Old tab names (links, saved state) and where they live now
@@ -95,7 +95,7 @@ class AmpXStudio extends HTMLElement {
       this._timer = setInterval(() => this._load(), 30000);
     } else if (this._data && Date.now() - (this._lastPaint || 0) > 1500) {
       this._lastPaint = Date.now();
-      ({ now: () => this._paintLive(), "devices/battery": () => this._battWidgets(), "devices/ev": () => this._paintEv(), "devices/sealion7": () => this._paintSealion7(), "devices/charger": () => this._paintWc(),
+      ({ now: () => this._paintLive(), "devices/battery": () => this._battWidgets(), "devices/ev": () => this._paintEv(), "devices/charger": () => this._paintWc(),
          "energy/today": () => this._paintVisuals() })[this._key()]?.();
     }
   }
@@ -348,7 +348,7 @@ class AmpXStudio extends HTMLElement {
     const views = {
       now: () => this._viewNow(), house: () => this._viewHouse(), settings: () => this._viewSettings(),
       "energy/today": () => this._viewToday(), "energy/plan": () => this._viewPlan(), "energy/history": () => this._viewAnalytics(), "energy/compare": () => this._viewCompare(),
-      "devices/battery": () => this._viewBattery(), "devices/ev": () => this._viewEv(), "devices/sealion7": () => this._viewSealion7(), "devices/charger": () => this._viewCharger(), "devices/all": () => this._viewDevices(),
+      "devices/battery": () => this._viewBattery(), "devices/ev": () => this._viewEv(), "devices/charger": () => this._viewCharger(), "devices/all": () => this._viewDevices(),
     };
     const sn = subs && this._tab !== "assistant" ? `<nav class="subnav" aria-label="${esc(this._tab)} sections">${subs.map(([s2, l]) => `<button data-sub="${s2}" class="${this._subOf(this._tab) === s2 ? "on" : ""}">${l}</button>`).join("")}</nav>` : "";
     view.innerHTML = sn + (this._tab === "assistant" ? this._viewAssistant() : views[k]());
@@ -364,7 +364,6 @@ class AmpXStudio extends HTMLElement {
       "energy/compare": () => { this._wirePlans(); if (this._en) this._paintCompare(); },
       "devices/battery": () => { this._battWidgets(); this._paintMore("battery"); this._wireCtl(); },
       "devices/ev": () => { this._wireEv(); this._paintEv(); },
-      "devices/sealion7": () => { this._wireSealion7(); this._paintSealion7(); },
       "devices/charger": () => this._paintWc(),
       "devices/all": () => { this._wireExtras(); this._loadDevices(); },
     };
