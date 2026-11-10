@@ -84,6 +84,21 @@ def test_scheduled_stops_get_to_run_first_at_a_window_edge():
     assert v(mode=L.DISCHARGE, soc=20.0, export_pays=False, edge=True).rule == L.RESERVE
 
 
+def test_someone_elses_dispatch_is_left_alone_when_ampx_only_advises():
+    """In Manual or Advise AmpX does not run the battery: it polices only what it started itself."""
+    theirs = dict(mode=L.DISCHARGE, acting=False, source=None)
+    assert v(stale="battery level missing for 10 min", **theirs).action == L.NONE
+    assert v(export_pays=False, **theirs).rule == L.MANUAL
+    # its own dispatch is still policed
+    ours = dict(mode=L.DISCHARGE, acting=False, source=L.AUTOPILOT)
+    assert v(stale="battery level missing for 10 min", **ours).action == L.HAND_BACK
+    assert v(export_pays=False, **ours).rule == L.EXPORT_CAP
+    # and the hard limits hold for everyone
+    assert v(period=PEAK, mode=L.CHARGE, acting=False).action == L.STOP_CHARGE
+    assert v(soc=20.0, export_pays=True, **theirs).rule == L.RESERVE
+    assert v(spare_kwh=0.2, export_pays=True, **theirs).rule == L.HOUSE_RULE
+
+
 def test_peak_ev_the_battery_cannot_carry_is_flagged_after_battery_actions():
     out = v(period=PEAK, ev_kw=7.0, spare_kwh=1.0)
     assert (out.rule, out.action) == (L.PEAK_GUARD, L.PAUSE_EV)

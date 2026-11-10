@@ -1068,7 +1068,7 @@ class AmpXStudio extends HTMLElement {
   _ctlCards() {
     const d = this._data, c = d.control; if (!c) return "";
     const mode = this._ctlMode(), manual = mode === "manual";
-    const MODES = [["manual", "✋", "Manual", "You decide. AmpX never starts or stops the battery."],
+    const MODES = [["manual", "✋", "Manual", "You decide. AmpX starts nothing. Peak, reserve and house rule limits still stop a dispatch."],
       ["timers", "⏱", "Timers", "Fixed windows: grid top-up in the shoulder, export in the evening."],
       ["advise", "💡", "Advise", "Autopilot plans each window and tells you. It takes no action."],
       ["auto", "🤖", "Autopilot", "Your local AI plans inside hard limits, then acts by itself."]];
