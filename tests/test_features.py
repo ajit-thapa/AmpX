@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+from freezegun import freeze_time
 
 from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
@@ -124,6 +125,9 @@ async def test_security_check(hass: HomeAssistant):
     assert len(out["issues"]) == 2
 
 
+# A fixed night instant, so the night window and the alert don't depend on the wall clock
+# (the test flaked near local midnight when real "now" fell in the window's dead second).
+@freeze_time("2026-11-10 02:00:00")
 async def test_night_watch_alerts_at_night_only(hass: HomeAssistant):
     pushes = async_mock_service(hass, "notify", "send_message")
     hass.states.async_set("notify.iphone_2", "unknown")
@@ -134,6 +138,7 @@ async def test_night_watch_alerts_at_night_only(hass: HomeAssistant):
     assert len(pushes) == 1 and "Bedroom window" in pushes[0].data["message"]
 
 
+@freeze_time("2026-11-10 12:00:00")
 async def test_night_watch_quiet_in_daytime(hass: HomeAssistant):
     pushes = async_mock_service(hass, "notify", "send_message")
     hass.states.async_set("notify.iphone_2", "unknown")
