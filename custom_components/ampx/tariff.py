@@ -85,6 +85,11 @@ def feed_in_rate(now: datetime, plan: Plan) -> float:
     return plan.fit_off_peak
 
 
+def export_pays(now: datetime, plan: Plan) -> bool:
+    """True while the feed-in rate is at the plan's best. A flat feed-in always pays."""
+    return feed_in_rate(now, plan) >= max(plan.fit_evening, plan.fit_morning, plan.fit_off_peak)
+
+
 def next_change(
     now: datetime,
     plan: Plan,
