@@ -5,10 +5,12 @@ a decision. The caller applies it (start/stop charging) and publishes the teleme
 
 Rules, in priority order (first match wins):
   1. car unplugged                       -> none
-  2. battery at or above target          -> stop (if charging)
-  3. outside allowed grid windows        -> hold (wait, never charge in peak)
-  4. charge needed inside window         -> start (if not charging)
-  5. otherwise                           -> hold
+  2. no battery reading                  -> hold (don't touch the charger)
+  3. battery at or above target          -> stop (if charging)
+  4. peak rate                           -> stop / hold: never from the grid in peak, even below minimum
+  5. battery below minimum               -> start (off-peak grid is allowed for the car)
+  6. inside the cheap window             -> start (if not charging)
+  7. otherwise                           -> hold until the cheap window
 """
 
 from __future__ import annotations
@@ -43,9 +45,9 @@ class Window:
 @dataclass(frozen=True)
 class Config:
     target_soc: float = 80.0
-    min_soc: float = 20.0                      # below this, charge regardless of window (car safety)
+    min_soc: float = 20.0                      # below this, charge outside the cheap window too (never in peak)
     allowed: tuple[Window, ...] = (Window(10, 14),)   # grid-charge windows (AGL shoulder)
-    peak: tuple[Window, ...] = (Window(14, 21),)      # never charge from grid here
+    peak: tuple[Window, ...] = (Window(14, 21),)      # never charge from grid here; empty on a day without peak
     kwh: float = BATTERY_KWH
     max_kw: float = MAX_CHARGE_KW
 
@@ -90,17 +92,17 @@ def decide(car: CarState, now: datetime, cfg: Config = Config()) -> Decision:
     if car.soc is None:
         return Decision(ACTION_HOLD, cfg.target_soc, "no SOC reading, not touching charger", warnings)
 
-    if car.soc < cfg.min_soc:
-        act = ACTION_START if not car.charging else ACTION_HOLD
-        return Decision(act, cfg.target_soc, f"below minimum {cfg.min_soc:.0f}%, charge now", warnings)
-
     if car.soc >= cfg.target_soc:
         act = ACTION_STOP if car.charging else ACTION_HOLD
         return Decision(act, cfg.target_soc, f"at target {cfg.target_soc:.0f}%", warnings)
 
-    if in_peak(now, cfg):
+    if in_peak(now, cfg):  # hard rule: never from the grid in peak, even below minimum (the car has fuel)
         act = ACTION_STOP if car.charging else ACTION_HOLD
         return Decision(act, cfg.target_soc, "peak rate, grid charging paused", warnings)
+
+    if car.soc < cfg.min_soc:
+        act = ACTION_START if not car.charging else ACTION_HOLD
+        return Decision(act, cfg.target_soc, f"below minimum {cfg.min_soc:.0f}%, charge now", warnings)
 
     if in_allowed(now, cfg):
         act = ACTION_HOLD if car.charging else ACTION_START

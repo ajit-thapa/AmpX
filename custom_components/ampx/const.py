@@ -121,8 +121,8 @@ CONF_SL7_ENABLED = "sl7_enabled"      # False = observe only (decisions shown, n
 CONF_SL7_TARGET = "sl7_target"
 CONF_SL7_MIN = "sl7_min"
 CONF_SL7_KWH = "sl7_kwh"
-CONF_SL7_WINDOW = "sl7_window"        # "10-14" grid-charge window
-CONF_SL7_PEAK = "sl7_peak"            # "14-21" never charge from grid
+CONF_SL7_WINDOW = "sl7_window"        # "10-14" grid-charge window; blank follows the tariff's cheap window
+CONF_SL7_PEAK = "sl7_peak"            # "14-21" never charge from grid; blank follows the tariff's peak
 CONF_SL7_POWER = "sl7_power"
 CONF_SL7_VOLTAGE = "sl7_voltage"
 CONF_SL7_CURRENT = "sl7_current"
@@ -237,8 +237,8 @@ DEFAULTS: dict[str, object] = {
     CONF_SL7_TARGET: 80.0,
     CONF_SL7_MIN: 20.0,
     CONF_SL7_KWH: 40.0,
-    CONF_SL7_WINDOW: "10-14",
-    CONF_SL7_PEAK: "14-21",
+    CONF_SL7_WINDOW: "",  # blank: the tariff's cheap window
+    CONF_SL7_PEAK: "",  # blank: the tariff's peak window
     CONF_SL7_POWER: "",
     CONF_SL7_VOLTAGE: "",
     CONF_SL7_CURRENT: "",

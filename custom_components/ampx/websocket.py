@@ -288,8 +288,8 @@ CONTROL_OPTIONS = {
     CONF_SL7_TARGET: vol.All(vol.Coerce(float), vol.Range(min=20, max=100)),
     CONF_SL7_MIN: vol.All(vol.Coerce(float), vol.Range(min=0, max=50)),
     CONF_SL7_KWH: vol.All(vol.Coerce(float), vol.Range(min=10, max=120)),
-    CONF_SL7_WINDOW: vol.Match(r"^\s*\d{1,2}\s*-\s*\d{1,2}\s*$"),
-    CONF_SL7_PEAK: vol.Match(r"^\s*\d{1,2}\s*-\s*\d{1,2}\s*$"),
+    CONF_SL7_WINDOW: vol.Any("", vol.Match(r"^\s*\d{1,2}\s*-\s*\d{1,2}\s*$")),  # blank: follow the tariff
+    CONF_SL7_PEAK: vol.Any("", vol.Match(r"^\s*\d{1,2}\s*-\s*\d{1,2}\s*$")),
     **{k: vol.All(str, vol.Length(max=120)) for k in (
         CONF_SL7_POWER, CONF_SL7_VOLTAGE, CONF_SL7_CURRENT, CONF_SL7_CHARGING, CONF_SL7_PURE_RANGE,
         CONF_SL7_TOTAL_RANGE, CONF_SL7_FUEL, CONF_SL7_SCHEDULE, CONF_SL7_STOP, CONF_EV_SOC, CONF_EV_PLUG, CONF_EV_START)},
