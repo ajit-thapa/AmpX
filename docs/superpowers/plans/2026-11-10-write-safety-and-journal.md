@@ -915,6 +915,18 @@ async def test_grid_reading_stuck_during_a_forced_dispatch_hands_back(hass: Home
     assert "grid reading stuck" in brain.journal.last["reason"]
 
 
+async def test_a_steady_grid_reading_is_not_stale_while_the_battery_reading_moves(hass: HomeAssistant):
+    """A rounded grid reading can sit still under an export limit. A frozen meter link freezes both readings."""
+    _record(hass)
+    brain = await _setup(hass, autopilot_mode="auto")
+    hass.states.async_set(SOC, "80")
+    hass.states.async_set(MODE, ladder.DISCHARGE)
+    for minute, batt in ((0, 6.0), (5, 6.1), (10, 6.2), (15, 6.1)):
+        flows(hass, grid_kw=-5.0, ev_kw=0.0, batt_discharge_kw=batt)
+        assert await brain.energy.house_guard(when(18, minute)) is None
+    assert hass.states.get(MODE).state == ladder.DISCHARGE
+
+
 async def test_a_quiet_grid_reading_is_fine_when_nothing_is_forced(hass: HomeAssistant):
     sent = _record(hass)
     brain = await _setup(hass, autopilot_mode="auto")
@@ -931,8 +943,10 @@ async def test_peak_stops_a_running_grid_charge(hass: HomeAssistant):
     brain = await _setup(hass, autopilot_mode="auto")
     hass.states.async_set(SOC, "50")
     hass.states.async_set(MODE, ladder.CHARGE)
+    flows(hass, grid_kw=5.0, ev_kw=0.0, batt_discharge_kw=-4.0)
     assert await brain.energy.house_guard(when(11, 0)) is None  # cheap window: charging is the plan
     assert hass.states.get(MODE).state == ladder.CHARGE
+    flows(hass, grid_kw=5.2, ev_kw=0.0, batt_discharge_kw=-4.0)
     assert await brain.energy.house_guard(when(17, 0)) == "charge_stopped"  # peak is 16:00 to 20:00 by default
     assert hass.states.get(MODE).state == ladder.NORMAL
     assert brain.journal.last["rule"] == ladder.PEAK_GUARD
@@ -1056,7 +1070,7 @@ Expected: failures such as `assert None == 'handed_back'`, `AttributeError: 'Ene
 
 - [ ] **Step 3: Write the implementation**
 
-`energy.py` imports: `from . import ladder, planner, safety, tariff`; add `CONF_ST_GRID` to the const import. In `__init__`:
+`energy.py` imports: `from . import ladder, planner, safety, tariff`; add `CONF_ST_GRID` and `CONF_ST_BATT` to the const import. In `__init__`:
 
 ```python
         self.watch = safety.FreezeWatch()
@@ -1074,21 +1088,26 @@ New methods (replace the body of `house_guard`, keep `_watch_house`, `_tell_once
         """Why the readings can't be trusted right now, or None.
 
         The battery level may sit on one value for hours, so only its absence counts. The grid
-        reading always moves while a dispatch is forced, so there a stuck value counts too."""
+        reading moves while a dispatch is forced, so there a stuck value counts too. A rounded
+        grid reading can sit still under an export limit, though, while a frozen meter link
+        freezes every reading: so when battery power is known, it must be stuck as well."""
         o = self.brain.opts
         mins = self.watch.after_s // 60
         if o.get(CONF_SOC):
             self.watch.update("soc", self._num(CONF_SOC), now)
             if self.watch.state("soc", now, may_hold=True):
                 return f"battery level missing for {mins} min"
-        if forced and o.get(CONF_ST_GRID):
-            self.watch.update("grid", self._num(CONF_ST_GRID), now)
-            state = self.watch.state("grid", now)
-            if state:
-                return f"grid reading {state} for {mins} min"
-        else:
+        if not (forced and o.get(CONF_ST_GRID)):
             self.watch.clear("grid")
-        return None
+            self.watch.clear("batt")
+            return None
+        self.watch.update("grid", self._num(CONF_ST_GRID), now)
+        grid = self.watch.state("grid", now)
+        if o.get(CONF_ST_BATT):
+            self.watch.update("batt", self._num(CONF_ST_BATT), now)
+            if grid == "stuck" and self.watch.state("batt", now) is None:
+                return None
+        return f"grid reading {grid} for {mins} min" if grid else None
 
     def ladder_inputs(self, now: datetime) -> tuple[ladder.Inputs, dict[str, Any]]:
         """Facts for the decision ladder, plus the numbers its actions need."""

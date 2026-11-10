@@ -60,7 +60,7 @@ from .const import (
     SIGNAL_UPDATE,
     STORAGE_VERSION,
 )
-from . import advisor
+from . import advisor, ladder
 from .autopilot import Autopilot
 from .backup import Backup
 from .briefing import Briefing
@@ -540,7 +540,7 @@ class AmpX:
 
         async def top_start(_n: datetime) -> None:
             if o[CONF_AUTO_TOPUP] and not self.autopilot.controls:
-                await self.energy.start_topup()
+                await self.energy.start_topup(source=ladder.PLAN)
 
         async def top_stop(_n: datetime) -> None:
             if o[CONF_AUTO_TOPUP] and not self.autopilot.controls:
@@ -548,7 +548,7 @@ class AmpX:
 
         async def exp_start(_n: datetime) -> None:
             if o[CONF_AUTO_EXPORT] and not self.autopilot.controls:
-                await self.energy.start_export()
+                await self.energy.start_export(source=ladder.PLAN)
 
         async def exp_stop(_n: datetime) -> None:
             if o[CONF_AUTO_EXPORT] and not self.autopilot.controls:

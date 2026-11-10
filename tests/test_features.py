@@ -573,9 +573,11 @@ async def test_house_rule_guard(hass: HomeAssistant):
     assert hass.states.get(mode).state == "Force Discharge" and brain.energy.house_only
     assert ("number", "set_value", {"entity_id": LEGACY["dispatch_power"], "value": 1.2}) in sent  # 1 kW house + 200 W
     assert await brain.energy.ev_guard(now) is None  # EV-first does not take over
-    # EV done: back to normal
+    # EV done: the battery holds house-only through a short dip, then goes back to normal
     hass.states.async_set(LEGACY["studio_ev"], "0", {"unit_of_measurement": "kW"})
-    assert await brain.energy.house_guard(now) == "ended" and hass.states.get(mode).state == "Normal"
+    assert await brain.energy.house_guard(now) == "house_only"
+    later = now + timedelta(minutes=6)
+    assert await brain.energy.house_guard(later) == "ended" and hass.states.get(mode).state == "Normal"
     # inside the cheap window the rule does nothing
     assert await brain.energy.house_guard(now.replace(hour=11)) is None
 
