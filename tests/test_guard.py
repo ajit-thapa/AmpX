@@ -173,14 +173,14 @@ async def test_house_only_power_follows_the_house_with_deadband_and_dwell(hass: 
 
 async def test_observe_mode_journals_the_verdict_and_touches_nothing(hass: HomeAssistant):
     sent = _record(hass)
-    pushes = async_mock_service(hass, "notify", "send_message")
     brain = await _setup(hass, data={"schema": SCHEMA}, autopilot_mode="auto", observe_only=True)
     brain.energy.profile = [1.0] * 24
     hass.states.async_set(SOC, "40")
     hass.states.async_set(MODE, ladder.DISCHARGE)
     assert await brain.energy.house_guard(when(22, 0)) == "observed"
     await hass.async_block_till_done()
-    assert sent == [] and hass.states.get(MODE).state == ladder.DISCHARGE and not pushes
+    assert sent == [] and hass.states.get(MODE).state == ladder.DISCHARGE
+    assert not brain.speaker.push_log  # nothing was done, so nothing is announced
     last = brain.journal.last
     assert last["rule"] == ladder.HOUSE_RULE and last["observe"] is True
     assert await brain.energy.ev_guard(when(22, 0)) is None
