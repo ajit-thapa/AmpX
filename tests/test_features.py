@@ -210,7 +210,9 @@ async def test_heating_prewarm(hass: HomeAssistant):
     modes = async_mock_service(hass, "climate", "set_hvac_mode")
     temps = async_mock_service(hass, "climate", "set_temperature")
     brain = await _setup(hass)
-    now = dt_util.now()
+    # A fixed mid-morning time, so "ready 30 min from now" never wraps past midnight (test was
+    # flaky in the hour before UTC midnight, when now+30 min rolled to an early hour in the past).
+    now = dt_util.now().replace(hour=6, minute=0, second=0, microsecond=0)
     ready = (now + timedelta(minutes=30)).strftime("%H:%M")
     hass.states.async_set("climate.lounge", "off", {"current_temperature": 18})
     brain.heating.save({"name": "lounge", "climate": "climate.lounge", "target": 21, "ready_by": ready, "rate": 0.05})
