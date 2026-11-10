@@ -20,6 +20,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from . import ladder
 from .const import DOMAIN, SIGNAL_UPDATE
 from .runtime import AmpX
 
@@ -142,6 +143,13 @@ SENSORS: tuple[AmpXSensorDescription, ...] = (
         key="battery_plan", translation_key="battery_plan", icon="mdi:chart-timeline-variant",
         value=lambda b: (b.energy.plan_result or {}).get("summary"),
         attrs=lambda b: {k: v for k, v in (b.energy.plan_result or {}).items() if k != "rows"},
+    ),
+    AmpXSensorDescription(
+        key="decision", translation_key="decision", icon="mdi:source-branch",
+        device_class=SensorDeviceClass.ENUM, options=list(ladder.RULES),
+        value=lambda b: (b.journal.last or {}).get("rule"),
+        attrs=lambda b: {**{k: (b.journal.last or {}).get(k) for k in ("action", "reason", "time", "observe")},
+                         "recent": list(b.journal.items)[:10]},
     ),
     AmpXSensorDescription(
         key="last_event", translation_key="last_event", icon="mdi:timeline-clock-outline",

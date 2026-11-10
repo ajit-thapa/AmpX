@@ -1579,7 +1579,7 @@ and in `control`:
                 "observe": brain.observe(),
 ```
 
-`CONTROL_OPTIONS`: `CONF_OBSERVE: bool,`.
+`CONTROL_OPTIONS`: `CONF_OBSERVE: vol.Schema(bool),` (a real true/false only; a bare `bool` would coerce `"yes"`).
 
 `sensor.py`, before `last_event`:
 
