@@ -71,12 +71,22 @@ def _emhass(hass: HomeAssistant) -> dict[str, Any] | None:
         except (TypeError, ValueError):
             return None
 
+    def txt(entity_id: str) -> str | None:
+        s = hass.states.get(entity_id)
+        return s.state if s and s.state not in ("unknown", "unavailable", "") else None
+
+    arm = hass.states.get("input_boolean.emhass_dispatch_control")
     return {
         "status": status.state,
         "batt_w": num("sensor.p_batt_forecast"),
         "soc": num("sensor.soc_batt_forecast"),
         "cost": num("sensor.total_cost_fun_value"),
         "updated": status.last_changed.isoformat() if status.last_changed else None,
+        # Live control state: whether EMHASS is armed to drive the battery, and
+        # what the inverter is actually doing right now.
+        "armed": (arm.state == "on") if arm is not None else None,
+        "dispatch_mode": txt("select.neovolt_local_dispatch_mode"),
+        "dispatch_status": txt("sensor.neovolt_local_dispatch_status"),
     }
 
 

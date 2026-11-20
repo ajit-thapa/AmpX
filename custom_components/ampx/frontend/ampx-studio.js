@@ -1804,8 +1804,12 @@ class AmpXStudio extends HTMLElement {
     const cost = o.cost == null ? "—" : (o.cost < 0 ? "−$" : "$") + Math.abs(o.cost).toFixed(2);
     const soc = o.soc == null ? "—" : Math.round(o.soc) + "%";
     const upd = o.updated ? new Date(o.updated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
-    return `<div class="card w6"><div class="chead"><h2>Optimiser plan <span class="muted">EMHASS</span></h2><span class="pill" style="background:${ok ? C.shoulder : C.peak};color:#fff">${esc(o.status)}</span></div>
-      <div class="skstats"><div><b>${act}</b><span>battery now</span></div><div><b>${soc}</b><span>target SOC</span></div><div><b>${cost}</b><span>cost, horizon</span></div></div>
+    const armed = o.armed === true;
+    const armBadge = o.armed == null ? "" : `<span class="pill" style="background:${armed ? C.batt : "var(--surface3)"};color:${armed ? "#fff" : "var(--muted)"}">${armed ? "Controlling" : "Observing"}</span>`;
+    const live = o.dispatch_mode ? `<div class="muted" style="margin-top:6px">Battery now: <b style="color:var(--text)">${esc(o.dispatch_mode)}</b>${o.dispatch_status ? " · " + esc(o.dispatch_status) : ""}</div>` : "";
+    return `<div class="card w6"><div class="chead"><h2>Optimiser plan <span class="muted">EMHASS</span></h2><span>${armBadge} <span class="pill" style="background:${ok ? C.shoulder : C.peak};color:#fff">${esc(o.status)}</span></span></div>
+      <div class="skstats"><div><b>${act}</b><span>plan now</span></div><div><b>${soc}</b><span>target SOC</span></div><div><b>${cost}</b><span>cost, horizon</span></div></div>
+      ${live}
       <div class="muted" style="margin-top:8px">External MILP optimiser. AmpX ${c.decision_engine === "hermes" ? "shows this and suggests" : "runs its own plan above; set the engine to Hermes to defer to it"}.${upd ? " Updated " + esc(upd) + "." : ""}</div></div>`;
   }
   _wirePlan() {
