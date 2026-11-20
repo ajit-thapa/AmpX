@@ -1,8 +1,8 @@
 /* AmpX Energy Studio. Vanilla custom element: live power flow, rate ribbon,
    24h chart, plan, history & analytics and house status. No build step, no libraries. */
 const C = {
-  solar: "#F5B800", grid: "#6F7BE8", batt: "#2DB67C", ev: "#3E9BEA", home: "#FF5401",
-  peak: "#E5484D", shoulder: "#2DB67C", off_peak: "#F5A524",
+  solar: "#84CC16", grid: "#A855F7", batt: "#22C55E", ev: "#F59E0B", home: "#38BDF8",
+  peak: "#F97316", shoulder: "#4ADE80", off_peak: "#F59E0B",
 };
 const ICONS = {
   bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
@@ -2213,22 +2213,22 @@ function shortGauge(v) {
 const CSS = `
 *,*:before,*:after{box-sizing:border-box}
 :host{
-  --o:#FF5401;--o-deep:#D14400;--y:#FDC111;
-  --bg:#ECE8E1;--surface:#FBFAF8;--surface2:#F3F0EB;--surface3:#E4DFD7;
-  --text:#1E1B18;--muted:#6A635B;--line:rgba(30,27,24,.10);--nav:rgba(30,27,24,.06);
-  --good:#15803D;--warn:#B45309;--bad:#C62828;
-  --shadow:0 1px 2px rgba(70,45,20,.06),0 10px 28px rgba(70,45,20,.07);
-  --r-md:16px;--r-lg:24px;--r-pill:999px;
+  --o:#16A34A;--o-deep:#15803D;--y:#F59E0B;
+  --bg:#F1F5F9;--surface:#FFFFFF;--surface2:#F1F5F9;--surface3:#E2E8F0;
+  --text:#0F172A;--muted:#64748B;--line:rgba(15,23,42,.10);--nav:rgba(15,23,42,.05);
+  --good:#15803D;--warn:#B45309;--bad:#DC2626;
+  --shadow:0 1px 2px rgba(15,23,42,.05),0 10px 28px rgba(15,23,42,.06);
+  --r-md:10px;--r-lg:14px;--r-pill:999px;
   --primary-text-color:var(--text);--secondary-text-color:var(--muted);--card-background-color:var(--surface);--primary-background-color:var(--bg);
   --divider-color:var(--line);--primary-color:var(--o-deep);--text-primary-color:#fff;
   display:block;position:relative;isolation:isolate;min-height:100%;padding:20px 24px 56px;color:var(--text);background:var(--bg);
   --ff:"Inter","SF Pro Text",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font:15px/1.45 var(--ff);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;
   color-scheme:light}
 :host([data-theme=dark]){
-  --bg:#14110E;--surface:#1D1915;--surface2:#27221D;--surface3:#352F28;
-  --text:#F4EFE9;--muted:#A9A198;--line:rgba(244,239,233,.11);--nav:rgba(255,255,255,.07);
-  --o:#FF6A22;--o-deep:#FF6A22;--good:#4ADE80;--warn:#FBBF24;--bad:#FF7A7A;
-  --shadow:0 1px 2px #0007,0 12px 30px #0006;--text-primary-color:#1A0E05;color-scheme:dark}
+  --bg:#0A0E12;--surface:#121820;--surface2:#0F141B;--surface3:#1E293B;
+  --text:#F8FAFC;--muted:#94A3B8;--line:rgba(148,163,184,.16);--nav:rgba(255,255,255,.05);
+  --o:#4ADE80;--o-deep:#4ADE80;--good:#22C55E;--warn:#F59E0B;--bad:#EF4444;
+  --shadow:0 1px 2px #0008,0 12px 30px #0007;--text-primary-color:#06240A;color-scheme:dark}
 .bg{position:absolute;inset:0;z-index:-1;pointer-events:none;background:center 0/cover no-repeat;opacity:0;transition:opacity .8s;-webkit-mask-image:linear-gradient(#000,transparent 60%);mask-image:linear-gradient(#000,transparent 60%)}
 .bg.on{opacity:.22}:host([data-theme=dark]) .bg.on{opacity:.12}
 
