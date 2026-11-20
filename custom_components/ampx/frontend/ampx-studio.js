@@ -1791,7 +1791,22 @@ class AmpXStudio extends HTMLElement {
       <details class="more slots"><summary><b>Hour by hour</b><span class="muted">rate, action, house, solar, grid (+ buy / − sell), battery</span></summary>
         <div class="tblwrap"><table class="ptbl"><thead><tr><th>Time</th><th>Buy / sell</th><th>Action</th><th>House</th><th>Solar</th><th>Grid</th><th>Battery</th></tr></thead><tbody>${tbl}</tbody></table></div></details>
       <div class="muted" style="margin-top:8px">Re-planned every 15 min from ${esc(p.profile_source || "")}, solar forecast, your ${esc(this._name("plan"))} rates and ${p.candidates} candidate plans. EV charging isn't in the plan.${p.house_rule ? (p.house_grid > 0.2 ? ` <b class="bad">The battery can't carry the house to the next cheap window: ${fx(p.house_grid, 1)} kWh from the grid at least.</b>` : " House rule kept: no grid power for the house outside the cheap window.") : ""}</div>
-      <div class="toast" id="plan-msg"></div></div>`;
+      <div class="toast" id="plan-msg"></div></div>${this._optimiserCard()}`;
+  }
+  /** External EMHASS optimiser plan, shown when it has published data. */
+  _optimiserCard() {
+    const o = this._data.optimiser;
+    if (!o) return "";
+    const c = this._data.control || {};
+    const kw = o.batt_w == null ? null : o.batt_w / 1000;
+    const act = kw == null ? "—" : kw < -0.05 ? `charge ${Math.abs(kw).toFixed(1)} kW` : kw > 0.05 ? `discharge ${kw.toFixed(1)} kW` : "hold";
+    const ok = o.status === "Optimal";
+    const cost = o.cost == null ? "—" : (o.cost < 0 ? "−$" : "$") + Math.abs(o.cost).toFixed(2);
+    const soc = o.soc == null ? "—" : Math.round(o.soc) + "%";
+    const upd = o.updated ? new Date(o.updated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+    return `<div class="card w6"><div class="chead"><h2>Optimiser plan <span class="muted">EMHASS</span></h2><span class="pill" style="background:${ok ? C.shoulder : C.peak};color:#fff">${esc(o.status)}</span></div>
+      <div class="skstats"><div><b>${act}</b><span>battery now</span></div><div><b>${soc}</b><span>target SOC</span></div><div><b>${cost}</b><span>cost, horizon</span></div></div>
+      <div class="muted" style="margin-top:8px">External MILP optimiser. AmpX ${c.decision_engine === "hermes" ? "shows this and suggests" : "runs its own plan above; set the engine to Hermes to defer to it"}.${upd ? " Updated " + esc(upd) + "." : ""}</div></div>`;
   }
   _wirePlan() {
     this._root.querySelectorAll("[data-optplan]").forEach(i => i.onchange = () => this._saveOpts({ autopilot_planner: i.checked }, "#plan-msg"));

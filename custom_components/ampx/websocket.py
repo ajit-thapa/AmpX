@@ -52,6 +52,34 @@ def _brain(hass: HomeAssistant) -> AmpX | None:
     return None
 
 
+def _emhass(hass: HomeAssistant) -> dict[str, Any] | None:
+    """Read the external EMHASS optimiser's published plan, if present.
+
+    EMHASS publishes a fixed set of sensors on each `publish-data`. We surface
+    them so the panel can show the optimiser's plan alongside AmpX's own.
+    Battery power convention: EMHASS positive = discharge, negative = charge."""
+    status = hass.states.get("sensor.optim_status")
+    if status is None:
+        return None
+
+    def num(entity_id: str) -> float | None:
+        s = hass.states.get(entity_id)
+        if s is None or s.state in ("unknown", "unavailable", ""):
+            return None
+        try:
+            return float(s.state)
+        except (TypeError, ValueError):
+            return None
+
+    return {
+        "status": status.state,
+        "batt_w": num("sensor.p_batt_forecast"),
+        "soc": num("sensor.soc_batt_forecast"),
+        "cost": num("sensor.total_cost_fun_value"),
+        "updated": status.last_changed.isoformat() if status.last_changed else None,
+    }
+
+
 def _json_snapshot(snap: dict[str, Any]) -> dict[str, Any]:
     out = dict(snap)
     if "next_change" in out:
@@ -189,6 +217,7 @@ async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
             "advice": brain.advice(),
             "plan": brain.energy.plan_result,
             "plans": brain.plans,
+            "optimiser": _emhass(hass),
             "settings": {
                 "agent": brain.opts.get(CONF_AGENT) or "",
                 "ai_per_hour": int(brain.opts.get(CONF_AI_PER_HOUR) or 0),
