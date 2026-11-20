@@ -16,8 +16,21 @@ from .const import DEFAULTS, DOMAIN
 from .migrate import SCHEMA
 
 
+class _OptEntity(sel.EntitySelector):
+    """EntitySelector that also accepts an empty value, so an optional entity can be left blank.
+
+    The base selector rejects "" ("neither a valid entity ID nor a valid UUID"), which makes a
+    whole options section impossible to save when any optional entity field is unset. We keep the
+    selector type (so the UI still shows an entity picker) and only short-circuit the empty case."""
+
+    def __call__(self, data: Any) -> Any:
+        if data in (None, "", []):
+            return [] if self.config.get("multiple") else ""
+        return super().__call__(data)
+
+
 def _entity(*domains: str, multiple: bool = False) -> sel.EntitySelector:
-    return sel.EntitySelector(sel.EntitySelectorConfig(domain=list(domains), multiple=multiple))
+    return _OptEntity(sel.EntitySelectorConfig(domain=list(domains), multiple=multiple))
 
 
 def _num(low: float, high: float, step: float = 0.1, unit: str | None = None) -> sel.NumberSelector:
