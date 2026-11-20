@@ -75,8 +75,25 @@ def _emhass(hass: HomeAssistant) -> dict[str, Any] | None:
         s = hass.states.get(entity_id)
         return s.state if s and s.state not in ("unknown", "unavailable", "") else None
 
+    def series(entity_id: str, attr: str, key: str) -> dict[str, float]:
+        s = hass.states.get(entity_id)
+        out: dict[str, float] = {}
+        for row in (s.attributes.get(attr) if s else None) or []:
+            try:
+                out[str(row["date"])] = float(row[key])
+            except (KeyError, TypeError, ValueError):
+                continue
+        return out
+
+    # The plan over the whole horizon, one row per optimiser slot (W, %), for the face to draw.
+    batt = series("sensor.p_batt_forecast", "battery_scheduled_power", "p_batt_forecast")
+    soc = series("sensor.soc_batt_forecast", "battery_scheduled_soc", "soc_batt_forecast")
+    grid = series("sensor.p_grid_forecast", "forecasts", "p_grid_forecast")
+    horizon = [{"t": t, "batt": w, "soc": soc.get(t), "grid": grid.get(t)} for t, w in batt.items()]
+
     arm = hass.states.get("input_boolean.emhass_dispatch_control")
     return {
+        "horizon": horizon,
         "status": status.state,
         "batt_w": num("sensor.p_batt_forecast"),
         "soc": num("sensor.soc_batt_forecast"),
@@ -215,6 +232,7 @@ async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
                 "ev_priority": bool(brain.opts.get(CONF_EV_PRIORITY)),
                 "house_rule": bool(brain.opts.get(CONF_HOUSE_RULE)),
                 "decision_engine": brain.engine(),
+                "face": brain.face(),
                 "observe": brain.observe(),
                 "batt_max_kw": float(brain.opts.get(CONF_BATT_MAX_KW) or 10),
                 "ev_trickle_kw": float(brain.opts.get(CONF_EV_TRICKLE_KW) or 0),
@@ -305,6 +323,9 @@ ACTIONS = (
     "manual_export", "manual_topup", "manual_stop",
 )
 
+# Actions that would make AmpX drive the battery: refused while an external engine is the brain.
+ENERGY_ACTIONS = ("autopilot_topup", "autopilot_export", "manual_export", "manual_topup", "manual_stop")
+
 # Options the panel may change. Anything else is rejected.
 CONTROL_OPTIONS = {
     CONF_AP_MODE: vol.In(AP_MODES),
@@ -322,7 +343,7 @@ CONTROL_OPTIONS = {
     CONF_AS_STYLE: vol.In(AS_STYLES),
     CONF_EV_PRIORITY: bool,
     CONF_HOUSE_RULE: bool,
-    CONF_ENGINE: vol.In((ENGINE_AMPX, ENGINE_HERMES)),
+    CONF_ENGINE: vol.In(ENGINES),
     CONF_OBSERVE: vol.Schema(bool),  # a real true/false only: this switch decides whether AmpX writes at all
     CONF_EV_TRICKLE_KW: vol.All(vol.Coerce(float), vol.Range(min=0, max=2)),
     CONF_BATT_MAX_KW: vol.All(vol.Coerce(float), vol.Range(min=1, max=50)),
@@ -337,6 +358,17 @@ CONTROL_OPTIONS = {
         CONF_SL7_POWER, CONF_SL7_VOLTAGE, CONF_SL7_CURRENT, CONF_SL7_CHARGING, CONF_SL7_PURE_RANGE,
         CONF_SL7_TOTAL_RANGE, CONF_SL7_FUEL, CONF_SL7_SCHEDULE, CONF_SL7_STOP, CONF_EV_SOC, CONF_EV_PLUG, CONF_EV_START)},
 }
+
+
+# What the panel may not change while an external engine is the brain: AmpX's own energy
+# decisions and limits. Display, house and assistant options stay editable, and so does the
+# engine itself, which is the way back.
+FACE_LOCKED = frozenset({
+    CONF_AP_MODE, CONF_AP_LLM, CONF_AP_PLANNER, CONF_AUTO_TOPUP, CONF_AUTO_EXPORT,
+    CONF_TOPUP_KW, CONF_EXPORT_KW, CONF_EXPORT_FLOOR, CONF_EV_PRIORITY, CONF_HOUSE_RULE,
+    CONF_OBSERVE, CONF_EV_TRICKLE_KW, CONF_BATT_MAX_KW, CONF_SL7_ENABLED, CONF_SL7_TARGET,
+    CONF_SL7_MIN, CONF_SL7_WINDOW, CONF_SL7_PEAK, CONF_SL7_STOP, CONF_EV_START,
+})
 
 
 def _hour_opt(value: Any) -> str:
@@ -417,6 +449,9 @@ async def ws_action(hass: HomeAssistant, connection, msg) -> None:
         connection.send_error(msg["id"], "not_loaded", "AmpX is not set up")
         return
     action, ident = msg["action"], msg.get("target", "")
+    if action in ENERGY_ACTIONS and brain.face():
+        connection.send_error(msg["id"], "external_engine", f"{brain.engine().upper()} drives the battery; AmpX only shows it")
+        return
     try:
         if action == "accept_suggestion":
             result: Any = brain.learning.accept(ident)
@@ -471,6 +506,11 @@ async def ws_set_options(hass: HomeAssistant, connection, msg) -> None:
             changes[key] = CONTROL_OPTIONS[key](value)
     except vol.Invalid as err:
         connection.send_error(msg["id"], "invalid", str(err))
+        return
+    engine = changes.get(CONF_ENGINE, brain.engine())
+    locked = sorted(k for k in changes if k in FACE_LOCKED)
+    if engine in EXTERNAL_ENGINES and locked:
+        connection.send_error(msg["id"], "external_engine", f"{engine.upper()} is the brain; AmpX cannot change {', '.join(locked)}")
         return
     entry = brain.entry
     hass.config_entries.async_update_entry(entry, options={**entry.options, **changes})  # reloads AmpX

@@ -27,7 +27,8 @@ def tips(s: dict[str, Any], live: dict[str, float], now: datetime, *, mode: str 
 
     ``s`` is the energy snapshot (rates in cents, energy in kWh); ``live`` holds kW
     flows: pv, grid (+ import), batt (+ charging), ev, load. ``mode`` is the
-    battery control mode: off (manual), timers, shadow (advise) or auto.
+    battery control mode: off (manual), timers, shadow (advise), auto, or face (an external
+    engine drives the battery, so no tip steers it; EV and appliance tips stay).
     """
     out: list[dict[str, str]] = []
     add = lambda level, text, why="": out.append({"level": level, "text": text, "why": why})  # noqa: E731
@@ -39,6 +40,7 @@ def tips(s: dict[str, Any], live: dict[str, float], now: datetime, *, mode: str 
     pv, grid, batt, ev = (live.get(k, 0.0) or 0.0 for k in ("pv", "grid", "batt", "ev"))
     plugged, ev_room = bool(s.get("ev_plugged")), s.get("ev_room") or 0.0
     hands_off = mode == "off"
+    face = mode == "face"
 
     # Where the EV's power comes from: only the grid share costs money now; solar is free and the
     # home battery is fine as long as it still covers the house until the cheap window and the supply charge.
@@ -86,18 +88,18 @@ def tips(s: dict[str, Any], live: dict[str, float], now: datetime, *, mode: str 
         add(ACT if "Pause" in s["house_note"] else INFO, s["house_note"], "house rule: no grid power for the house outside the cheap window")
 
     # Is the battery enough for tonight?
-    if not cheap and spare is not None and spare < 0 and not (ev_batt > 0.5):
+    if not face and not cheap and spare is not None and spare < 0 and not (ev_batt > 0.5):
         if b.get("supply") and b.get("house", 0) <= b.get("usable", 0):
             add(WARN, f"Stop exporting soon: the battery has {b['usable']:.0f} kWh usable and needs {b['house']:.0f} kWh for the house until {b['until']}.",
                 f"the rest of the supply charge (${s.get('supply_left', 0):.2f}) isn't worth buying {rate:.0f}c power for later")
         else:
             add(WARN, f"Battery is {-spare:.0f} kWh short of {need_txt}.",
                 (f"it reaches its reserve about {eta}; " if eta else "") + "the grid will cover the rest")
-    if period == "peak" and grid > 0.5 and grid - ev_grid > 0.5:
+    if not face and period == "peak" and grid > 0.5 and grid - ev_grid > 0.5:
         house = grid - ev_grid
         add(WARN, f"House is buying {house:.1f} kW at the peak rate ({rate:.0f}c).",
             "the battery should be covering the house; check its mode and reserve" if (soc or 0) > reserve + 5 else "battery is at its reserve")
-    if spare is None and nxt == "peak" and to_next is not None and 0 < to_next <= 90 and soc is not None and soc < 60:
+    if not face and spare is None and nxt == "peak" and to_next is not None and 0 < to_next <= 90 and soc is not None and soc < 60:
         add(WARN, f"Battery is at {soc:.0f}% going into the {_hm(nxt_at)} peak.", "it may run out before the cheap window")
 
     # Cheap shoulder window
@@ -130,7 +132,7 @@ def tips(s: dict[str, Any], live: dict[str, float], now: datetime, *, mode: str 
 
     # Tomorrow
     tom, low = s.get("pv_tomorrow"), s.get("low_solar")
-    if now.hour >= 17 and tom is not None and low and tom < low:
+    if not face and now.hour >= 17 and tom is not None and low and tom < low:
         add(INFO, f"Tomorrow looks dull ({tom:.0f} kWh of solar). Plan a battery top-up in the {s.get('shoulder_window') or '10:00 to 14:00'} window.")
 
     if soc is not None and soc <= reserve + 3 and period != "shoulder":

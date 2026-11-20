@@ -57,6 +57,8 @@ class Autopilot(Feature):
 
     @property
     def mode(self) -> str:
+        if self.brain.face():  # an external engine plans; Autopilot stays off
+            return "off"
         mode = self.brain.opts.get(CONF_AP_MODE, "shadow")
         return mode if mode in AP_MODES else "off"
 

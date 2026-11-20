@@ -113,8 +113,8 @@ class Sealion7Feature(Feature):
 
     def blocked(self) -> str | None:
         """Why AmpX may not press the car's buttons even in control mode."""
-        if self.brain.hermes():
-            return "hermes"
+        if self.brain.face():
+            return "hermes" if self.brain.engine() == "hermes" else "external"
         return "observe" if self.brain.observe() else None
 
     def config(self, now: datetime | None = None) -> Config:

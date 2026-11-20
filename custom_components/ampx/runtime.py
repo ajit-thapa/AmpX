@@ -27,7 +27,7 @@ from .const import (
     CONF_ENGINE,
     CONF_OBSERVE,
     ENGINE_AMPX,
-    ENGINE_HERMES,
+    EXTERNAL_ENGINES,
     EVENT_SNAPSHOT,
     CONF_AGENT,
     CONF_RESERVE,
@@ -331,9 +331,14 @@ class AmpX:
     def engine(self) -> str:
         return self.opts.get(CONF_ENGINE) or ENGINE_AMPX
 
+    def face(self) -> bool:
+        """True when an external engine (Hermes, EMHASS) is the brain and AmpX is only the face:
+        it shows, but never writes the battery or car, plans, or judges the external plan."""
+        return self.engine() in EXTERNAL_ENGINES
+
     def hermes(self) -> bool:
-        """True when Hermes makes the energy decisions: AmpX stops writing and forwards data."""
-        return self.engine() == ENGINE_HERMES
+        """Kept for the existing write gates: True whenever an external engine decides."""
+        return self.face()
 
     def observe(self) -> bool:
         """True when AmpX only watches: it decides and logs, but writes nothing to the battery or EV."""
@@ -347,7 +352,7 @@ class AmpX:
 
     def advice(self) -> list[dict[str, str]]:
         """Instant rule-based tips for right now (no AI call)."""
-        return advisor.tips(self.snapshot, self.live_flows(), dt_util.now(), mode=self.control_mode(),
+        return advisor.tips(self.snapshot, self.live_flows(), dt_util.now(), mode="face" if self.face() else self.control_mode(),
                             reserve=float(self.opts.get(CONF_RESERVE) or 20))
 
     def refresh(self) -> None:

@@ -423,7 +423,7 @@ class AmpXStudio extends HTMLElement {
   }
   _viewNow() {
     const d = this._data, e = d.energy, ins = this._insight(), ap = d.autopilot || { mode: "off" };
-    const mode = { auto: ["Autopilot", C.shoulder], shadow: ["Advising", C.off_peak], off: ["Manual", "#8a8279"] }[ap.mode] || ["Manual", "#8a8279"];
+    const mode = this._face() ? [this._engineName(), C.batt] : { auto: ["Autopilot", C.shoulder], shadow: ["Advising", C.off_peak], off: ["Manual", "#8a8279"] }[ap.mode] || ["Manual", "#8a8279"];
     const hours = d.schedule.map(r => {
       const p = r.import <= 12 ? "shoulder" : r.import >= 40 ? "peak" : "off_peak";
       return `<i class="${r.hour === d.hour ? "cur" : ""}" style="background:${C[p]}" title="${r.hour}:00 · ${r.import}c import · ${r.feed_in}c feed-in"></i>`;
@@ -632,6 +632,7 @@ class AmpXStudio extends HTMLElement {
       <a class="lnk" href="/config/integrations/integration/ampx" target="_top">Open AmpX options ↗</a></div>`;
   }
   _evCtlCard() {
+    if (this._face()) return "";
     const EV = this._disc().ev, sw = this._rates().sw, win = EV.start && EV.end;
     const rows = [EV.go ? '<div class="row"><span>Start charging now</span><button id="ev-go">Start</button></div>' : "",
       EV.poll ? '<div class="row"><span>Refresh car data</span><button id="ev-poll">Poll</button></div>' : "",
@@ -653,6 +654,7 @@ class AmpXStudio extends HTMLElement {
     this._wireEvCtl(call);
   }
   _wireEvCtl(call) {
+    if (this._face()) return;
     const q = s => this._root.querySelector(s), EV = this._disc().ev, on = (sel, fn) => { const el = q(sel); if (el) el.onclick = fn; };
     if (!call) call = (dom, svc, data) => this._hass.callService(dom, svc, data).then(() => { const m = q("#ev-ctlmsg"); if (m) m.textContent = ""; }, e => { const m = q("#ev-ctlmsg"); if (m) m.textContent = "Failed: " + (e.message || e); });
     on("#ev-go", () => call(EV.go.split(".")[0], "press", { entity_id: EV.go }));
@@ -796,11 +798,12 @@ class AmpXStudio extends HTMLElement {
     return hero;
   }
   _sl7ControlCard(s) {
+    if (this._face()) return `<div class="card w6"><h2>Control</h2><div class="evnote">${icon("car")}<span><b>${esc(this._engineName())} is the brain.</b> AmpX presses nothing on the car and only shows its state.</span></div></div>`;
     const t = s.target ?? 80, mn = s.min_soc ?? 20, kwh = s.kwh ?? 40;
     return `<div class="card w6"><h2>Control</h2>
       <div class="row"><span>Mode</span><div class="seg"><button data-sl7mode="observe" class="${s.enabled ? "" : "on"}">Observe</button><button data-sl7mode="control" class="${s.enabled ? "on" : ""}">Control</button></div></div>
       <div class="muted" style="margin:0 0 8px">Observe shows what AmpX would do. Control lets AmpX press the car's start and stop.</div>
-      ${s.blocked ? `<div class="evnote">${icon("home")}<span>${s.blocked === "hermes" ? "Hermes is the decision engine, so AmpX presses nothing on the car." : "AmpX is in observe mode (Battery, Observe only), so nothing is sent to the car."}</span></div>` : ""}
+      ${s.blocked ? `<div class="evnote">${icon("home")}<span>${s.blocked === "hermes" || s.blocked === "external" ? "An external engine decides, so AmpX presses nothing on the car." : "AmpX is in observe mode (Battery, Observe only), so nothing is sent to the car."}</span></div>` : ""}
       <div class="row"><span>Charge to</span><b id="sl7-target-big">${t}%</b></div>
       <input type="range" id="sl7-target" min="20" max="100" step="1" value="${t}" class="slider">
       <div class="seg" style="margin:8px 0">${[60, 80, 90, 100].map(v => `<button data-sl7tgt="${v}">${v}%</button>`).join("")}</div>
@@ -1065,8 +1068,25 @@ class AmpXStudio extends HTMLElement {
   }
   /** Battery and inverter output settings, found on their devices so no entity ids are hard-coded. */
   _neoControls() { return this._disc().bt.controls; }
+  /** True when an external engine (EMHASS) is the brain and AmpX is only the face: no controls, no AmpX decisions. */
+  _face() { return !!((this._data || {}).control || {}).face; }
+  _engineName() { return String(((this._data || {}).control || {}).decision_engine || "").toUpperCase(); }
+  _faceCard() {
+    const o = this._data.optimiser || {}, c = this._data.control || {}, eng = this._engineName();
+    const dm = c.mode_entity && this._hass.states[c.mode_entity], dispatch = (dm && dm.state) || o.dispatch_mode || "–";
+    const dcol = /discharge/i.test(dispatch) ? C.off_peak : /charge/i.test(dispatch) ? C.grid : C.shoulder;
+    const armed = o.armed === true;
+    return `<div class="card wide ctl"><h2>Battery control <span class="pill" style="--pc:${dcol}">dispatch: ${esc(dispatch)}</span></h2>
+      <div class="evnote">${icon("home")}<span><b>${esc(eng)} is the brain.</b> It plans and drives the battery; AmpX only shows what it does.
+        ${armed ? "Control is armed." : "Control is not armed, so the battery runs on its own settings."}</span></div>
+      ${o.dispatch_status ? `<div class="row"><span>Battery now</span><b>${esc(o.dispatch_status)}</b></div>` : ""}
+      <div class="row"><span>Plan now</span><b>${o.batt_w == null ? "–" : o.batt_w < -50 ? "charge " + fx(-o.batt_w / 1000, 1) + " kW" : o.batt_w > 50 ? "discharge " + fx(o.batt_w / 1000, 1) + " kW" : "hold"}</b></div>
+      <div class="row"><span>Optimiser</span><b>${esc(o.status || "no data")}</b></div>
+      <div class="rowend" style="margin-top:8px"><span class="muted">To take control back, set the decision engine to AmpX in AmpX options.</span><button class="ghost" data-go="energy/plan">See plan ↗</button></div></div>`;
+  }
   _ctlCards() {
     const d = this._data, c = d.control; if (!c) return "";
+    if (this._face()) return this._faceCard() + this._neoCard(false, "face");
     const mode = this._ctlMode(), manual = mode === "manual";
     const MODES = [["manual", "✋", "Manual", "You decide. AmpX starts nothing. Peak, reserve and house rule limits still stop a dispatch."],
       ["timers", "⏱", "Timers", "Fixed windows: grid top-up in the shoulder, export in the evening."],
@@ -1116,14 +1136,16 @@ class AmpXStudio extends HTMLElement {
       (groups[group(fn)] = groups[group(fn)] || []).push(`<div class="srow"><span>${esc(short(fn))}</span>${w}</div>`);
     }
     const blocks = order.filter(g => groups[g]).map(g => `<div class="grp"><h3>${g}</h3>${groups[g].join("")}</div>`).join("");
-    const label = { timers: "Timers", advise: "Advise", auto: "Autopilot" }[mode];
+    const label = { timers: "Timers", advise: "Advise", auto: "Autopilot", face: this._engineName() }[mode];
     if (!blocks) return "";
     return `<div class="card wide"><h2>Inverter and battery settings</h2>
-      ${manual ? "" : `<div class="lockbar"><span>🔒 Locked while AmpX runs <b>${label}</b>, so it and your edits don't fight.</span><button id="to-manual">Switch to Manual</button></div>`}
+      ${manual ? "" : mode === "face" ? `<div class="lockbar"><span>🔒 Read only: <b>${esc(label)}</b> drives these. AmpX shows them.</span></div>`
+        : `<div class="lockbar"><span>🔒 Locked while AmpX runs <b>${label}</b>, so it and your edits don't fight.</span><button id="to-manual">Switch to Manual</button></div>`}
       <div class="grps ${manual ? "" : "locked"}">${blocks}</div>
-      <div class="muted" style="margin-top:8px">These write straight to your battery and inverter entities.</div></div>`;
+      ${mode === "face" ? "" : '<div class="muted" style="margin-top:8px">These write straight to your battery and inverter entities.</div>'}</div>`;
   }
   _wireCtl() {
+    if (this._face()) return;  // the face writes nothing
     const r = this._root, q = s => r.querySelector(s), msg = (t, bad) => { const m = q("#ctl-msg"); if (m) { m.textContent = t; m.className = "toast" + (t ? " show" : "") + (bad ? " bad" : ""); } };
     const presets = { manual: { autopilot_mode: "off", auto_topup: false, auto_export: false }, timers: { autopilot_mode: "off", auto_topup: true, auto_export: true },
       advise: { autopilot_mode: "shadow", auto_topup: false, auto_export: false }, auto: { autopilot_mode: "auto" } };
@@ -1281,7 +1303,7 @@ class AmpXStudio extends HTMLElement {
     const num = (k, l, v, min, max, step, u) => `<div class="row"><span>${l}</span><div class="nstep"><input type="number" data-homen="${k}" value="${v ?? ""}" min="${min}" max="${max}" step="${step}"><span class="muted">${u}</span></div></div>`;
     return `<div class="card w6"><h2>Your home</h2>
       ${txt("battery_name", "Battery name", n.battery)}${txt("ev_name", "EV name", n.ev)}${txt("charger_name", "Charger name", n.charger)}${txt("plan_name", "Electricity plan", n.plan)}
-      ${num("battery_kwh", "Battery capacity", b.capacity, 1, 500, 0.1, "kWh")}${num("battery_reserve_pct", "Battery reserve", b.reserve, 0, 100, 1, "%")}
+      ${num("battery_kwh", "Battery capacity", b.capacity, 1, 500, 0.1, "kWh")}${this._face() ? "" : num("battery_reserve_pct", "Battery reserve", b.reserve, 0, 100, 1, "%")}
       ${num("battery_efficiency", "Round-trip efficiency", b.efficiency, 50, 100, 1, "%")}${num("ev_kwh", "EV battery", e.capacity, 1, 300, 0.1, "kWh")}
       ${num("ev_charger_kw", "Charger power", e.charger_kw, 1, 50, 0.1, "kW")}
       <div class="rowend" style="margin-top:8px"><span class="muted">Entities are picked in AmpX options.</span><button id="home-save">Save</button></div></div>`;
@@ -1748,19 +1770,20 @@ class AmpXStudio extends HTMLElement {
     const ap = d.autopilot || { mode: "off", decisions: [] };
     const pvT = e.pv_today, pvM = e.pv_tomorrow, mx = Math.max(pvT || 0, pvM || 0, e.low_solar || 30, 1);
     const bar = (v, label) => `<div class="hbar"><span>${label}</span><div><i style="width:${v === null ? 0 : Math.min(v / mx, 1) * 100}%;background:${C.solar}"></i></div><b>${v === null ? "–" : fx(v, 0) + " kWh"}</b></div>`;
+    const face = this._face();
     return `<section class="grid">
-      ${this._planCard()}
+      ${face ? this._externalPlanCard() : this._planCard()}
       <div class="card wide"><h2>Today's rates <span class="legend"><b style="color:${C.shoulder}">■</b> shoulder <b style="color:${C.off_peak}">■</b> off-peak <b style="color:${C.peak}">■</b> peak <b style="color:#2e7d32">━</b> feed-in</span></h2>
         <div class="chart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${grid}${bars}
         <path d="${pts}" fill="none" stroke="#2e7d32" stroke-width="2.5"/>${labels}</svg></div></div>
-      <div class="card w8"><h2>Evening export plan</h2><div id="earn"><div class="muted">Loading…</div></div></div>
-      <div class="card wide"><h2>Autopilot <span class="pill" style="--pc:${ap.mode === "auto" ? C.shoulder : ap.mode === "shadow" ? C.off_peak : "#8a8279"}">${esc(ap.mode)}</span>
+      ${face ? "" : '<div class="card w8"><h2>Evening export plan</h2><div id="earn"><div class="muted">Loading…</div></div></div>'}
+      ${face ? "" : `<div class="card wide"><h2>Autopilot <span class="pill" style="--pc:${ap.mode === "auto" ? C.shoulder : ap.mode === "shadow" ? C.off_peak : "#8a8279"}">${esc(ap.mode)}</span>
         <span class="seg"><button id="ap-topup">Plan top-up</button><button id="ap-export">Plan export</button></span></h2>
         ${(ap.decisions || []).length ? ap.decisions.map(x => `<div class="row"><span><b>${x.window === "topup" ? "Top-up" : "Export"}</b> ${x.do ? "✅" : "⏸"} ${esc(x.reason)}
           ${x.do ? `<span class="muted">· ${x.kw} kW ${x.window === "topup" ? "to " + x.target_soc : "to floor " + x.floor_soc}%</span>` : ""}
           ${x.outcome ? `<br><span class="muted">${esc(x.outcome)}</span>` : ""}</span>
           <span class="muted">${esc(x.source)} · ${esc(x.result)} · ${(x.time || "").slice(5, 16).replace("T", " ")}</span></div>`).join("")
-          : `<div class="muted">No decisions yet. Autopilot plans at the start of the shoulder window and the evening feed-in window.</div>`}</div>
+          : `<div class="muted">No decisions yet. Autopilot plans at the start of the shoulder window and the evening feed-in window.</div>`}</div>`}
       <div class="card w4"><h2>Next change</h2>
         <div class="big">${esc(e.next_period.replace("_", " "))}</div>
         <div class="muted">at ${new Date(e.next_change).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}</div>
@@ -1794,6 +1817,30 @@ class AmpXStudio extends HTMLElement {
       <div class="muted" style="margin-top:8px">Re-planned every 15 min from ${esc(p.profile_source || "")}, solar forecast, your ${esc(this._name("plan"))} rates and ${p.candidates} candidate plans. EV charging isn't in the plan.${p.house_rule ? (p.house_grid > 0.2 ? ` <b class="bad">The battery can't carry the house to the next cheap window: ${fx(p.house_grid, 1)} kWh from the grid at least.</b>` : " House rule kept: no grid power for the house outside the cheap window.") : ""}</div>
       <div class="toast" id="plan-msg"></div></div>${this._optimiserCard()}`;
   }
+  /** The external engine's whole plan (face mode): battery level and what it does, slot by slot. */
+  _externalPlanCard() {
+    const o = this._data.optimiser, eng = this._engineName();
+    const rows = (o && o.horizon) || [];
+    if (!rows.length) return `<div class="card wide"><h2>${esc(eng)} plan</h2><div class="muted">No plan published yet.</div></div>${this._optimiserCard()}`;
+    const W = 900, H = 140, x = i => (i / Math.max(rows.length - 1, 1)) * W, y = v => H - 10 - (v / 100) * (H - 20);
+    const act = r => r.batt < -200 ? (r.grid > 200 ? "grid charge" : "solar charge") : r.batt > 200 ? (r.grid < -200 ? "export" : "self-use") : (r.grid > 200 ? "hold" : "idle");
+    const acol = { "grid charge": C.grid, export: C.off_peak, hold: C.peak, "solar charge": C.solar };
+    const line = rows.map((r, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(r.soc ?? 0).toFixed(1)).join("");
+    const bands = rows.map((r, i) => acol[act(r)] ? `<rect x="${x(i)}" y="0" width="${(W / rows.length + 0.5).toFixed(1)}" height="${H}" fill="${acol[act(r)]}" opacity=".16"/>` : "").join("");
+    const hm = t => String(t).slice(11, 16), kw = w => (w / 1000).toFixed(1);
+    const ticks = rows.map((r, i) => (hm(r.t) === "00:00" || hm(r.t) === "12:00") ? `<text x="${x(i)}" y="${H - 1}" class="ax" text-anchor="middle">${hm(r.t) === "00:00" ? new Date(String(r.t).replace(" ", "T")).toLocaleDateString([], { weekday: "short" }) : "noon"}</text>` : "").join("");
+    const sum = (f, pos) => rows.reduce((a, r) => a + (pos ? Math.max(f(r), 0) : Math.max(-f(r), 0)), 0) * 0.5 / 1000;
+    const socs = rows.map(r => r.soc).filter(v => v != null);
+    const stat = (v, l) => `<div><b>${v}</b><span>${l}</span></div>`;
+    const tbl = rows.map(r => `<tr class="${act(r) !== "self-use" && act(r) !== "idle" ? "act" : ""}"><td>${hm(r.t)}</td><td>${act(r)}</td><td>${r.batt > 0 ? "+" : ""}${kw(r.batt)}</td><td>${r.grid == null ? "–" : (r.grid > 0 ? "+" : "") + kw(r.grid)}</td><td>${r.soc == null ? "–" : Math.round(r.soc) + "%"}</td></tr>`).join("");
+    return `<div class="card wide plan48"><div class="chead"><h2>${esc(eng)} plan <span class="muted">next ${Math.round(rows.length / 2)} h</span></h2></div>
+      <div class="skstats">${stat(fx(sum(r => r.grid ?? 0, false), 1) + " kWh", "exported")}${stat(fx(sum(r => r.grid ?? 0, true), 1) + " kWh", "imported")}${stat(socs.length ? Math.round(Math.min(...socs)) + "%" : "–", "lowest battery")}${stat(socs.length ? Math.round(socs[socs.length - 1]) + "%" : "–", "battery at end")}</div>
+      <div class="chart" style="height:${H}px;margin-top:12px"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Planned battery level">${bands}<path d="${line}" fill="none" stroke="${C.batt}" stroke-width="2.4" vector-effect="non-scaling-stroke"/>${ticks}</svg></div>
+      <div class="lg"><span><b style="color:${C.batt}">━</b> battery %</span><span><b style="color:${C.solar}">■</b> solar charge</span><span><b style="color:${C.grid}">■</b> grid charge</span><span><b style="color:${C.off_peak}">■</b> export</span><span><b style="color:${C.peak}">■</b> hold</span></div>
+      <details class="more slots"><summary><b>Slot by slot</b><span class="muted">action, battery (+ discharge), grid (+ buy / − sell) kW, battery %</span></summary>
+        <div class="tblwrap"><table class="ptbl"><thead><tr><th>Time</th><th>Action</th><th>Battery</th><th>Grid</th><th>Level</th></tr></thead><tbody>${tbl}</tbody></table></div></details>
+      <div class="muted" style="margin-top:8px">Planned by ${esc(eng)}, shown by AmpX. AmpX makes no battery decisions of its own.</div></div>${this._optimiserCard()}`;
+  }
   /** External EMHASS optimiser plan, shown when it has published data. */
   _optimiserCard() {
     const o = this._data.optimiser;
@@ -1811,9 +1858,10 @@ class AmpXStudio extends HTMLElement {
     return `<div class="card w6"><div class="chead"><h2>Optimiser plan <span class="muted">EMHASS</span></h2><span>${armBadge} <span class="pill" style="background:${ok ? C.shoulder : C.peak};color:#fff">${esc(o.status)}</span></span></div>
       <div class="skstats"><div><b>${act}</b><span>plan now</span></div><div><b>${soc}</b><span>target SOC</span></div><div><b>${cost}</b><span>cost, horizon</span></div></div>
       ${live}
-      <div class="muted" style="margin-top:8px">External MILP optimiser. AmpX ${c.decision_engine === "hermes" ? "shows this and suggests" : "runs its own plan above; set the engine to Hermes to defer to it"}.${upd ? " Updated " + esc(upd) + "." : ""}</div></div>`;
+      <div class="muted" style="margin-top:8px">External MILP optimiser. AmpX ${c.face ? "shows this; it makes no battery decisions" : "runs its own plan above; set the engine to EMHASS to defer to it"}.${upd ? " Updated " + esc(upd) + "." : ""}</div></div>`;
   }
   _wirePlan() {
+    if (this._face()) return;
     this._root.querySelectorAll("[data-optplan]").forEach(i => i.onchange = () => this._saveOpts({ autopilot_planner: i.checked }, "#plan-msg"));
     const act = async action => { try { await this._hass.callWS({ type: "ampx/action", action }); } catch (e) { /* shown next load */ } this._load(); };
     const t = this._root.querySelector("#ap-topup"), x = this._root.querySelector("#ap-export");

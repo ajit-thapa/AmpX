@@ -14,6 +14,7 @@ from . import ladder, planner, safety, tariff
 from .const import (
     CONF_ENGINE,
     ENGINE_AMPX,
+    ENGINE_HERMES,
     CONF_AP_PLANNER,
     CONF_BATT_MAX_KW,
     CONF_CYCLE_COST,
@@ -564,8 +565,10 @@ class EnergyBrain:
         Under Hermes AmpX only watches the house rule. In observe mode the verdict is logged and
         nothing is sent."""
         now = now or dt_util.now()
-        if self.brain.hermes():
-            return await self._watch_house(now)
+        if self.brain.face():
+            # Hermes is watched against the house rule; EMHASS optimises cost and may buy
+            # grid power on purpose, so AmpX (the face) does not judge its plan.
+            return await self._watch_house(now) if self.brain.engine() == ENGINE_HERMES else None
         inputs, ctx = self.ladder_inputs(now)
         verdict = self.verdict = ladder.evaluate(inputs)
         writes = verdict.action in ladder.WRITES
@@ -641,6 +644,9 @@ class EnergyBrain:
         return "ended"
 
     # ---- actions --------------------------------------------------------
+    def _external_note(self) -> str:
+        return f"skipped: {self.brain.engine().upper()} drives the battery"
+
     async def _set(self, domain: str, service: str, key: str, **data: Any) -> bool:
         if self.brain.hermes():  # Hermes decides and writes; AmpX only shows and suggests
             _LOGGER.debug("Decision engine is Hermes: not writing %s.%s", domain, service)
@@ -664,6 +670,8 @@ class EnergyBrain:
         self, force: bool = False, kw: float | None = None, target: float | None = None, source: str = ladder.MANUAL
     ) -> str:
         """Charge the battery from the grid during the cheap shoulder window."""
+        if self.brain.face():
+            return self._external_note()
         snap = self.snapshot()
         short = snap["pv_shortfall"]
         if not force and (short is None or short <= 0):
@@ -694,6 +702,8 @@ class EnergyBrain:
         self, force: bool = False, kw: float | None = None, floor: float | None = None, source: str = ladder.MANUAL
     ) -> str:
         """Discharge to the grid during the evening feed-in window."""
+        if self.brain.face():
+            return self._external_note()
         o = self.brain.opts
         soc = self._num(CONF_SOC)
         if not force and (soc is None or soc <= float(o[CONF_EXPORT_MIN_SOC])):
@@ -727,6 +737,8 @@ class EnergyBrain:
 
     async def stop(self, only_mode: str | None = None) -> str:
         """Stop forced dispatch (optionally only when currently in ``only_mode``)."""
+        if self.brain.face():
+            return self._external_note()
         mode_id = self.brain.opts.get(CONF_MODE)
         state = self.hass.states.get(mode_id) if mode_id else None
         if only_mode and (state is None or state.state != only_mode):

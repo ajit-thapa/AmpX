@@ -143,7 +143,7 @@ SECTIONS: dict[str, dict[str, Any]] = {
         CONF_EXPORT_KW: _num(0.5, 30, 0.1, "kW"),
         CONF_EXPORT_MIN_SOC: _num(0, 100, 1, "%"),
         CONF_HOUSE_RULE: sel.BooleanSelector(),
-        CONF_ENGINE: sel.SelectSelector(sel.SelectSelectorConfig(options=[ENGINE_AMPX, ENGINE_HERMES], mode=sel.SelectSelectorMode.LIST)),
+        CONF_ENGINE: sel.SelectSelector(sel.SelectSelectorConfig(options=list(ENGINES), mode=sel.SelectSelectorMode.LIST)),
         CONF_EV_PRIORITY: sel.BooleanSelector(),
         CONF_BATT_MAX_KW: _num(1, 50, 0.1, "kW"),
         CONF_EV_TRICKLE_KW: _num(0, 2, 0.05, "kW"),
@@ -189,9 +189,32 @@ CLEARABLE = {
 }
 
 
+# Energy settings that only matter when AmpX itself decides. Hidden while an external engine
+# (EMHASS, Hermes) is the brain and AmpX is only the face.
+FACE_HIDDEN = frozenset({
+    CONF_MODE, CONF_POWER, CONF_DURATION, CONF_CHARGE_TARGET, CONF_DISCHARGE_TARGET, CONF_STOP,
+    CONF_EV_TARGET, CONF_EV_START, CONF_RESERVE, CONF_LOW_SOLAR, CONF_TOPUP_KW, CONF_EXPORT_KW,
+    CONF_EXPORT_MIN_SOC, CONF_HOUSE_RULE, CONF_EV_PRIORITY, CONF_EV_TRICKLE_KW, CONF_EXPORT_FLOOR,
+    CONF_AUTO_TOPUP, CONF_AUTO_EXPORT, CONF_EV_GATE,
+})
+MENU = ["profile", "general", "briefing", "house", "autopilot", "studio", "energy", "tariff"]
+
+
+def is_face(current: dict[str, Any]) -> bool:
+    return current.get(CONF_ENGINE) in EXTERNAL_ENGINES
+
+
+def menu(current: dict[str, Any]) -> list[str]:
+    """Options pages; Autopilot is gone while an external engine plans."""
+    return [m for m in MENU if not (m == "autopilot" and is_face(current))]
+
+
 def section_schema(section: str, current: dict[str, Any]) -> vol.Schema:
     fields: dict[Any, Any] = {}
+    face = is_face(current)
     for key, selector in SECTIONS[section].items():
+        if face and key in FACE_HIDDEN:
+            continue
         value = current.get(key, DEFAULTS.get(key))
         marker = vol.Optional(key, description={"suggested_value": value})
         fields[marker] = selector
@@ -231,7 +254,7 @@ class AmpXOptionsFlow(OptionsFlow):
         return {**DEFAULTS, **self.config_entry.options}
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        return self.async_show_menu(step_id="init", menu_options=["profile", "general", "briefing", "house", "autopilot", "studio", "energy", "tariff"])
+        return self.async_show_menu(step_id="init", menu_options=menu(self._current()))
 
     async def _section(self, section: str, user_input: dict[str, Any] | None) -> ConfigFlowResult:
         if user_input is not None:

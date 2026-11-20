@@ -69,3 +69,17 @@ def test_budget_warns_to_stop_exporting_when_house_needs_it():
     s = snap(period="peak", import_rate=41.91, feed_in_rate=28.0, next_period="off_peak", battery_soc=45.0, supply_left=1.1, budget=b)
     out = tips(s, {"grid": -3.0, "batt": -4.0}, NOW.replace(hour=18))
     assert any("Stop exporting soon" in t["text"] for t in out)
+
+
+def test_face_mode_gives_no_battery_steering_tips():
+    """An external engine drives the battery: no top-up, export, stop-exporting or mode advice."""
+    b = {"usable": 13.0, "house": 12.0, "supply": 4.0, "spare": -3.0, "until": "10:00", "hours": 14.0}
+    s = snap(period="peak", import_rate=41.91, feed_in_rate=28.0, next_period="off_peak", battery_soc=45.0, supply_left=1.1, budget=b)
+    texts = " ".join(t["text"] + t["why"] for t in tips(s, {"grid": 2.0, "batt": -4.0}, NOW.replace(hour=18), mode="face"))
+    assert "Stop exporting" not in texts and "check its mode" not in texts and "short of" not in texts
+    shoulder = snap(period="shoulder", import_rate=11.11, next_period="off_peak", next_change=NOW.replace(hour=14),
+                    ev_plugged=True, ev_room=30.0, battery_soc=50.0, pv_shortfall=12.0)
+    texts = " ".join(t["text"] for t in tips(shoulder, {}, NOW.replace(hour=11), mode="face"))
+    assert "Top up" not in texts and "start charging" in texts  # the EV is still AmpX's to talk about
+    dull = tips(snap(pv_tomorrow=5.0, next_change=NOW + timedelta(hours=8)), {}, NOW.replace(hour=19), mode="face")
+    assert not any("top-up" in t["text"] for t in dull)
