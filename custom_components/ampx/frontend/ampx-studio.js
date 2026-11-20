@@ -464,6 +464,7 @@ class AmpXStudio extends HTMLElement {
   }
 
   _paintLive() {
+    if (!this._data) return;  // a resize can fire before the first load
     const f = this._flows();
     this._paintTo("#kpis", this._kpisHtml());
     this._paintTo("#flow", flowSvg(f, { soc: this._socNow(), compact: this.clientWidth < 640 }));

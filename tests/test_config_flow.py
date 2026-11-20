@@ -31,3 +31,15 @@ def test_multiple_entity_empty_is_list():
     sel = cf._entity("calendar", multiple=True)
     assert sel([]) == []
     assert sel("") == []
+
+
+def test_mute_push_option_validates():
+    """Regression: the panel's mute_push validator was a bare list and raised TypeError."""
+    import pytest
+
+    from custom_components.ampx.const import CONF_MUTE_PUSH
+    from custom_components.ampx.websocket import CONTROL_OPTIONS
+
+    assert CONTROL_OPTIONS[CONF_MUTE_PUSH](["autopilot", "health"]) == ["autopilot", "health"]
+    with pytest.raises(vol.Invalid):
+        CONTROL_OPTIONS[CONF_MUTE_PUSH](["not_a_category"])

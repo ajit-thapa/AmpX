@@ -316,7 +316,7 @@ CONTROL_OPTIONS = {
     CONF_EXPORT_KW: vol.All(vol.Coerce(float), vol.Range(min=0.5, max=15)),
     CONF_EXPORT_FLOOR: vol.All(vol.Coerce(float), vol.Range(min=5, max=90)),
     CONF_HEALTH_IGNORE: vol.All([str], vol.Length(max=500)),
-    CONF_MUTE_PUSH: [vol.In(PUSH_CATEGORIES)],
+    CONF_MUTE_PUSH: vol.Schema([vol.In(PUSH_CATEGORIES)]),
     CONF_AGENT: vol.Any(None, "", str),
     CONF_AI_PER_HOUR: vol.All(vol.Coerce(int), vol.Range(min=0, max=120)),
     CONF_AS_STYLE: vol.In(AS_STYLES),

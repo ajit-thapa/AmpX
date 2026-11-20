@@ -494,7 +494,7 @@ class EnergyBrain:
         if house_import > 0.5:
             await self._tell_once("hermes_breach", f"House rule: {house_import:.1f} kW from the grid outside "
                                                    f"{plan.shoulder_window[0]:02d}:00 to {plan.shoulder_window[1]:02d}:00. "
-                                                   "Hermes is in control; check its decisions.")
+                                                   "The external decision engine is in control; check its plan.")
             return "breach"
         return "ok"
 
