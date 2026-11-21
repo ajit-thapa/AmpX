@@ -244,3 +244,21 @@ async def test_broken_stream_is_an_error_reply_not_a_crash(hass, aioclient_mock)
 
     assert res.response.response_type is intent.IntentResponseType.ERROR
     assert "gateway" in res.response.speech["plain"]["speech"].lower()
+
+
+async def test_html_403_is_not_blamed_on_the_key(hass, aioclient_mock):
+    """A Cloudflare/Vercel challenge page is a 403 with HTML: say so, don't say the key is wrong."""
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    from custom_components.ampx.gateway import GatewayAuthError, GatewayClient, GatewayError
+
+    aioclient_mock.get("https://omni.example.com/v1/models", status=403, text="<!DOCTYPE html><title>Just a moment...</title>", headers={"content-type": "text/html"})
+    aioclient_mock.get("https://key.example.com/v1/models", status=403, json={"error": {"message": "Invalid API key"}})
+    s = async_get_clientsession(hass)
+    with pytest.raises(GatewayError) as err:
+        await GatewayClient(s, "https://omni.example.com/v1").async_discover()
+    assert not isinstance(err.value, GatewayAuthError)
+    assert "403" in str(err.value) and "Just a moment" in str(err.value) and "proxy" in str(err.value)
+    with pytest.raises(GatewayAuthError):
+        await GatewayClient(s, "https://key.example.com/v1").async_discover()
+    assert aioclient_mock.mock_calls[0][3]["User-Agent"].startswith("HomeAssistant-AmpX")

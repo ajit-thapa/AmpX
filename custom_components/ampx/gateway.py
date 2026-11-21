@@ -70,7 +70,7 @@ class GatewayClient:
 
     @property
     def _headers(self) -> dict[str, str]:
-        headers = {"Content-Type": "application/json", "X-Title": "Home Assistant"}
+        headers = {"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "HomeAssistant-AmpX (OpenAI-compatible client)", "X-Title": "Home Assistant"}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
         return headers
@@ -85,6 +85,10 @@ class GatewayClient:
             raise GatewayConnectionError(f"Cannot reach {url}: {err}") from err
         if resp.status in (401, 403):
             body = await resp.text()
+            if "html" in (resp.content_type or "") or body.lstrip()[:1] == "<":
+                # A web page, not the API: a reverse proxy, login wall or bot check (Cloudflare, Vercel) in the way.
+                snippet = " ".join(body.split())[:80]
+                raise GatewayError(f"{resp.status} web page from {url}, not the API: a proxy, login or bot check is in the way ({snippet!r})", resp.status)
             raise GatewayAuthError(f"Gateway refused the API key: {_error_text(body)}", resp.status)
         if resp.status >= 400:
             body = await resp.text()
