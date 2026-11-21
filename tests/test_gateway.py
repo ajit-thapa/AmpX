@@ -262,3 +262,47 @@ async def test_html_403_is_not_blamed_on_the_key(hass, aioclient_mock):
     with pytest.raises(GatewayAuthError):
         await GatewayClient(s, "https://key.example.com/v1").async_discover()
     assert aioclient_mock.mock_calls[0][3]["User-Agent"].startswith("HomeAssistant-AmpX")
+
+
+def test_unsupported_schema_parts_are_dropped():
+    """Newer voluptuous_openapi leaks an `_Unsupported` object for selectors HA cannot translate
+    (e.g. a field on an exposed script). Those parts go; the rest of the tool stays usable."""
+    from voluptuous_openapi import UNSUPPORTED
+
+    from custom_components.ampx.gateway_llm import _sanitize
+
+    class _Unsupported:  # the newer library's sentinel type
+        pass
+
+    leaked = {
+        "type": "object",
+        "properties": {
+            "room": {"type": "string"},
+            "weird": _Unsupported(),
+            "old": UNSUPPORTED,
+            "list": {"type": "array", "items": _Unsupported()},
+            "either": {"anyOf": [{"type": "string"}, _Unsupported()]},
+        },
+        "required": ["room", "weird"],
+    }
+    clean = _sanitize(leaked)
+    assert set(clean["properties"]) == {"room", "list", "either"}
+    assert clean["required"] == ["room"]
+    assert clean["properties"]["list"] == {"type": "array"}
+    assert clean["properties"]["either"] == {"anyOf": [{"type": "string"}]}
+    json.dumps(clean)
+
+
+def test_tool_that_cannot_be_described_is_skipped():
+    from custom_components.ampx.gateway_llm import format_tools
+
+    class T(llm.Tool):
+        name, description, parameters = "broken", "x", vol.Schema({vol.Required("x"): str})
+
+    class Boom:
+        pass
+
+    def serializer(value):
+        return {"type": "string", "default": Boom()} if value is str else llm.selector_serializer(value)
+
+    assert format_tools([T()], serializer) == []

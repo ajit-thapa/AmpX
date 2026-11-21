@@ -20,7 +20,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import llm
 from homeassistant.helpers.json import json_dumps
 from homeassistant.util import ulid
-from voluptuous_openapi import convert
+from voluptuous_openapi import UNSUPPORTED, convert
 
 from .gateway import GatewayClient, GatewayError
 
@@ -43,6 +43,52 @@ def format_tool(tool: llm.Tool, custom_serializer: Callable[[Any], Any] | None) 
     if tool.description:
         fn["description"] = tool.description
     return {"type": "function", "function": fn}
+
+
+def _unsupported(value: Any) -> bool:
+    # voluptuous_openapi's sentinel: an object() in older releases, an `_Unsupported` instance in newer ones
+    return value is UNSUPPORTED or type(value).__name__ == "_Unsupported"
+
+
+def _sanitize(node: Any) -> Any:
+    """Drop the parts of a JSON schema that HA could not translate, keeping the rest usable."""
+    if isinstance(node, dict):
+        out: dict[str, Any] = {}
+        dropped: set[str] = set()
+        for key, value in node.items():
+            if _unsupported(value):
+                continue
+            if key == "properties" and isinstance(value, dict):
+                props = {}
+                for name, prop in value.items():
+                    if _unsupported(prop):
+                        dropped.add(name)
+                        continue
+                    props[name] = _sanitize(prop)
+                out[key] = props
+                continue
+            out[key] = _sanitize(value)
+        if dropped and isinstance(out.get("required"), list):
+            out["required"] = [r for r in out["required"] if r not in dropped]
+        return out
+    if isinstance(node, list):
+        return [_sanitize(v) for v in node if not _unsupported(v)]
+    return node
+
+
+def format_tools(tools: list[llm.Tool], custom_serializer: Callable[[Any], Any] | None) -> list[dict[str, Any]]:
+    """Tools the gateway can be sent. One that still cannot be described as JSON is skipped, not fatal."""
+    out = []
+    for tool in tools:
+        try:
+            spec = format_tool(tool, custom_serializer)
+            spec["function"]["parameters"] = _sanitize(spec["function"]["parameters"]) or {"type": "object", "properties": {}}
+            json.dumps(spec)
+        except (TypeError, ValueError) as err:
+            LOGGER.warning("Not offering tool %s to the AI gateway: its parameters cannot be described (%s)", tool.name, err)
+            continue
+        out.append(spec)
+    return out
 
 
 def to_message(content: conversation.Content) -> dict[str, Any] | None:
@@ -197,7 +243,8 @@ async def async_run_chat_log(
     if max_tokens:
         args["max_tokens"] = int(max_tokens)
     if chat_log.llm_api:
-        args["tools"] = [format_tool(t, chat_log.llm_api.custom_serializer) for t in chat_log.llm_api.tools]
+        if tools := format_tools(chat_log.llm_api.tools, chat_log.llm_api.custom_serializer):
+            args["tools"] = tools
     messages = [m for c in chat_log.content if (m := to_message(c))]
 
     last = chat_log.content[-1]
