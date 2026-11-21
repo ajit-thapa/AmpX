@@ -178,3 +178,30 @@ async def test_ask_action_defaults_to_gateway_agent(hass, gateway):
     gateway.reply(completion("Lights are off."))
     out = await hass.services.async_call(DOMAIN, "ask", {"question": "lights?", "speak": False}, blocking=True, return_response=True)
     assert out == {"answer": "Lights are off."}
+
+
+async def test_dashboard_url_finds_api_at_root(hass, aioclient_mock):
+    """Pasting OmniRoute's dashboard URL still works: the API is at <host>/v1."""
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    from custom_components.ampx.gateway import GatewayClient
+
+    for path in ("/dashboard/models", "/dashboard/v1/models"):
+        aioclient_mock.get(f"http://omni:20128{path}", text="<!doctype html><html>OmniRoute</html>", headers={"content-type": "text/html"})
+    aioclient_mock.get("http://omni:20128/v1/models", json={"object": "list", "data": [{"id": "auto", "object": "model"}]})
+    client = GatewayClient(async_get_clientsession(hass), "http://omni:20128/dashboard")
+    assert await client.async_discover() == ["auto"]
+    assert client.base_url == "http://omni:20128/v1"
+
+
+async def test_options_error_says_what_came_back(hass, aioclient_mock):
+    for path in ("/x/models", "/x/v1/models", "/v1/models"):
+        aioclient_mock.get(f"http://web{path}", text="<html>login</html>", headers={"content-type": "text/html"})
+    entry, _ = await _setup(hass)
+    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    flow = await hass.config_entries.options.async_configure(flow["flow_id"], {"next_step_id": "gateway"})
+    bad = await hass.config_entries.options.async_configure(flow["flow_id"], {"gateway_url": "http://web/x"})
+    assert bad["errors"] == {"base": "not_openai_compatible"}
+    detail = bad["description_placeholders"]["error"]
+    assert "http://web/x/models" in detail and "text/html" in detail and "<html>login" in detail
+    assert "http://web/v1/models" in detail

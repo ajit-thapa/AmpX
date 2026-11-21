@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import aiohttp
+from urllib.parse import urlsplit, urlunsplit
 
 LOGGER = logging.getLogger(__name__)
 
@@ -98,34 +99,51 @@ class GatewayClient:
         candidates = [self.base_url]
         if not self.base_url.endswith("/v1"):
             candidates.append(f"{self.base_url}/v1")
-        last: GatewayError | None = None
+        # A dashboard or other page URL pasted (e.g. OmniRoute's http://host:20128/dashboard): the API is at the root.
+        parts = urlsplit(self.base_url)
+        root = urlunsplit((parts.scheme, parts.netloc, "/v1", "", ""))
+        if parts.netloc and root not in candidates:
+            candidates.append(root)
+        tried: list[str] = []
+        conn: GatewayConnectionError | None = None
         for base in candidates:
             try:
                 models = await self._list_models(base)
             except GatewayAuthError:
                 raise
+            except GatewayConnectionError as err:
+                conn = err
+                break  # same host for every candidate: no point trying the others
             except GatewayError as err:
-                last = err
+                tried.append(str(err))
                 continue
             self.base_url = base
             return models
-        assert last is not None
-        raise last
+        if conn is not None and not tried:
+            raise conn
+        raise GatewayError("; ".join(tried) or str(conn))
 
     async def async_list_models(self) -> list[str]:
         """Model ids the gateway offers, sorted."""
         return await self._list_models(self.base_url)
 
     async def _list_models(self, base: str) -> list[str]:
-        resp = await self._request("GET", "/models", base=base)
         try:
-            data = await resp.json(content_type=None)
+            resp = await self._request("GET", "/models", base=base)
+        except GatewayError as err:
+            if isinstance(err, (GatewayAuthError, GatewayConnectionError)):
+                raise
+            raise GatewayError(f"GET {base}/models → {err}", err.status) from err
+        body = await resp.text()
+        try:
+            data = json.loads(body)
         except ValueError as err:
-            raise GatewayError(f"{base}/models did not return JSON") from err
+            snippet = " ".join(body.split())[:80]
+            raise GatewayError(f"GET {base}/models → {resp.status} {resp.content_type or 'no content type'}, not JSON: {snippet!r}") from err
         # OpenAI shape {"data": [{"id": ...}]}; tolerate a bare list and Ollama-style {"models": [...]}
         rows = data.get("data", data.get("models")) if isinstance(data, dict) else data
         if not isinstance(rows, list):
-            raise GatewayError(f"{base}/models is not an OpenAI-style model list")
+            raise GatewayError(f"GET {base}/models → JSON without a model list (keys: {', '.join(data)[:80] if isinstance(data, dict) else type(data).__name__})")
         ids = {str(r.get("id") or r.get("name") or r.get("model")) if isinstance(r, dict) else str(r) for r in rows}
         return sorted(i for i in ids if i and i != "None")
 

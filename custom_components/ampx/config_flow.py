@@ -306,6 +306,7 @@ class AmpXOptionsFlow(OptionsFlow):
 
         current = self._current()
         errors: dict[str, str] = {}
+        detail = ""
         models: list[str] = []
         if user_input is not None:
             # Fields left empty are absent from the input: an emptied field must clear, not keep its old value.
@@ -322,19 +323,22 @@ class AmpXOptionsFlow(OptionsFlow):
             )
             try:
                 models = await client.async_discover()
-            except GatewayAuthError:
-                errors["base"] = "invalid_auth"
-            except GatewayConnectionError:
-                errors["base"] = "cannot_connect"
-            except GatewayError:
-                errors["base"] = "not_openai_compatible"
+            except GatewayAuthError as err:
+                errors["base"], detail = "invalid_auth", str(err)
+            except GatewayConnectionError as err:
+                errors["base"], detail = "cannot_connect", str(err)
+            except GatewayError as err:
+                errors["base"], detail = "not_openai_compatible", str(err)
             else:
                 data[CONF_GW_URL] = client.base_url  # with the /v1 it found
                 if models and "auto" not in models and data.get(CONF_GW_MODEL) in (None, "", "auto"):
                     data[CONF_GW_MODEL] = models[0]  # not OmniRoute: `auto` means nothing here
                 return self.async_create_entry(data={**current, **data})
             current = {**current, **data}
-        return self.async_show_form(step_id="gateway", data_schema=gateway_schema(self.hass, current, models), errors=errors)
+        return self.async_show_form(
+            step_id="gateway", data_schema=gateway_schema(self.hass, current, models), errors=errors,
+            description_placeholders={"error": detail},
+        )
 
     async def async_step_briefing(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return await self._section("briefing", user_input)

@@ -211,9 +211,9 @@
       }
     },
     "error": {
-      "cannot_connect": "Cannot reach the gateway. Check the URL and that it is running.",
-      "invalid_auth": "The gateway refused the API key.",
-      "not_openai_compatible": "The gateway answered, but not with an OpenAI-style /models list. Check the URL points at the API root."
+      "cannot_connect": "Cannot reach the gateway. Check the host, port and that it is running. ({error})",
+      "invalid_auth": "The gateway refused the API key. ({error})",
+      "not_openai_compatible": "The gateway answered, but not with an OpenAI-style model list. Use the API root, e.g. http://host:20128/v1 for OmniRoute. What came back: {error}"
     }
   },
   "entity": {
