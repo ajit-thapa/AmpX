@@ -45,7 +45,7 @@ def async_register_services(hass: HomeAssistant) -> None:
     async def ask(call: ServiceCall) -> ServiceResponse:
         brain = _brain(hass)
         data = {"text": call.data["question"]}
-        agent = call.data.get("agent_id") or brain.opts.get(CONF_AGENT)
+        agent = call.data.get("agent_id") or brain.opts.get(CONF_AGENT) or brain.gateway_agent
         if agent:
             data["agent_id"] = agent
         result = await hass.services.async_call(

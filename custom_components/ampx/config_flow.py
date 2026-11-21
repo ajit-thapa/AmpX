@@ -197,7 +197,7 @@ FACE_HIDDEN = frozenset({
     CONF_EXPORT_MIN_SOC, CONF_HOUSE_RULE, CONF_EV_PRIORITY, CONF_EV_TRICKLE_KW, CONF_EXPORT_FLOOR,
     CONF_AUTO_TOPUP, CONF_AUTO_EXPORT, CONF_EV_GATE,
 })
-MENU = ["profile", "general", "briefing", "house", "autopilot", "studio", "energy", "tariff"]
+MENU = ["profile", "general", "gateway", "briefing", "house", "autopilot", "studio", "energy", "tariff"]
 
 
 def is_face(current: dict[str, Any]) -> bool:
@@ -228,6 +228,35 @@ def clean(user_input: dict[str, Any]) -> dict[str, Any]:
         if key in out and not out[key]:
             out[key] = ""
     return out
+
+
+def _llm_apis(hass) -> sel.SelectSelector:
+    from homeassistant.helpers import llm
+
+    apis = [sel.SelectOptionDict(value=a.id, label=a.name) for a in llm.async_get_apis(hass)]
+    return sel.SelectSelector(sel.SelectSelectorConfig(options=apis, multiple=True))
+
+
+def gateway_schema(hass, current: dict[str, Any], models: list[str]) -> vol.Schema:
+    """The AI gateway page: where it is, how to reach it, which models AmpX uses."""
+    from .gateway_llm import STRUCTURED_MODES
+
+    picks = list(dict.fromkeys(["auto", "auto/fast", "auto/cheap", *models])) if ("auto" in models or not models) else models
+    model_sel = sel.SelectSelector(sel.SelectSelectorConfig(options=picks, custom_value=True, mode=sel.SelectSelectorMode.DROPDOWN))
+    fields = {
+        CONF_GW_URL: sel.TextSelector(sel.TextSelectorConfig(type=sel.TextSelectorType.URL)),
+        CONF_GW_KEY: sel.TextSelector(sel.TextSelectorConfig(type=sel.TextSelectorType.PASSWORD)),
+        CONF_GW_VERIFY: sel.BooleanSelector(),
+        CONF_GW_TIMEOUT: _num(5, 600, 1, "s"),
+        CONF_GW_MODEL: model_sel,
+        CONF_GW_TASK_MODEL: model_sel,
+        CONF_GW_LLM_API: _llm_apis(hass),
+        CONF_GW_PROMPT: sel.TemplateSelector(),
+        CONF_GW_STREAM: sel.BooleanSelector(),
+        CONF_GW_TEMPERATURE: sel.NumberSelector(sel.NumberSelectorConfig(min=0, max=2, step=0.05, mode=sel.NumberSelectorMode.SLIDER)),
+        CONF_GW_STRUCTURED: sel.SelectSelector(sel.SelectSelectorConfig(options=STRUCTURED_MODES, translation_key="gateway_structured", mode=sel.SelectSelectorMode.DROPDOWN)),
+    }
+    return vol.Schema({vol.Optional(k, description={"suggested_value": current.get(k, DEFAULTS.get(k))}): v for k, v in fields.items()})
 
 
 class AmpXConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -268,6 +297,44 @@ class AmpXOptionsFlow(OptionsFlow):
 
     async def async_step_general(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return await self._section("general", user_input)
+
+    async def async_step_gateway(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """AI gateway: probed before saving, so a wrong URL or key never lands in the options."""
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+        from .gateway import GatewayAuthError, GatewayClient, GatewayConnectionError, GatewayError
+
+        current = self._current()
+        errors: dict[str, str] = {}
+        models: list[str] = []
+        if user_input is not None:
+            # Fields left empty are absent from the input: an emptied field must clear, not keep its old value.
+            data = {k: user_input.get(k, "" if k in (CONF_GW_URL, CONF_GW_KEY, CONF_GW_PROMPT, CONF_GW_TASK_MODEL) else current.get(k)) for k in GATEWAY_KEYS}
+            if CONF_GW_LLM_API not in user_input:
+                data[CONF_GW_LLM_API] = []
+            if CONF_GW_TEMPERATURE not in user_input:
+                data[CONF_GW_TEMPERATURE] = None
+            if not data[CONF_GW_URL]:
+                return self.async_create_entry(data={**current, **data})  # gateway off
+            client = GatewayClient(
+                async_get_clientsession(self.hass, verify_ssl=bool(data.get(CONF_GW_VERIFY, True))),
+                data[CONF_GW_URL], data.get(CONF_GW_KEY) or None, float(data.get(CONF_GW_TIMEOUT) or 60),
+            )
+            try:
+                models = await client.async_discover()
+            except GatewayAuthError:
+                errors["base"] = "invalid_auth"
+            except GatewayConnectionError:
+                errors["base"] = "cannot_connect"
+            except GatewayError:
+                errors["base"] = "not_openai_compatible"
+            else:
+                data[CONF_GW_URL] = client.base_url  # with the /v1 it found
+                if models and "auto" not in models and data.get(CONF_GW_MODEL) in (None, "", "auto"):
+                    data[CONF_GW_MODEL] = models[0]  # not OmniRoute: `auto` means nothing here
+                return self.async_create_entry(data={**current, **data})
+            current = {**current, **data}
+        return self.async_show_form(step_id="gateway", data_schema=gateway_schema(self.hass, current, models), errors=errors)
 
     async def async_step_briefing(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return await self._section("briefing", user_input)

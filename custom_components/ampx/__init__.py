@@ -17,11 +17,11 @@ from .services import async_register_services, async_unregister_services
 from .websocket import async_register_websocket
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = ["sensor"]
+PLATFORMS = ["sensor", "conversation", "ai_task"]  # the last two only add entities with a gateway URL set
 PANEL_URL = "ampx"
 FRONTEND_PATH = f"/{DOMAIN}_static"
 FILES_PATH = f"/{DOMAIN}_files"  # photos uploaded from the panel, kept in <config>/ampx
-FRONTEND_VERSION = "0.24.0"  # cache-buster for the panel scripts
+FRONTEND_VERSION = "0.29.0"  # cache-buster for the panel scripts
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:

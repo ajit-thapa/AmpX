@@ -2,20 +2,27 @@
   "domain": "ampx",
   "name": "AmpX",
   "after_dependencies": [
+    "ai_task",
+    "assist_pipeline",
     "assist_satellite",
     "conversation",
     "frontend",
     "http",
+    "intent",
     "panel_custom",
     "tts"
   ],
-  "codeowners": ["@ajit-thapa"],
+  "codeowners": [
+    "@ajit-thapa"
+  ],
   "config_flow": true,
-  "dependencies": ["websocket_api"],
+  "dependencies": [
+    "websocket_api"
+  ],
   "documentation": "https://github.com/ajit-thapa/AmpX",
   "integration_type": "service",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/ajit-thapa/AmpX/issues",
   "requirements": [],
-  "version": "0.28.0"
+  "version": "0.29.0"
 }

@@ -13,6 +13,7 @@ import uuid
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import (
     async_track_point_in_time,
@@ -24,6 +25,10 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_GW_KEY,
+    CONF_GW_TIMEOUT,
+    CONF_GW_URL,
+    CONF_GW_VERIFY,
     CONF_ENGINE,
     CONF_OBSERVE,
     ENGINE_AMPX,
@@ -61,6 +66,7 @@ from .const import (
     STORAGE_VERSION,
 )
 from . import advisor, ladder
+from .gateway import GatewayClient
 from .autopilot import Autopilot
 from .backup import Backup
 from .briefing import Briefing
@@ -140,6 +146,17 @@ class AmpX:
     # ---- lifecycle ------------------------------------------------------
     def load_options(self) -> None:
         self.opts = {**DEFAULTS, **self.entry.data, **self.entry.options}
+        # Built-in AI gateway (OmniRoute, LiteLLM, Ollama, vLLM, LM Studio): AmpX's own agent and AI task
+        self.gateway: GatewayClient | None = None
+        self.gateway_agent: str | None = getattr(self, "gateway_agent", None)  # set when the entity is added
+        self.gateway_task: str | None = getattr(self, "gateway_task", None)
+        if url := self.opts.get(CONF_GW_URL):
+            self.gateway = GatewayClient(
+                async_get_clientsession(self.hass, verify_ssl=bool(self.opts.get(CONF_GW_VERIFY, True))),
+                url,
+                self.opts.get(CONF_GW_KEY) or None,
+                float(self.opts.get(CONF_GW_TIMEOUT) or 60),
+            )
         self.gate.quiet_start = parse_time(str(self.opts[CONF_QUIET_START]))
         self.gate.quiet_end = parse_time(str(self.opts[CONF_QUIET_END]))
         self.gate.dedupe_minutes = int(self.opts[CONF_DEDUPE])
@@ -252,7 +269,7 @@ class AmpX:
     def record(self, key: str, value: float = 1) -> None:
         self.timeline.record(key, value)
 
-    # ---- AI helpers (always through the user's own HA agents) -----------
+    # ---- AI helpers (the user's HA agent, or AmpX's own gateway agent) --
     def ai_allowed(self) -> bool:
         """True if another model call fits the hourly budget; counts the call."""
         now = dt_util.utcnow()
@@ -265,8 +282,9 @@ class AmpX:
 
     async def ask_agent(self, prompt: str) -> str:
         data: dict[str, Any] = {"text": prompt}
-        if self.opts.get(CONF_AGENT):
-            data["agent_id"] = self.opts[CONF_AGENT]
+        # The chosen agent wins; otherwise AmpX's own gateway agent; otherwise HA's default.
+        if agent := self.opts.get(CONF_AGENT) or self.gateway_agent:
+            data["agent_id"] = agent
         result = await self.hass.services.async_call(
             "conversation", "process", data, blocking=True, return_response=True
         )
@@ -277,7 +295,7 @@ class AmpX:
 
     async def look(self, camera: str, question: str | None) -> str:
         """Describe what a camera sees using the configured AI Task entity."""
-        task = self.opts.get(CONF_AI_TASK)
+        task = self.opts.get(CONF_AI_TASK) or self.gateway_task
         if not task:
             raise HomeAssistantError("No AI Task entity configured")
         if not self.ai_allowed():

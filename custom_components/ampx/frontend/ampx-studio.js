@@ -1278,7 +1278,7 @@ class AmpXStudio extends HTMLElement {
 
   // ---- SETTINGS (gear) ---------------------------------------------------------
   _viewSettings() {
-    const st = this._data.settings || {}, muted = new Set(this._data.mute_push || []);
+    const st = this._data.settings || {}, gw = this._data.gateway || {}, muted = new Set(this._data.mute_push || []);
     return `<section class="grid">
       <div class="card wide sethead"><div><h2>Settings</h2><div class="muted">How AmpX behaves. Device controls live under Devices; plans under Energy → Compare plans.</div></div>
         <a class="lnk" href="/config/integrations/integration/ampx" target="_top">All integration options ↗</a></div>
@@ -1290,7 +1290,9 @@ class AmpXStudio extends HTMLElement {
         <div class="row"><span>Conversation agent</span><select id="set-agent"><option value="">Home Assistant default</option></select></div>
         <div class="row"><span>AI calls allowed per hour</span><div class="nstep"><input type="number" id="set-aph" min="0" max="120" step="1" value="${st.ai_per_hour ?? 12}"></div></div>
         <div class="row"><span>Speakers</span><b class="${st.speakers ? "ok" : "bad"}">${st.speakers ? "set up" : "none chosen"}</b></div>
-        <div class="row"><span>Camera vision (AI Task)</span><b class="${st.ai_task ? "ok" : "bad"}">${st.ai_task ? "set up" : "not set up"}</b></div></div>
+        <div class="row"><span>Camera vision (AI Task)</span><b class="${st.ai_task || gw.task ? "ok" : "bad"}">${st.ai_task ? "set up" : gw.task ? "AI gateway" : "not set up"}</b></div>
+        <div class="row"><span>AI gateway</span>${gw.configured ? `<b class="ok" title="${esc(gw.url)}">${esc(gw.model)}${gw.task_model !== gw.model ? " · tasks " + esc(gw.task_model) : ""}</b>` : '<b class="bad">off</b>'}</div>
+        ${gw.configured ? `<div class="muted">${esc(gw.url)} · AmpX's own Assistant answers unless another agent is picked above.</div>` : '<div class="muted">Point AmpX at OmniRoute, LiteLLM, Ollama, vLLM or LM Studio under AmpX options → AI gateway.</div>'}</div>
       <div class="card w6"><h2>Phone notifications</h2><div class="muted" style="margin-bottom:6px">Choose what AmpX pushes to your phone. Everything is still listed under the bell.</div>
         ${PUSH_CATS.map(([k, l]) => `<label class="row"><span>${l}</span>${this._toggle(`data-mute="${k}"`, !muted.has(k))}</label>`).join("")}</div>
       ${this._homeCard()}${this._photoCard()}${this._tariffCard()}${this._checkCard()}
@@ -1378,7 +1380,8 @@ class AmpXStudio extends HTMLElement {
     const r = this._root, q = s => r.querySelector(s), d = this._data, save = o => this._saveOpts(o);
     this._agents().then(list => {
       const sel = q("#set-agent"); if (!sel) return;
-      sel.innerHTML = '<option value="">Home Assistant default</option>' + list.map(a => `<option value="${esc(a.id)}"${a.id === (d.settings || {}).agent ? " selected" : ""}>${esc(a.name)}</option>`).join("");
+      const gwAgent = (d.gateway || {}).agent;
+      sel.innerHTML = `<option value="">${gwAgent ? "AmpX Assistant (AI gateway)" : "Home Assistant default"}</option>` + list.filter(a => a.id !== gwAgent).map(a => `<option value="${esc(a.id)}"${a.id === (d.settings || {}).agent ? " selected" : ""}>${esc(a.name)}</option>`).join("");
       sel.onchange = () => save({ conversation_agent: sel.value });
     });
     r.querySelectorAll("[data-style]").forEach(b => b.onclick = () => save({ assistant_style: b.dataset.style }));
@@ -1539,7 +1542,7 @@ class AmpXStudio extends HTMLElement {
     c.msgs.push({ who: "me", text, t: t() }); this._chatBusy = true; this._paintChat(); this._keepChat();
     const sel = q("#chat-agent"), agent = sel ? sel.value : "";
     try {
-      const res = await this._hass.callWS({ type: "conversation/process", text, conversation_id: c.cid || undefined, agent_id: agent || undefined, language: this._hass.language });
+      const res = await this._hass.callWS({ type: "conversation/process", text, conversation_id: c.cid || undefined, agent_id: agent || (this._data.gateway || {}).agent || undefined, language: this._hass.language });
       c.cid = res.conversation_id || c.cid;
       const reply = (((res.response || {}).speech || {}).plain || {}).speech || "Done.";
       c.msgs.push({ who: "ai", text: reply, err: (res.response || {}).response_type === "error", t: t() });
@@ -1554,7 +1557,8 @@ class AmpXStudio extends HTMLElement {
       const sel = q("#chat-agent"); if (!sel) return;
       let pick = null; try { pick = localStorage.getItem("ampx-chat-agent"); } catch (e) { /* ignore */ }
       const def = pick ?? ((this._data.settings || {}).agent || "");
-      sel.innerHTML = '<option value="">Default agent</option>' + list.map(a => `<option value="${esc(a.id)}"${a.id === def ? " selected" : ""}>${esc(a.name)}</option>`).join("");
+      const gwAgent = (this._data.gateway || {}).agent;
+      sel.innerHTML = `<option value="">${gwAgent ? "AmpX Assistant" : "Default agent"}</option>` + list.filter(a => a.id !== gwAgent).map(a => `<option value="${esc(a.id)}"${a.id === def ? " selected" : ""}>${esc(a.name)}</option>`).join("");
       sel.onchange = () => { try { localStorage.setItem("ampx-chat-agent", sel.value); } catch (e) { /* ignore */ } c.cid = null; };
     });
     const sp = q("#chat-speak"); sp.value = pr.speak; sp.onchange = () => this._setChatPrefs({ speak: sp.value });

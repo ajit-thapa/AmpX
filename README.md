@@ -50,6 +50,27 @@ Battery control is limited to one battery (one dispatch mode select with a power
 
 Energy actions are off by default, and Autopilot starts in advise mode. If your own automations already do the same top-up or export, add them under **Your home** so they show up under Devices. Turn them off before you let AmpX act, or both will drive the battery.
 
+## AI gateway (built in)
+
+AmpX can talk directly to any OpenAI-compatible server: [OmniRoute](https://github.com/diegosouzapw/OmniRoute), LiteLLM, Ollama, vLLM, LM Studio, or anything else that exposes `/v1`. You don't need a separate integration.
+
+**AmpX options → AI gateway**
+
+| Gateway | Base URL | API key |
+|---|---|---|
+| OmniRoute | `http://<host>:20128/v1` | Dashboard → Endpoints |
+| LiteLLM | `http://<host>:4000/v1` | master or virtual key |
+| Ollama | `http://<host>:11434/v1` | empty |
+| vLLM | `http://<host>:8000/v1` | `--api-key`, if set |
+| LM Studio | `http://<host>:1234/v1` | empty |
+
+The URL is checked before it is saved, and a missing `/v1` is found for you. Once it is set, AmpX adds:
+
+- **`conversation.ampx_assistant`**: an Assist agent with Home Assistant's own tools plus AmpX's memory, energy and safety tools. It streams replies, and its tool calls work with local servers.
+- **`ai_task.ampx_ai_task`**: used for camera looks and structured data. For JSON replies it tries strict `json_schema` first, then JSON mode, then the schema in the prompt.
+
+AmpX's own assistant, chat panel, briefings and camera looks then use these, unless you pick another agent or AI Task entity. The model fields list what `/models` returns. You can also type any id or OmniRoute combo, such as `auto`, `auto/fast` or `provider/model`. Set **AI task model** to a vision model if you use cameras.
+
 ## Tariff model
 
 - The cheap (shoulder) window, peak window and both feed-in windows are whole hours you set.

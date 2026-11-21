@@ -28,6 +28,20 @@ CONF_WEEKLY_TIME = "weekly_time"
 CONF_AUTO_BACKUP = "auto_backup"
 CONF_AI_TASK = "ai_task"
 CONF_AI_PER_HOUR = "ai_per_hour"
+# Built-in AI gateway: any OpenAI-compatible server (OmniRoute, LiteLLM, Ollama, vLLM, LM Studio)
+CONF_GW_URL = "gateway_url"
+CONF_GW_KEY = "gateway_api_key"
+CONF_GW_VERIFY = "gateway_verify_ssl"
+CONF_GW_TIMEOUT = "gateway_timeout"
+CONF_GW_MODEL = "gateway_model"  # the assistant
+CONF_GW_TASK_MODEL = "gateway_task_model"  # AI tasks (camera looks, structured data); empty = same model
+CONF_GW_LLM_API = "gateway_llm_api"  # tools the assistant may call
+CONF_GW_PROMPT = "gateway_prompt"
+CONF_GW_STREAM = "gateway_stream"
+CONF_GW_TEMPERATURE = "gateway_temperature"
+CONF_GW_STRUCTURED = "gateway_structured"
+GATEWAY_KEYS = (CONF_GW_URL, CONF_GW_KEY, CONF_GW_VERIFY, CONF_GW_TIMEOUT, CONF_GW_MODEL, CONF_GW_TASK_MODEL,
+                CONF_GW_LLM_API, CONF_GW_PROMPT, CONF_GW_STREAM, CONF_GW_TEMPERATURE, CONF_GW_STRUCTURED)
 CONF_AS_STYLE = "assistant_style"  # brief | normal | detailed
 CONF_MUTE_PUSH = "mute_push"  # notification categories that are not pushed to the phone
 PUSH_CATEGORIES = ("health", "autopilot", "energy", "routines", "suggestions", "speech")
@@ -184,6 +198,17 @@ DEFAULTS: dict[str, object] = {
     CONF_AUTO_BACKUP: True,
     CONF_AI_TASK: None,
     CONF_AI_PER_HOUR: 12,
+    CONF_GW_URL: "",
+    CONF_GW_KEY: "",
+    CONF_GW_VERIFY: True,
+    CONF_GW_TIMEOUT: 60,
+    CONF_GW_MODEL: "auto",
+    CONF_GW_TASK_MODEL: "",
+    CONF_GW_LLM_API: ["assist", "ampx"],
+    CONF_GW_PROMPT: "",
+    CONF_GW_STREAM: True,
+    CONF_GW_TEMPERATURE: None,
+    CONF_GW_STRUCTURED: "auto",
     CONF_AS_STYLE: "brief",
     CONF_AS_NOTES: "",
     CONF_MUTE_PUSH: [],

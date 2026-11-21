@@ -52,6 +52,19 @@ def _brain(hass: HomeAssistant) -> AmpX | None:
     return None
 
 
+def _gateway(brain) -> dict[str, Any]:
+    """AI gateway summary for the panel. Never the key."""
+    o = brain.opts
+    return {
+        "configured": brain.gateway is not None,
+        "url": brain.gateway.base_url if brain.gateway else "",
+        "model": o.get(CONF_GW_MODEL) or "auto",
+        "task_model": o.get(CONF_GW_TASK_MODEL) or o.get(CONF_GW_MODEL) or "auto",
+        "agent": brain.gateway_agent or "",
+        "task": brain.gateway_task or "",
+    }
+
+
 def _emhass(hass: HomeAssistant) -> dict[str, Any] | None:
     """Read the external EMHASS optimiser's published plan, if present.
 
@@ -246,7 +259,8 @@ async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
             "plan": brain.energy.plan_result,
             "plans": brain.plans,
             "optimiser": _emhass(hass),
-            "settings": {
+            "gateway": _gateway(brain),
+        "settings": {
                 "agent": brain.opts.get(CONF_AGENT) or "",
                 "ai_per_hour": int(brain.opts.get(CONF_AI_PER_HOUR) or 0),
                 "style": brain.opts.get(CONF_AS_STYLE) or "brief",

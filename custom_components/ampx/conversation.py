@@ -1,0 +1,60 @@
+"""AmpX's own assistant, answered by the AI gateway (only when a gateway URL is set)."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from homeassistant.components import conversation
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import MATCH_ALL
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+
+from .const import CONF_GW_LLM_API, CONF_GW_MODEL, CONF_GW_PROMPT, CONF_GW_STREAM, CONF_GW_TEMPERATURE, DOMAIN
+from .gateway_llm import async_run_chat_log
+from .gateway_entity import GatewayEntity
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback) -> None:
+    brain = hass.data[DOMAIN][entry.entry_id]
+    if brain.gateway is not None:
+        async_add_entities([AmpXAssistant(brain)])
+
+
+class AmpXAssistant(GatewayEntity, conversation.ConversationEntity):
+    """Assist agent on the gateway; controls the home through Assist and AmpX's own tools."""
+
+    _attr_translation_key = "assistant"
+    _key = "assistant"
+
+    def __init__(self, brain) -> None:
+        super().__init__(brain)
+        if brain.opts.get(CONF_GW_LLM_API):
+            self._attr_supported_features = conversation.ConversationEntityFeature.CONTROL
+
+    @property
+    def supported_languages(self) -> list[str] | Literal["*"]:
+        return MATCH_ALL
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.brain.gateway_agent = self.entity_id
+
+    async def _async_handle_message(self, user_input: conversation.ConversationInput, chat_log: conversation.ChatLog) -> conversation.ConversationResult:
+        opts = self.brain.opts
+        try:
+            await chat_log.async_provide_llm_data(
+                user_input.as_llm_context(DOMAIN),
+                opts.get(CONF_GW_LLM_API) or None,
+                opts.get(CONF_GW_PROMPT) or None,
+                user_input.extra_system_prompt,
+            )
+        except conversation.ConverseError as err:
+            return err.as_conversation_result()
+        await async_run_chat_log(
+            self.hass, self.brain.gateway, self.entity_id, chat_log,
+            model=opts.get(CONF_GW_MODEL) or "auto",
+            stream=bool(opts.get(CONF_GW_STREAM, True)),
+            temperature=opts.get(CONF_GW_TEMPERATURE),
+        )
+        return conversation.async_get_result_from_chat_log(user_input, chat_log)

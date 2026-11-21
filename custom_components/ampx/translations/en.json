@@ -25,7 +25,8 @@
           "briefing": "Briefings and reports",
           "house": "House, cameras and learning",
           "studio": "Energy Studio sources",
-          "autopilot": "Autopilot (local AI energy plan)"
+          "autopilot": "Autopilot (local AI energy plan)",
+          "gateway": "AI gateway"
         }
       },
       "general": {
@@ -180,7 +181,39 @@
           "bill_sensors": "Bill and cost sensors for History",
           "related_automations": "Your own energy automations (on/off switches under Devices)"
         }
+      },
+      "gateway": {
+        "title": "AI gateway",
+        "description": "Point AmpX at any OpenAI-compatible server: OmniRoute (http://host:20128/v1), LiteLLM (:4000), Ollama (:11434/v1), vLLM (:8000/v1), LM Studio (:1234/v1). AmpX then has its own Assistant and AI task, and uses them unless you pick another agent. Leave the URL empty to turn it off.",
+        "data": {
+          "gateway_url": "Base URL",
+          "gateway_api_key": "API key",
+          "gateway_verify_ssl": "Verify SSL certificate",
+          "gateway_timeout": "Request timeout",
+          "gateway_model": "Assistant model",
+          "gateway_task_model": "AI task model",
+          "gateway_llm_api": "Assistant tools",
+          "gateway_prompt": "Assistant instructions",
+          "gateway_stream": "Stream replies",
+          "gateway_temperature": "Temperature",
+          "gateway_structured": "Structured output"
+        },
+        "data_description": {
+          "gateway_url": "The API root. A missing /v1 is found for you.",
+          "gateway_api_key": "Bearer key (OmniRoute: Dashboard → Endpoints). Empty for servers without auth.",
+          "gateway_model": "A listed model, or type any id or combo (OmniRoute: auto, auto/fast, a combo name).",
+          "gateway_task_model": "Used for camera looks and structured data. Empty uses the assistant model; pick a vision model for cameras.",
+          "gateway_llm_api": "Assist controls the home; AmpX adds its memory, energy and safety tools.",
+          "gateway_prompt": "Extra instructions. Can be a template.",
+          "gateway_stream": "Turn off for servers that do not stream.",
+          "gateway_structured": "How to ask for JSON. Auto tries strict schema, then JSON mode, then the prompt."
+        }
       }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the gateway. Check the URL and that it is running.",
+      "invalid_auth": "The gateway refused the API key.",
+      "not_openai_compatible": "The gateway answered, but not with an OpenAI-style /models list. Check the URL points at the API root."
     }
   },
   "entity": {
@@ -278,6 +311,16 @@
       "autopilot": {
         "name": "Autopilot"
       }
+    },
+    "conversation": {
+      "assistant": {
+        "name": "Assistant"
+      }
+    },
+    "ai_task": {
+      "ai_task": {
+        "name": "AI task"
+      }
     }
   },
   "services": {},
@@ -320,6 +363,14 @@
         "10": "October",
         "11": "November",
         "12": "December"
+      }
+    },
+    "gateway_structured": {
+      "options": {
+        "auto": "Auto",
+        "json_schema": "JSON schema (strict)",
+        "json_object": "JSON mode, schema in the prompt",
+        "prompt": "Schema in the prompt only"
       }
     }
   }
