@@ -76,6 +76,9 @@ def _sanitize(node: Any) -> Any:
     return node
 
 
+_SKIPPED_TOOLS: set[str] = set()
+
+
 def format_tools(tools: list[llm.Tool], custom_serializer: Callable[[Any], Any] | None) -> list[dict[str, Any]]:
     """Tools the gateway can be sent. One that still cannot be described as JSON is skipped, not fatal."""
     out = []
@@ -85,7 +88,10 @@ def format_tools(tools: list[llm.Tool], custom_serializer: Callable[[Any], Any] 
             spec["function"]["parameters"] = _sanitize(spec["function"]["parameters"]) or {"type": "object", "properties": {}}
             json.dumps(spec)
         except (TypeError, ValueError) as err:
-            LOGGER.warning("Not offering tool %s to the AI gateway: its parameters cannot be described (%s)", tool.name, err)
+            # Once per tool: it is the same tool on every reply.
+            level = logging.DEBUG if tool.name in _SKIPPED_TOOLS else logging.WARNING
+            _SKIPPED_TOOLS.add(tool.name)
+            LOGGER.log(level, "Not offering tool %s to the AI gateway: its parameters cannot be described (%s)", tool.name, err)
             continue
         out.append(spec)
     return out

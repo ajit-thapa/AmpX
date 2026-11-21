@@ -306,3 +306,36 @@ def test_tool_that_cannot_be_described_is_skipped():
         return {"type": "string", "default": Boom()} if value is str else llm.selector_serializer(value)
 
     assert format_tools([T()], serializer) == []
+
+
+async def test_admin_only_api_does_not_break_replies(hass, gateway):
+    """HA's `homeassistant` tools API refuses non-admin callers; AmpX's own calls have no user.
+    The agent drops that API for the call instead of failing every reply."""
+    from homeassistant.exceptions import Unauthorized
+
+    class AdminAPI(llm.API):
+        async def async_get_api_instance(self, llm_context):
+            raise Unauthorized()
+
+    llm.async_register_api(hass, AdminAPI(hass=hass, id="admin_api", name="Admin"))
+    _, brain = await _setup(hass, **{**GW, "gateway_llm_api": ["assist", "ampx", "admin_api"]})
+    gateway.reply(completion("Still here."))
+    assert await brain.ask_agent("hi") == "Still here."
+    assert gateway.sent[0].get("tools")  # assist + ampx tools still offered
+
+
+def test_skipped_tool_warned_once(caplog):
+    from custom_components.ampx.gateway_llm import format_tools
+
+    class T(llm.Tool):
+        name, description, parameters = "noisy", "x", vol.Schema({vol.Required("x"): str})
+
+    class Boom:
+        pass
+
+    def serializer(value):
+        return {"type": "string", "default": Boom()} if value is str else llm.selector_serializer(value)
+
+    format_tools([T()], serializer)
+    format_tools([T()], serializer)
+    assert sum("noisy" in r.message for r in caplog.records if r.levelname == "WARNING") == 1
