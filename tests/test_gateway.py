@@ -205,3 +205,42 @@ async def test_options_error_says_what_came_back(hass, aioclient_mock):
     detail = bad["description_placeholders"]["error"]
     assert "http://web/x/models" in detail and "text/html" in detail and "<html>login" in detail
     assert "http://web/v1/models" in detail
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_content_as_parts_is_joined(hass, gateway, stream):
+    """Some routed providers send content as a list of text parts."""
+    await _setup(hass, **{**GW, "gateway_stream": stream})
+    parts = [{"type": "text", "text": "Hello "}, {"type": "text", "text": "there"}]
+    if stream:
+        gateway.stream({"choices": [{"delta": {"role": "assistant", "content": parts}}]})
+    else:
+        gateway.reply({"choices": [{"message": {"role": "assistant", "content": parts}}]})
+    res = await conversation.async_converse(hass, "hi", None, Context(), agent_id="conversation.ampx_assistant")
+    assert res.response.speech["plain"]["speech"] == "Hello there"
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_tool_calls_without_tools_are_ignored(hass, gateway, stream):
+    """A model that calls tools it was never offered must not crash the agent."""
+    await _setup(hass, **{**GW, "gateway_stream": stream, "gateway_llm_api": []})
+    call = [{"index": 0, "id": "t", "type": "function", "function": {"name": "HassTurnOn", "arguments": "{}"}}]
+    if stream:
+        gateway.stream({"choices": [{"delta": {"content": "On it."}}]}, {"choices": [{"delta": {"tool_calls": call}}]})
+    else:
+        gateway.reply(completion("On it.", call))
+    res = await conversation.async_converse(hass, "lights on", None, Context(), agent_id="conversation.ampx_assistant")
+    assert res.response.speech["plain"]["speech"] == "On it."
+    assert len(gateway.sent) == 1
+
+
+async def test_broken_stream_is_an_error_reply_not_a_crash(hass, aioclient_mock):
+    """A stream cut off mid-way gives an error reply with the reason, never an exception."""
+    aioclient_mock.get(f"{BASE}/models", json={"data": [{"id": "auto"}]})
+    aioclient_mock.post(f"{BASE}/chat/completions", exc=TimeoutError())
+    await _setup(hass, **{**GW, "gateway_stream": True})
+    res = await conversation.async_converse(hass, "hi", None, Context(), agent_id="conversation.ampx_assistant")
+    from homeassistant.helpers import intent
+
+    assert res.response.response_type is intent.IntentResponseType.ERROR
+    assert "gateway" in res.response.speech["plain"]["speech"].lower()

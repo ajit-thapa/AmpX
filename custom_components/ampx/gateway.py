@@ -168,6 +168,13 @@ class GatewayClient:
                 choice.setdefault("delta", choice.get("message") or {})
             yield data
             return
+        try:
+            async for chunk in self._sse(resp):
+                yield chunk
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise GatewayConnectionError(f"The stream broke off: {err or type(err).__name__}") from err
+
+    async def _sse(self, resp: aiohttp.ClientResponse) -> AsyncIterator[dict[str, Any]]:
         buffer = b""
         async for raw in resp.content:
             buffer += raw

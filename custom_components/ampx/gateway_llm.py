@@ -86,23 +86,33 @@ def _tool_inputs(calls: list[dict[str, Any]]) -> list[llm.ToolInput]:
     return out
 
 
+def _text(value: Any) -> str | None:
+    """Message content as text: a string, or a list of parts (some routed providers send those)."""
+    if value is None or isinstance(value, str):
+        return value or None
+    if isinstance(value, list):
+        out = "".join(p.get("text") or "" if isinstance(p, dict) else str(p) for p in value)
+        return out or None
+    return str(value)
+
+
 def _reasoning(part: dict[str, Any]) -> str | None:
     # Gateways name it differently: reasoning_content (DeepSeek, vLLM, LiteLLM), reasoning (OpenRouter-style, Ollama)
     value = part.get("reasoning_content") or part.get("reasoning")
     return value if isinstance(value, str) and value else None
 
 
-async def transform_message(message: dict[str, Any]) -> AsyncGenerator[conversation.AssistantContentDeltaDict]:
+async def transform_message(message: dict[str, Any], tools: bool = True) -> AsyncGenerator[conversation.AssistantContentDeltaDict]:
     """A whole (non-streamed) assistant message as one chat-log delta."""
-    delta: conversation.AssistantContentDeltaDict = {"role": "assistant", "content": message.get("content") or None}
+    delta: conversation.AssistantContentDeltaDict = {"role": "assistant", "content": _text(message.get("content"))}
     if thinking := _reasoning(message):
         delta["thinking_content"] = thinking
-    if message.get("tool_calls"):
+    if message.get("tool_calls") and tools:  # calls to tools never offered are dropped, not run
         delta["tool_calls"] = _tool_inputs(message["tool_calls"])
     yield delta
 
 
-async def transform_stream(chunks: AsyncIterator[dict[str, Any]]) -> AsyncGenerator[conversation.AssistantContentDeltaDict]:
+async def transform_stream(chunks: AsyncIterator[dict[str, Any]], tools: bool = True) -> AsyncGenerator[conversation.AssistantContentDeltaDict]:
     """Server-sent chunks as chat-log deltas. Tool calls are assembled by index and sent last."""
     yield {"role": "assistant"}
     calls: dict[int, dict[str, Any]] = {}
@@ -111,8 +121,8 @@ async def transform_stream(chunks: AsyncIterator[dict[str, Any]]) -> AsyncGenera
             delta = choice.get("delta") or {}
             if thinking := _reasoning(delta):
                 yield {"thinking_content": thinking}
-            if delta.get("content"):
-                yield {"content": delta["content"]}
+            if text := _text(delta.get("content")):
+                yield {"content": text}
             for pos, part in enumerate(delta.get("tool_calls") or []):
                 idx = part.get("index", pos)
                 call = calls.setdefault(idx, {"id": None, "function": {"name": "", "arguments": ""}})
@@ -126,7 +136,7 @@ async def transform_stream(chunks: AsyncIterator[dict[str, Any]]) -> AsyncGenera
                     call["function"]["arguments"] = args  # sent whole, not as string pieces
                 elif args:
                     call["function"]["arguments"] += args
-    if calls:
+    if calls and tools:
         yield {"tool_calls": _tool_inputs([calls[i] for i in sorted(calls)])}
 
 
@@ -209,10 +219,10 @@ async def async_run_chat_log(
                 payload = _with_structure(payload, mode, structure_name or "result", schema)
             try:
                 if stream:
-                    source = transform_stream(client.async_stream_chat(payload))
+                    source = transform_stream(client.async_stream_chat(payload), tools=chat_log.llm_api is not None)
                 else:
                     result = await client.async_chat(payload)
-                    source = transform_message(result["choices"][0].get("message") or {})
+                    source = transform_message(result["choices"][0].get("message") or {}, tools=chat_log.llm_api is not None)
                 added = [c async for c in chat_log.async_add_delta_content_stream(entity_id, source)]
             except GatewayError as err:
                 # A 4xx/5xx on response_format means this gateway or model cannot do it: step down.
@@ -220,6 +230,12 @@ async def async_run_chat_log(
                     LOGGER.debug("Structured output %s refused (%s); trying %s", mode, err, modes[i + 1])
                     continue
                 raise HomeAssistantError(f"AI gateway error: {err}") from err
+            except HomeAssistantError:
+                raise
+            except Exception as err:
+                # Never let an odd reply surface as Assist's bare "Unexpected error during intent recognition".
+                LOGGER.exception("Could not use the AI gateway's reply")
+                raise HomeAssistantError(f"AI gateway reply could not be used ({type(err).__name__}: {err})") from err
             modes = [mode]  # keep what worked for the remaining tool rounds
             break
         messages.extend(m for c in added if (m := to_message(c)))
