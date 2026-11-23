@@ -3,7 +3,6 @@
 const C = {
   solar: "#84CC16", grid: "#A855F7", batt: "#22C55E", ev: "#F59E0B", home: "#38BDF8",
   peak: "#F97316", shoulder: "#4ADE80", off_peak: "#F59E0B",
-  export: "#A855F7", import: "#F97316", alert: "#EF4444",
 };
 const ICONS = {
   bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
@@ -65,13 +64,6 @@ const SUBS = {
   devices: [["battery", "Battery"], ["ev", "EV"], ["charger", "Charger"], ["all", "All devices"]],
   assistant: [["memory", "Memory"], ["reminders", "Reminders"], ["routines", "Routines"], ["suggestions", "Suggestions"], ["tools", "Tools"]],
 };
-// Left sidebar (HOME ENERGY OS layout): every view one click away, so no second-level tabs.
-// [key, label, icon]; a label of null means "use the configured name" (battery, ev, charger).
-const NAV = [
-  [["now", "Overview", "bolt"], ["energy/today", "Energy", "chart"], ["energy/plan", "Plan", "plan"], ["devices/battery", null, "battery"],
-   ["devices/ev", null, "car"], ["devices/charger", null, "bolt"], ["house", "House", "home"]],
-  [["energy/history", "History", "chart"], ["energy/compare", "Compare plans", "star"], ["devices/all", "Devices", "grid"], ["assistant", "Assistant", "spark"], ["settings", "Settings", "gear"]],
-];
 // Old tab names (links, saved state) and where they live now
 const ALIAS = { ev: ["devices", "ev"], battery: ["devices", "battery"], plan: ["energy", "plan"], analytics: ["energy", "history"], history: ["energy", "history"] };
 const PUSH_CATS = [["health", "House health"], ["autopilot", "Autopilot"], ["energy", "Battery and export"], ["routines", "Routines"], ["suggestions", "Suggestions"], ["speech", "Urgent announcements"]];
@@ -103,7 +95,6 @@ class AmpXStudio extends HTMLElement {
       this._timer = setInterval(() => this._load(), 30000);
     } else if (this._data && Date.now() - (this._lastPaint || 0) > 1500) {
       this._lastPaint = Date.now();
-      this._paintTop();
       ({ now: () => this._paintLive(), "devices/battery": () => this._battWidgets(), "devices/ev": () => this._paintEv(), "devices/charger": () => this._paintWc(),
          "energy/today": () => this._paintVisuals() })[this._key()]?.();
     }
@@ -135,7 +126,6 @@ class AmpXStudio extends HTMLElement {
   /** Load the slower data a view needs (history, statistics), at most every few minutes. */
   _fetchFor(entering) {
     const k = this._key(), stale = (at, ms) => Date.now() - (at || 0) > ms, more = this._moreAt || {};
-    if (k === "now" && (entering ? !this._series : stale(this._seriesAt, 300000))) this._loadSeries();
     if (k === "energy/today") {
       if (entering ? !this._series : stale(this._seriesAt, 300000)) this._loadSeries();
       this._energy().then(() => this._key() === "energy/today" && this._paintSplit()).catch(() => {});
@@ -287,40 +277,30 @@ class AmpXStudio extends HTMLElement {
       this._series = { start, end, pv, grid, batt, ev, soc, load };
       this._seriesAt = Date.now();
       if (this._key() === "energy/today") this._paintChart();
-      if (this._key() === "now") this._paintOvSeries();
     } catch (e) { /* history is optional */ }
   }
 
   // ---- frame ----------------------------------------------------------
   _build() {
     this._root = this.attachShadow({ mode: "open" });
-    // Fonts must live in the document: @font-face inside a shadow root is ignored by some browsers.
-    if (!document.getElementById("ampx-fonts")) { const l = document.createElement("link"); l.id = "ampx-fonts"; l.rel = "stylesheet"; l.href = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"; document.head.appendChild(l); }
     this._root.innerHTML = `<style>${CSS}</style>
       <div class="bg" aria-hidden="true"></div>
-      <div class="app">
-        <aside class="snav" aria-label="AmpX">
-          <div class="sbrand"><img class="logo" src="/ampx_static/icon.svg" alt="" width="34" height="34"><div><b>HOME ENERGY OS</b><span>AmpX · AI Energy Manager</span></div></div>
-          <nav id="tabs" aria-label="Sections"></nav>
-          <div class="sfoot" id="sfoot"></div>
-        </aside>
-        <div class="mainc">
-          <header class="topbar">
-            <div class="tkpis" id="tkpis"></div>
-            <div class="tools"><span class="tmeta"><b id="clock" class="clock"></b><span id="tdate"></span></span>
-              <button class="sysok" id="sysok" aria-label="System status"></button>
-              <button class="ib" id="chatbtn" aria-label="Ask AmpX" title="Ask AmpX">${icon("chat")}</button>
-              <button class="ib" id="bell" aria-label="Alerts" title="Alerts">${icon("bell")}<i class="badge" id="badge" hidden></i></button>
-              <button class="ib" id="theme" aria-label="Switch theme"></button>
-              <button class="ib" id="gear" aria-label="Settings" title="Settings">${icon("gear")}</button></div>
-          </header>
-          <main id="view" aria-live="polite"><div class="grid"><div class="card w4 skel tall"></div><div class="card w4 skel tall"></div><div class="card w4 skel tall"></div></div></main>
-          <footer class="statusbar" id="statusbar"></footer>
-        </div>
-      </div>
-      <div class="drawer" id="drawer" hidden><div class="dback" id="dback"></div><aside role="dialog" aria-label="Alerts and notifications"><div class="dhead"><h2>${icon("bell")} Alerts</h2><button class="ghost" id="dclose" aria-label="Close">✕</button></div><div id="dbody"></div></aside></div>`;
+      <header class="top">
+        <div class="brand"><img class="logo" src="/ampx_static/icon.svg" alt="" width="40" height="40"><div><h1>AmpX</h1><div class="sub" id="greet"></div></div></div>
+        <nav id="tabs" aria-label="Sections"></nav>
+        <div class="tools"><span id="clock" class="clock"></span>
+          <button class="ib" id="chatbtn" aria-label="Ask AmpX" title="Ask AmpX">${icon("chat")}</button>
+          <button class="ib" id="bell" aria-label="Alerts" title="Alerts">${icon("bell")}<i class="badge" id="badge" hidden></i></button>
+          <button class="ib" id="theme" aria-label="Switch theme"></button>
+          <button class="ib" id="gear" aria-label="Settings" title="Settings">${icon("gear")}</button></div>
+      </header>
+      <div class="drawer" id="drawer" hidden><div class="dback" id="dback"></div><aside role="dialog" aria-label="Alerts and notifications"><div class="dhead"><h2>${icon("bell")} Alerts</h2><button class="ghost" id="dclose" aria-label="Close">✕</button></div><div id="dbody"></div></aside></div>
+      <main id="view" aria-live="polite"><div class="grid"><div class="card wide skel"></div><div class="card w8 skel tall"></div><div class="card w4 skel tall"></div></div></main>`;
+    const nav = this._root.querySelector("#tabs");
+    nav.innerHTML = TABS.map(([k, l, ic]) => `<button data-tab="${k}" aria-label="${l}">${icon(ic)}<span>${l}</span></button>`).join("");
+    nav.querySelectorAll("button").forEach(b => b.onclick = () => this._go(b.dataset.tab));
     const dr = this._root.querySelector("#drawer"), openD = v => { dr.hidden = !v; if (v) this._paintDrawer(); };
-    this._root.querySelector("#bell").onclick = this._root.querySelector("#sysok").onclick = () => openD(dr.hidden);
+    this._root.querySelector("#bell").onclick = () => openD(dr.hidden);
     this._root.querySelector("#dback").onclick = this._root.querySelector("#dclose").onclick = () => openD(false);
     this._root.querySelector("#gear").onclick = () => this._go("settings");
     this._root.querySelector("#chatbtn").onclick = () => { this._go("assistant"); const i = this._root.querySelector("#chatin"); if (i) i.focus(); };
@@ -357,10 +337,12 @@ class AmpXStudio extends HTMLElement {
     this._pc = {};
     const r = this._root;
     r.querySelector("#gear").classList.toggle("on", this._tab === "settings");
-    this._paintNav();
-    const alerts = this._alerts(), bd = r.querySelector("#badge");
+    r.querySelectorAll("#tabs button").forEach(b => { b.classList.toggle("on", b.dataset.tab === this._tab); if (b.dataset.tab === this._tab) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
+    const now = new Date(), h = now.getHours();
+    r.querySelector("#clock").textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    r.querySelector("#greet").innerHTML = `${h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"}<span class="gdate"> · ${now.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" })}</span>`;
+    const alerts = (d.health || []).length + ((d.security || { ok: true }).ok ? 0 : ((d.security.issues || []).length || 1)), bd = r.querySelector("#badge");
     bd.hidden = !alerts; bd.textContent = alerts > 9 ? "9+" : String(alerts || "");
-    this._paintTop();
     this._applyBg();
     const view = r.querySelector("#view"), k = this._key(), subs = SUBS[this._tab];
     const views = {
@@ -368,7 +350,7 @@ class AmpXStudio extends HTMLElement {
       "energy/today": () => this._viewToday(), "energy/plan": () => this._viewPlan(), "energy/history": () => this._viewAnalytics(), "energy/compare": () => this._viewCompare(),
       "devices/battery": () => this._viewBattery(), "devices/ev": () => this._viewEv(), "devices/charger": () => this._viewCharger(), "devices/all": () => this._viewDevices(),
     };
-    const sn = subs && this._tab !== "assistant" && !NAV ? `<nav class="subnav" aria-label="${esc(this._tab)} sections">${subs.map(([s2, l]) => `<button data-sub="${s2}" class="${this._subOf(this._tab) === s2 ? "on" : ""}">${l}</button>`).join("")}</nav>` : "";
+    const sn = subs && this._tab !== "assistant" ? `<nav class="subnav" aria-label="${esc(this._tab)} sections">${subs.map(([s2, l]) => `<button data-sub="${s2}" class="${this._subOf(this._tab) === s2 ? "on" : ""}">${l}</button>`).join("")}</nav>` : "";
     view.innerHTML = sn + (this._tab === "assistant" ? this._viewAssistant() : views[k]());
     view.querySelectorAll("[data-sub]").forEach(b => b.onclick = () => this._go(this._tab, b.dataset.sub));
     view.querySelectorAll("[data-go]").forEach(b => b.onclick = () => this._go(b.dataset.go));
@@ -439,145 +421,31 @@ class AmpXStudio extends HTMLElement {
       + k("grid", C.grid, "From grid", bigNum(m.imp, 1, "kWh"), `${fx(m.exp, 1)} kWh sent back`)
       + k("bolt", m.net >= 0 ? C.shoulder : C.peak, "Net today", `<span class="n">${m.net < 0 ? "−" : ""}$${Math.abs(m.net).toFixed(2).replace(/\.(\d+)$/, '<span class="dec">.$1</span>')}</span>`, `${$(m.avoided)} saved · ${$(m.earned)} earned`);
   }
-  // ---- frame: sidebar, top bar, status bar (HOME ENERGY OS layout) -----
-  _alerts() { const d = this._data || {}; return (d.health || []).length + ((d.security || { ok: true }).ok ? 0 : ((d.security.issues || []).length || 1)); }
-  _navOn(key) { return key.includes("/") ? this._key() === key : this._tab === key; }
-  _paintNav() {
-    const r = this._root, nav = r.querySelector("#tabs"); if (!nav) return;
-    const label = (k, l) => l || { "devices/battery": this._name("battery"), "devices/ev": this._name("ev"), "devices/charger": this._name("charger") }[k];
-    const html = NAV.map(g => `<div class="ngrp">${g.map(([k, l, ic]) => `<button data-tab="${k}" class="${this._navOn(k) ? "on" : ""}"${this._navOn(k) ? ' aria-current="page"' : ""} title="${esc(label(k, l))}">${icon(ic)}<span>${esc(label(k, l))}</span></button>`).join("")}</div>`).join("");
-    if (this._navHtml !== html) { this._navHtml = html; nav.innerHTML = html; nav.querySelectorAll("button").forEach(b => b.onclick = () => this._go(b.dataset.tab)); }
-    const v = (this._hass.config || {}).version, sf = r.querySelector("#sfoot");
-    if (sf) sf.innerHTML = `<span class="dot" style="background:${C.batt}"></span>Home Assistant${v ? ` <span class="muted">${esc(v)}</span>` : ""}`;
-  }
-  /** Top bar: five live numbers, the clock, and SYSTEM OK. Repainted on every state push. */
-  _paintTop() {
-    const d = this._data; if (!d || !this._root) return;
-    const e = d.energy || {}, f = this._flows(), sur = f.pv - f.load, now = new Date();
-    const k = (col, label, val, unit, sub) => `<div class="tk" style="--k:${col}"><span class="tkl">${label}</span><b>${val}<small>${unit}</small></b>${sub ? `<span class="tks">${sub}</span>` : ""}</div>`;
-    this._paintTo("#tkpis", k(C.solar, "PV Output", fx(f.pv, 2), "kW", e.pv_today ? `${fx(e.pv_today, 0)} kWh forecast` : "")
-      + k(C.home, "Home Load", fx(f.load, 2), "kW", f.ev > 0.05 ? `EV ${fx(f.ev, 1)} kW` : "")
-      + k(sur >= 0 ? C.shoulder : C.peak, sur >= 0 ? "Surplus" : "Deficit", fx(Math.abs(sur), 2), "kW", f.grid < -0.05 ? `exporting ${fx(-f.grid, 1)}` : f.grid > 0.05 ? `importing ${fx(f.grid, 1)}` : "")
-      + k(C.off_peak, "Price now", fx(e.import_rate, 1), "c", `${esc(String(e.period || "").replace("_", " "))} · FiT ${fx(e.feed_in_rate, 0)}c`)
-      + k(C.export, "Tomorrow", fx(e.pv_tomorrow, 1), "kWh", "solar forecast"));
-    const ck = this._root.querySelector("#clock"), dt = this._root.querySelector("#tdate");
-    if (ck) ck.textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    if (dt) dt.textContent = now.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
-    const n = this._alerts(), so = this._root.querySelector("#sysok");
-    if (so) { so.className = "sysok" + (n ? " warn" : ""); so.innerHTML = `<i></i>${n ? `${n} ALERT${n > 1 ? "S" : ""}` : "SYSTEM OK"}`; }
-    this._paintStatus();
-  }
-  _paintStatus() {
-    const d = this._data, c = d.control || {}, g = d.gateway || {}, n = this._alerts(), mode = this._st(this._pf().battery.mode);
-    const chip = (col, t) => `<span class="schip"><i style="background:${col}"></i>${esc(t)}</span>`;
-    this._paintTo("#statusbar", `<span class="sok ${n ? "warn" : ""}"><i></i>${n ? `${n} need${n > 1 ? "" : "s"} attention` : "All systems OK"}</span>`
-      + chip(C.batt, c.face ? `Battery follows ${c.engine_label || this._engineName()}` : `Autopilot ${(d.autopilot || {}).mode || "off"}`)
-      + (mode ? chip(C.home, `Mode ${mode.state}`) : "")
-      + chip((d.energy || {}).solar_day === "low" ? C.peak : C.solar, `Solar day ${(d.energy || {}).solar_day || "–"}`)
-      + chip(g.configured ? C.shoulder : "#64748B", g.configured ? `AI ${g.model || "gateway"}` : "AI off")
-      + chip((d.security || {}).ok === false ? C.alert : C.shoulder, (d.security || {}).ok === false ? "Security check" : "Locked up"));
-  }
-
-  // ---- OVERVIEW (bento) ------------------------------------------------
   _viewNow() {
-    const d = this._data, e = d.energy, sch = d.schedule || [], go = (t, label) => `<button class="go" data-go="${t}" aria-label="${label}">${icon("arrow")}</button>`;
-    const per = r => (r.import <= 12 ? "shoulder" : r.import >= 40 ? "peak" : "off_peak");
-    const cheap = sch.length ? sch.reduce((a, r) => (r.import < a.import ? r : a)) : null, dear = sch.length ? sch.reduce((a, r) => (r.import > a.import ? r : a)) : null;
-    const span = (r, k) => { const hs = sch.filter(x => x[k] === r[k]).map(x => x.hour); return hs.length ? `${hs[0]}:00–${(hs[hs.length - 1] + 1) % 24 || 24}:00` : ""; };
-    const heat = sch.map(r => `<i class="${r.hour === d.hour ? "cur" : ""}" style="--hc:${C[per(r)]}" title="${r.hour}:00 · ${r.import}c import · ${r.feed_in}c feed-in"><span>${r.hour}</span></i>`).join("");
-    const cam = this._cam();
-    return `<section class="grid bento">
-      <div class="card w4"><div class="chead"><h2>Live Energy Flow</h2><span class="chip live"><i></i>Live</span></div><div id="flow"></div></div>
-      <div class="card w4"><div class="chead"><h2>Home Consumption</h2>${go("energy/today", "Today's energy")}</div>
-        <div class="donrow"><div id="ov-don"></div><div id="ov-donl" class="donl"></div></div>
-        <div class="muted ovsub">Last 24 h load, by tariff</div><div id="ov-bars" class="hbars"><div class="muted">Loading history…</div></div><div class="ticks" id="ov-bart"></div></div>
-      <div class="card w4"><div class="chead"><h2>${esc(this._name("plan"))} Tariff Today</h2>${go("energy/plan", "Plan")}</div>
-        <div class="ratenow"><div><div class="kval">${bigNum(e.import_rate, 2, "c/kWh")}</div><span class="muted">feed-in ${fx(e.feed_in_rate, 0)}c</span></div><span class="pill" style="--pc:${C[e.period]}">${esc(e.period.replace("_", " "))}</span></div>
-        <div class="heat" title="Import rate by hour">${heat}</div>
-        <div class="kv2">${cheap ? `<div><span class="muted">Cheapest</span><b style="color:${C.shoulder}">${fx(cheap.import, 2)}c</b><span class="muted">${span(cheap, "import")}</span></div>` : ""}
-          ${dear ? `<div><span class="muted">Peak</span><b style="color:${C.peak}">${fx(dear.import, 2)}c</b><span class="muted">${span(dear, "import")}</span></div>` : ""}</div>
+    const d = this._data, e = d.energy, ins = this._insight(), ap = d.autopilot || { mode: "off" };
+    const mode = this._face() ? [this._engineName(), C.batt] : { auto: ["Autopilot", C.shoulder], shadow: ["Advising", C.off_peak], off: ["Manual", "#8a8279"] }[ap.mode] || ["Manual", "#8a8279"];
+    const hours = d.schedule.map(r => {
+      const p = r.import <= 12 ? "shoulder" : r.import >= 40 ? "peak" : "off_peak";
+      return `<i class="${r.hour === d.hour ? "cur" : ""}" style="background:${C[p]}" title="${r.hour}:00 · ${r.import}c import · ${r.feed_in}c feed-in"></i>`;
+    }).join("");
+    const go = (t, label) => `<button class="go" data-go="${t}" aria-label="${label}">${icon("arrow")}</button>`;
+    return `<section class="grid now">
+      <div class="card wide insight ${ins.tone}"><span class="iic">${icon(ins.ic)}</span>
+        <div class="itx"><b>${esc(ins.title)}</b><span>${esc(ins.text)}</span></div>
+        <button class="pill btn" style="--pc:${mode[1]}" data-go="battery" aria-label="Open battery control">${mode[0]}</button>
+        ${ins.go ? `<button class="go" data-go="${ins.go}" aria-label="Details">${icon("arrow")}</button>` : ""}</div>
+      <div class="card wide kpis" id="kpis"></div>
+      <div class="card w8 hero"><div class="chead"><h2>Energy flow</h2><span class="chip live"><i></i>Live</span></div><div id="flow"></div></div>
+      <div class="card w4 side">
+        <div class="chead"><h2>Battery</h2>${go("battery", "Open battery")}</div><div id="arc"></div>
+        <div class="sep"></div>
+        <div class="chead"><h2>Tariff now</h2>${go("plan", "Open plan")}</div>
+        <div class="ratenow"><span class="pill" style="--pc:${C[e.period]}">${esc(e.period.replace("_", " "))}</span><div class="kval">${bigNum(e.import_rate, 2, "c/kWh")}</div></div>
+        <div class="ribbon" title="Import rate by hour">${hours}</div>
+        <div class="ticks"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>
         <div class="nextline" id="nextline"></div><div class="prog"><i id="np"></i></div></div>
-
-      <div class="card w3 dvc"><div class="chead"><h2>${esc(this._name("charger"))}</h2>${go("devices/charger", "Charger")}</div><div id="ov-wc"></div></div>
-      <div class="card w3 dvc"><div class="chead"><h2>${esc(this._name("ev"))}</h2>${go("devices/ev", "Car")}</div><div id="ov-ev"></div></div>
-      <div class="card w3 dvc"><div class="chead"><h2>${esc(this._name("battery"))}</h2>${go("devices/battery", "Battery")}</div><div id="ov-bt"></div></div>
-      <div class="card w3 dvc"><div class="chead"><h2>${cam ? esc((cam.attributes.friendly_name || "Camera").replace(/\s*camera$/i, "")) : "Camera"}</h2>${go("house", "House")}</div><div id="ov-cam" class="cam">${cam ? "" : '<div class="muted">No camera found.</div>'}</div></div>
-
-      <div class="card w4"><div class="chead"><h2>PV Production Today</h2><span class="legend"><b style="color:${C.solar}">●</b> Actual <b style="color:${C.export}">┅</b> Forecast</span></div><div id="ov-pv" class="pvc"><div class="muted">Loading history…</div></div></div>
-      <div class="card w4"><div class="chead"><h2>Energy Balance Today</h2>${go("energy/history", "History")}</div><div id="ov-bal"></div></div>
-      <div class="card w4"><div class="chead"><h2>AmpX Advisor &amp; Health</h2><button class="ghost" data-go="assistant">Ask ↗</button></div><div id="ov-adv"></div></div>
+      <div class="card wide"><div class="chead"><h2>AmpX suggests</h2><button class="ghost" data-go="energy/today">Today's energy ↗</button></div>${this._adviceHtml()}</div>
     </section>`;
-  }
-  /** The camera to show: the doorbell one if set, else the first front/door camera, else any. */
-  _cam() {
-    const st = this._hass.states, ids = Object.keys(st).filter(i => i.startsWith("camera.") && st[i].state !== "unavailable" && st[i].attributes.entity_picture);
-    const want = (this._data.visitors || {}).cameras || [];
-    const id = ids.find(i => want.includes(i)) || ids.find(i => /front|door|porch|drive/.test(i)) || ids[0];
-    return id ? st[id] : null;
-  }
-  _paintOverview(f) {
-    const d = this._data, pf = this._pf(), m = this._money(), n = id => (id ? this._num(id) : null), st = id => id && this._hass.states[id];
-    // Home consumption donut: where today's home energy came from
-    const dis = n(pf.day.discharge) ?? 0, used = m.used ?? (m.self + m.imp), grid = m.imp, solar = Math.max(used - grid - dis, 0);
-    const seg = [["Solar", solar, C.solar], ["Battery", Math.min(dis, used), C.batt], ["Grid", grid, C.import]];
-    this._paintTo("#ov-don", donut(seg, `${fx(used, 1)}`, "kWh today"));
-    this._paintTo("#ov-donl", seg.map(([l, v, c]) => `<div><span class="dot" style="background:${c}"></span><span>${l}</span><b>${fx(v, 1)}<small> kWh</small></b></div>`).join("")
-      + `<div class="muted">${m.ss === null ? "" : `${fx(m.ss, 0)}% self-sufficient`}</div>`);
-    // Devices
-    const W = this._disc().ch, wcKw = this._kw(W.power) ?? 0, wcMax = pf.ev.charger_kw || 7.2, wst = st(W.status), veh = W.vehicle ? (st(W.vehicle) || {}).state === "on" : null;
-    this._paintTo("#ov-wc", ring(wcKw / wcMax * 100, C.ev, `${fx(wcKw, 1)}<tspan class="ru"> kW</tspan>`, wst ? wst.state.replace(/_/g, " ") : wcKw > 0.1 ? "charging" : "idle")
-      + kvRows([W.session ? ["Session", `${fx(n(W.session), 1)} kWh`] : null, W.volt ? ["Voltage", `${fx(n(W.volt), 0)} V`] : null, veh === null ? null : ["Vehicle", veh ? "connected" : "not connected"], ["Max", `${fx(wcMax, 1)} kW`]]));
-    const sl = d.sealion7 || {}, evSoc = n(pf.ev.soc) ?? sl.soc, cap = pf.ev.capacity || 0, tgt = sl.target || 80, plug = st(pf.ev.plug);
-    const range = sl.total_range_km ?? sl.pure_range_km, need = evSoc === null || evSoc === undefined ? null : Math.max(tgt - evSoc, 0) / 100 * cap;
-    this._paintTo("#ov-ev", ring(evSoc, levelColor(evSoc), `${evSoc === null || evSoc === undefined ? "–" : Math.round(evSoc)}<tspan class="ru">%</tspan>`, plug && plug.state === "on" ? "charging" : "not charging")
-      + kvRows([range !== null && range !== undefined ? ["Range", `${fx(range, 0)} km`] : null, cap ? ["Stored", `${fx(evSoc * cap / 100, 1)} kWh`] : null, need !== null ? [`To ${Math.round(tgt)}%`, need > 0.05 ? `${fx(need, 1)} kWh` : "reached"] : null]));
-    const soc = this._socNow(), bcap = pf.battery.capacity || 10, mode = st(pf.battery.mode);
-    this._paintTo("#ov-bt", ring(soc, levelColor(soc), `${soc === null ? "–" : Math.round(soc)}<tspan class="ru">%</tspan>`, f.batt > 0.05 ? `charging ${fx(f.batt, 1)} kW` : f.batt < -0.05 ? `discharging ${fx(-f.batt, 1)} kW` : "standby")
-      + kvRows([["Stored", soc === null ? "–" : `${fx(soc * bcap / 100, 1)} / ${fx(bcap, 0)} kWh`], ["Charged today", `${fx(n(pf.day.charge), 1)} kWh`], ["Discharged today", `${fx(dis, 1)} kWh`],
-        ["Reserve", `${fx(pf.battery.reserve, 0)}%`], mode ? ["Mode", mode.state] : null]));
-    const cam = this._cam(), ce = this._root.querySelector("#ov-cam");
-    if (cam && ce) {
-      const src = cam.attributes.entity_picture, im = ce.querySelector("img");
-      // the picture URL carries a rotating token; a new one also means a fresh frame
-      if (!im) ce.innerHTML = `<img src="${esc(src)}" alt="${esc(cam.attributes.friendly_name || "Camera")}" loading="lazy"><span class="camlive"><i></i>${esc(cam.state)}</span>`;
-      else if (!this._camAt || Date.now() - this._camAt > 10000) { this._camAt = Date.now(); im.src = src + (src.includes("?") ? "&" : "?") + "t=" + this._camAt; }
-    }
-    // Balance
-    const $ = v => (v < 0 ? "−$" : "$") + Math.abs(v).toFixed(2), tot = Math.max(m.gen, used, m.exp, m.imp, 0.1);
-    const bal = [["Produced", m.gen, C.solar], ["Consumed", used, C.home], ["Exported", m.exp, C.export], ["Imported", m.imp, C.import]];
-    this._paintTo("#ov-bal", `<div class="bals">${bal.map(([l, v, c]) => `<div class="balr"><span>${l}</span><div><i style="width:${Math.min(v / tot * 100, 100)}%;background:${c}"></i></div><b>${fx(v, 1)}<small> kWh</small></b></div>`).join("")}</div>
-      <div class="ssh"><span>Self-sufficiency</span><b>${m.ss === null ? "–" : fx(m.ss, 0) + "%"}</b></div><div class="prog big"><i style="width:${m.ss ?? 0}%;background:${C.shoulder}"></i></div>
-      <div class="netc"><div><span class="muted">Net today</span><b style="color:${m.net >= 0 ? C.shoulder : C.peak}">${$(m.net)}</b></div><div class="muted">${$(m.avoided)} saved · ${$(m.earned)} earned · ${$(m.spent)} bought</div></div>`);
-    // Advisor + health
-    const ins = this._insight(), g = d.gateway || {}, c = d.control || {};
-    const dots = [["Battery", soc !== null], ["Solar", this._kw(d.studio && d.studio.pv) !== null], ["Grid meter", this._kw(d.studio && d.studio.grid) !== null], ["AI gateway", !!g.configured], ["Security", (d.security || {}).ok !== false], ["House health", !(d.health || []).length]];
-    this._paintTo("#ov-adv", `<div class="aitip ${ins.tone}"><span class="iic">${icon(ins.ic)}</span><div><b>${esc(ins.title)}</b><span>${esc(ins.text)}</span></div></div>
-      <div class="hdots">${dots.map(([l, ok]) => `<span><i style="background:${ok ? C.shoulder : C.alert}"></i>${l}</span>`).join("")}</div>
-      <div class="alines">${(d.advice || []).slice(0, 3).map(t => `<div><span style="color:${t.level === "warn" ? C.peak : t.level === "act" ? C.solar : C.home}">›</span>${esc(t.text)}${t.why ? ` <span class="muted">· ${esc(t.why)}</span>` : ""}</div>`).join("")}
-        ${c.face ? `<div><span style="color:${C.batt}">›</span>Battery follows ${esc(c.engine_label || "the external engine")}; AmpX only shows.</div>` : ""}
-        ${(d.health || []).slice(0, 2).map(h => `<div><span style="color:${C.alert}">!</span>${esc(h)}</div>`).join("")}</div>`);
-    if (this._series) this._paintOvSeries();
-  }
-  /** History-based tiles: 24 hourly load bars coloured by tariff, today's PV against the forecast. */
-  _paintOvSeries() {
-    const s = this._series, sch = this._data.schedule || []; if (!s) return;
-    const N = s.load.length, per = Math.max(Math.round(N / 24), 1), span = (s.end - s.start) / N, bars = [];
-    for (let b = 0; b < 24; b++) {
-      const vals = s.load.slice(b * per, (b + 1) * per).filter(v => v !== null), t = new Date(s.start.getTime() + b * per * span), h = t.getHours();
-      const r = sch.find(x => x.hour === h) || {}, p = r.import <= 12 ? "shoulder" : r.import >= 40 ? "peak" : "off_peak";
-      bars.push({ h, v: vals.length ? vals.reduce((a, x) => a + x, 0) / vals.length : 0, c: C[p] });
-    }
-    const mx = Math.max(...bars.map(b => b.v), 0.5);
-    this._paintTo("#ov-bars", bars.map(b => `<i style="height:${Math.max(b.v / mx * 100, 3)}%;background:${b.c}" title="${b.h}:00 · ${fx(b.v, 2)} kW"></i>`).join("")
-    );
-    this._paintTo("#ov-bart", `<span>${bars[0].h}:00</span><span>${bars[12].h}:00</span><span>now</span>`);
-    // PV today: actual since midnight vs Solcast detailed forecast (kW, 30 min)
-    const mid = new Date(); mid.setHours(0, 0, 0, 0);
-    const act = [];
-    s.pv.forEach((v, i) => { const t = s.start.getTime() + i * span; if (t >= mid.getTime() && v !== null) act.push([(t - mid) / 3600000, Math.max(v, 0)]); });
-    const fst = this._hass.states[this._pf().solar.today], det = (fst && (fst.attributes.detailedForecast || fst.attributes.detailed_forecast)) || [];
-    const fc = det.map(r => [(new Date(r.period_start) - mid) / 3600000, Number(r.pv_estimate)]).filter(([h, v]) => h >= 0 && h <= 24 && Number.isFinite(v));
-    this._paintTo("#ov-pv", pvChart(act, fc, (Date.now() - mid) / 3600000));
   }
 
   _viewToday() {
@@ -598,8 +466,10 @@ class AmpXStudio extends HTMLElement {
   _paintLive() {
     if (!this._data) return;  // a resize can fire before the first load
     const f = this._flows();
-    this._paintTo("#flow", flowSvg(f, { soc: this._socNow(), compact: true }));
-    this._paintOverview(f);
+    this._paintTo("#kpis", this._kpisHtml());
+    this._paintTo("#flow", flowSvg(f, { soc: this._socNow(), compact: this.clientWidth < 640 }));
+    this._paintArc(f);
+    this._battWidgets();
     this._paintVisuals();
   }
   _paintArc(f) {
@@ -2360,41 +2230,6 @@ function flowSvg(f, o = {}) {
     ${node("ev", "EV", f.ev, C.ev, "car")}${node("home", "Home", f.home, C.home, "home", true)}</svg>`;
 }
 
-/** Ring gauge for the device tiles; centre is SVG text (may hold a tspan). */
-function ring(pct, color, centre, sub) {
-  const r = 50, c = 2 * Math.PI * r, p = pct === null || pct === undefined || !Number.isFinite(pct) ? 0 : Math.max(0, Math.min(pct, 100)) / 100;
-  return `<div class="ring"><svg viewBox="0 0 130 130" role="img"><circle cx="65" cy="65" r="${r}" fill="none" class="rtrack" stroke-width="11"/>
-    <circle cx="65" cy="65" r="${r}" fill="none" stroke="${color}" stroke-width="11" stroke-linecap="round" opacity="${p > 0.005 ? 1 : 0}" stroke-dasharray="${(c * p).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 65 65)" style="transition:stroke-dasharray .8s"/>
-    <text x="65" y="71" text-anchor="middle" class="rv">${centre}</text></svg><span class="rsub">${esc(sub || "")}</span></div>`;
-}
-function kvRows(rows) { return `<div class="kvs">${rows.filter(Boolean).map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}</div>`; }
-/** Donut of [label, value, colour] segments with a centre figure. */
-function donut(seg, big, small) {
-  const r = 52, c = 2 * Math.PI * r, tot = seg.reduce((a, s) => a + Math.max(s[1], 0), 0);
-  let off = 0;
-  const arcs = tot < 0.05 ? "" : seg.map(([l, v, col]) => {
-    const len = Math.max(v, 0) / tot * c, gap = len > 4 ? 2 : 0, a = `<circle cx="70" cy="70" r="${r}" fill="none" stroke="${col}" stroke-width="16" stroke-dasharray="${Math.max(len - gap, 0).toFixed(1)} ${c.toFixed(1)}" stroke-dashoffset="${(-off).toFixed(1)}" transform="rotate(-90 70 70)"><title>${esc(l)} ${fx(v, 1)} kWh</title></circle>`;
-    off += len; return a;
-  }).join("");
-  return `<svg viewBox="0 0 140 140" class="donut" role="img" aria-label="Home energy today by source"><circle cx="70" cy="70" r="${r}" fill="none" class="rtrack" stroke-width="16"/>${arcs}
-    <text x="70" y="70" text-anchor="middle" class="dv">${esc(big)}</text><text x="70" y="88" text-anchor="middle" class="ds">${esc(small)}</text></svg>`;
-}
-/** Today's PV: actual area (solid) against the forecast (dashed), x in hours since midnight. */
-function pvChart(act, fc, nowH) {
-  const W = 420, H = 190, L = 30, R = 8, T = 10, B = 22;
-  const mx = Math.max(1, ...act.map(p => p[1]), ...fc.map(p => p[1])) * 1.1;
-  const x = h => L + h / 24 * (W - L - R), y = v => T + (1 - v / mx) * (H - T - B);
-  const path = pts => pts.map((p, i) => (i ? "L" : "M") + x(p[0]).toFixed(1) + " " + y(p[1]).toFixed(1)).join("");
-  let g = "";
-  for (let k = 0; k <= 3; k++) { const v = mx / 1.1 * k / 3; g += `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="gl"/><text x="${L - 5}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" class="ax">${v.toFixed(v >= 10 ? 0 : 1)}</text>`; }
-  for (let h = 0; h <= 24; h += 6) g += `<text x="${x(h).toFixed(1)}" y="${H - 6}" text-anchor="middle" class="ax">${h}:00</text>`;
-  const area = act.length > 1 ? `<path d="${path(act)}L${x(act[act.length - 1][0]).toFixed(1)} ${y(0)}L${x(act[0][0]).toFixed(1)} ${y(0)}Z" fill="url(#pvo)"/><path d="${path(act)}" fill="none" stroke="${C.solar}" stroke-width="2.2" stroke-linejoin="round"/>` : "";
-  const f = fc.length > 1 ? `<path d="${path(fc)}" fill="none" stroke="${C.export}" stroke-width="1.8" stroke-dasharray="5 4"/>` : "";
-  const now = nowH > 0 && nowH < 24 ? `<line x1="${x(nowH).toFixed(1)}" x2="${x(nowH).toFixed(1)}" y1="${T}" y2="${H - B}" class="cur"/>` : "";
-  if (!area && !f) return '<div class="muted">No solar recorded yet today.</div>';
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="PV production today"><defs><linearGradient id="pvo" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${C.solar}" stop-opacity=".45"/><stop offset="1" stop-color="${C.solar}" stop-opacity="0"/></linearGradient></defs>${g}${f}${area}${now}</svg>`;
-}
-
 /** Half-circle battery gauge with reserve marker. */
 function arcGauge(pct, o) {
   const R = 100, cx = 130, cy = 120, len = Math.PI * R, p = pct === null || pct === undefined ? 0 : Math.max(0, Math.min(pct, 100)) / 100;
@@ -2465,68 +2300,44 @@ const CSS = `
   --primary-text-color:var(--text);--secondary-text-color:var(--muted);--card-background-color:var(--surface);--primary-background-color:var(--bg);
   --divider-color:var(--line);--primary-color:var(--o-deep);--text-primary-color:#fff;
   display:block;position:relative;isolation:isolate;min-height:100%;padding:20px 24px 56px;color:var(--text);background:var(--bg);
-  --sidebar:#F8FAFC;--fh:"Space Grotesk","Inter",ui-sans-serif,system-ui,sans-serif;
   --ff:"Inter","SF Pro Text",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font:15px/1.45 var(--ff);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;
   color-scheme:light}
 :host([data-theme=dark]){
-  --bg:#0A0E12;--surface:#121820;--surface2:#0F141B;--surface3:#1E293B;--sidebar:#0D1217;
+  --bg:#0A0E12;--surface:#121820;--surface2:#0F141B;--surface3:#1E293B;
   --text:#F8FAFC;--muted:#94A3B8;--line:rgba(148,163,184,.16);--nav:rgba(255,255,255,.05);
   --o:#4ADE80;--o-deep:#4ADE80;--good:#22C55E;--warn:#F59E0B;--bad:#EF4444;
   --shadow:0 1px 2px #0008,0 12px 30px #0007;--text-primary-color:#06240A;color-scheme:dark}
 .bg{position:absolute;inset:0;z-index:-1;pointer-events:none;background:center 0/cover no-repeat;opacity:0;transition:opacity .8s;-webkit-mask-image:linear-gradient(#000,transparent 60%);mask-image:linear-gradient(#000,transparent 60%)}
 .bg.on{opacity:.22}:host([data-theme=dark]) .bg.on{opacity:.12}
 
-/* ---- frame: sidebar + top bar + status bar ---- */
-:host{padding:0}
-.app{display:grid;grid-template-columns:200px minmax(0,1fr);min-height:100vh}
-.snav{position:sticky;top:0;align-self:start;height:100vh;display:flex;flex-direction:column;gap:14px;padding:18px 12px;background:var(--sidebar);border-right:1px solid var(--line);overflow-y:auto}
-.sbrand{display:flex;align-items:center;gap:10px;padding:0 6px 6px}.sbrand b{display:block;font:700 12px/1.15 var(--fh);letter-spacing:.03em;white-space:nowrap}.sbrand span{font-size:11px;color:var(--muted)}
-.logo{border-radius:10px;flex:none}
-nav#tabs{display:flex;flex-direction:column;gap:12px;flex:1}
-.ngrp{display:flex;flex-direction:column;gap:2px}.ngrp+.ngrp{padding-top:12px;border-top:1px solid var(--line)}
-nav#tabs button{display:flex;align-items:center;gap:10px;justify-content:flex-start;background:transparent;color:var(--muted);padding:8px 12px;min-height:38px;border-radius:10px;font:500 13.5px/1.2 var(--ff);text-align:left}
-nav#tabs button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-nav#tabs button:hover{color:var(--text);background:var(--nav);filter:none}
-nav#tabs button.on{background:color-mix(in srgb,var(--o) 14%,transparent);color:var(--text);box-shadow:inset 3px 0 0 var(--o)}nav#tabs button.on .ic{color:var(--o)}
-.sfoot{font-size:12px;color:var(--muted);padding:8px 6px 0;border-top:1px solid var(--line)}
-.ic{width:19px;height:19px;flex:none}
-.mainc{min-width:0;display:flex;flex-direction:column;padding:16px 22px 0}
-.topbar{display:flex;align-items:center;gap:16px;max-width:1500px;width:100%;margin:0 auto 16px;flex-wrap:wrap}
-.tkpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;flex:1;min-width:0}
-.tk{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px;min-width:0;box-shadow:inset 0 2px 0 var(--k)}
-.tkl{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
-.tk b{display:block;font:700 22px/1.15 var(--fh);letter-spacing:-.02em;color:color-mix(in srgb,var(--k) 55%,var(--text))}.tk b small{font:500 12px var(--ff);color:var(--muted);margin-left:4px}
-.tks{display:block;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tools{display:flex;align-items:center;gap:8px;margin-left:auto}
-.tmeta{display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;margin-right:4px}.clock{font:700 18px var(--fh)}#tdate{font-size:12px;color:var(--muted)}
-.sysok{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:6px 12px;border-radius:var(--r-pill);font:700 11.5px/1 var(--ff);letter-spacing:.08em;background:color-mix(in srgb,var(--good) 15%,transparent);color:var(--good);border:1px solid color-mix(in srgb,var(--good) 35%,transparent)}
-.sysok i{width:8px;height:8px;border-radius:50%;background:currentColor;animation:blink 1.6s ease-in-out infinite}
-.sysok.warn{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn);border-color:color-mix(in srgb,var(--warn) 35%,transparent)}
-.ib{position:relative;width:38px;height:38px;padding:0;border-radius:50%;background:var(--surface);color:var(--text);border:1px solid var(--line);display:grid;place-items:center}
+/* ---- header ---- */
+.top{display:flex;align-items:center;gap:18px;max-width:1360px;margin:0 auto 22px}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}.brand h1{font-size:20px;line-height:1.1;margin:0;font-weight:700;letter-spacing:-.01em}
+.logo{border-radius:12px;box-shadow:var(--shadow);flex:none}.sub{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+nav#tabs{display:flex;gap:2px;padding:5px;background:var(--nav);border-radius:var(--r-pill);margin:0 auto}
+nav#tabs button{display:flex;align-items:center;gap:8px;background:transparent;color:var(--muted);padding:9px 16px;min-height:42px;font-weight:600}
+nav#tabs button:hover{color:var(--text);background:color-mix(in srgb,var(--surface) 60%,transparent);filter:none}
+nav#tabs button.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}nav#tabs button.on .ic{color:var(--o)}
+.ic{width:20px;height:20px;flex:none}
+.tools{display:flex;align-items:center;gap:8px;margin-left:auto}.clock{font-size:14px;color:var(--muted);margin-right:4px}
+.ib{position:relative;width:42px;height:42px;padding:0;border-radius:50%;background:var(--surface);color:var(--text);border:1px solid var(--line);display:grid;place-items:center;box-shadow:var(--shadow)}
 .ib .auto{position:absolute;right:-2px;bottom:-2px;font:700 9px/14px var(--ff);width:14px;height:14px;border-radius:50%;background:var(--o);color:var(--text-primary-color);text-align:center;font-style:normal}
-.ib#gear.on{border-color:var(--o);color:var(--o)}
 .badge{position:absolute;top:-3px;right:-3px;min-width:18px;height:18px;border-radius:9px;background:var(--bad);color:#fff;font:700 11px/18px var(--ff);text-align:center;padding:0 4px;font-style:normal}.badge[hidden]{display:none}
-main#view{flex:1}
-.statusbar{position:sticky;bottom:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;max-width:1500px;width:100%;margin:18px auto 0;padding:9px 14px;background:color-mix(in srgb,var(--sidebar) 92%,transparent);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid var(--line);border-bottom:0;border-radius:12px 12px 0 0;font-size:12px;color:var(--muted);z-index:5}
-.sok{display:inline-flex;align-items:center;gap:7px;font-weight:650;color:var(--good);margin-right:6px}.sok i{width:8px;height:8px;border-radius:50%;background:currentColor}.sok.warn{color:var(--warn)}
-.schip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:var(--r-pill);background:var(--surface2);border:1px solid var(--line);white-space:nowrap}.schip i{width:7px;height:7px;border-radius:50%}
-@media (max-width:1300px){.tkpis{grid-template-columns:repeat(5,minmax(110px,1fr));overflow-x:auto}.tmeta{display:none}}
-@media (max-width:1100px){.topbar{flex-direction:column;align-items:stretch;flex-wrap:nowrap}.tools{margin-left:0;justify-content:flex-end}}
+@media (max-width:1100px){nav#tabs button span{display:none}nav#tabs button.on span{display:inline}.clock{display:none}}
 @media (max-width:760px){
-  .chead{flex-wrap:wrap}.chead h2{white-space:nowrap}.legend{font-size:12px;gap:8px}
-  .app{grid-template-columns:minmax(0,1fr)}.statusbar{position:static;border-radius:12px;margin-bottom:12px;border-bottom:1px solid var(--line)}
-  .snav{position:sticky;z-index:20;height:auto;min-width:0;flex-direction:row;align-items:center;padding:8px 10px;gap:8px;border-right:0;border-bottom:1px solid var(--line);overflow-x:auto;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);background:color-mix(in srgb,var(--sidebar) 92%,transparent)}
-  .sbrand div,.sfoot{display:none}.sbrand{padding:0}
-  nav#tabs{flex-direction:row;gap:8px}.ngrp{flex-direction:row}.ngrp+.ngrp{padding:0 0 0 8px;border-top:0;border-left:1px solid var(--line)}
-  nav#tabs button{min-height:36px;padding:7px 11px}nav#tabs button.on{box-shadow:inset 0 -2px 0 var(--o)}
-  .mainc{padding:12px 12px 0}.tkpis{grid-template-columns:repeat(5,minmax(118px,1fr))}.tk b{font-size:19px}}
+  .gdate{display:none}.chead{flex-wrap:wrap}.chead h2{white-space:nowrap}.legend{font-size:12px;gap:8px}
+  :host{padding:14px 14px 104px}.top{margin-bottom:16px}.brand h1{font-size:18px}
+  nav#tabs{position:fixed;left:50%;bottom:max(12px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:20;width:calc(100% - 24px);max-width:460px;justify-content:space-between;padding:6px;
+    background:color-mix(in srgb,var(--surface) 90%,transparent);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid var(--line);box-shadow:0 10px 36px #0004}
+  nav#tabs button{flex-direction:column;gap:3px;padding:7px 2px;min-height:54px;flex:1;min-width:0;font-size:10.5px;border-radius:20px}
+  nav#tabs button span,nav#tabs button.on span{display:inline}nav#tabs button .ic{width:22px;height:22px}}
 
 /* ---- layout ---- */
-.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;max-width:1500px;margin:0 auto;grid-auto-flow:dense}
+.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;max-width:1360px;margin:0 auto;grid-auto-flow:dense}
 .card{grid-column:span 4;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:20px;box-shadow:var(--shadow);min-width:0;position:relative}
-.wide{grid-column:1/-1}.w3{grid-column:span 3}.w4{grid-column:span 4}.w6{grid-column:span 6}.w8{grid-column:span 8}
-@media (max-width:1100px){.card,.w3,.w4,.w6{grid-column:span 6}.w8,.side{grid-column:1/-1}}
-@media (max-width:720px){.card,.w3,.w4,.w6,.w8,.side{grid-column:1/-1}.card{padding:16px;border-radius:20px}}
+.wide{grid-column:1/-1}.w4{grid-column:span 4}.w6{grid-column:span 6}.w8{grid-column:span 8}
+@media (max-width:1100px){.card,.w4,.w6{grid-column:span 6}.w8,.side{grid-column:1/-1}}
+@media (max-width:720px){.card,.w4,.w6,.w8,.side{grid-column:1/-1}.card{padding:16px;border-radius:20px}}
 h2{font-size:15px;margin:0 0 12px;font-weight:650;letter-spacing:-.005em;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 h2 .muted,h3 .muted{font-weight:400;font-size:12.5px}
 h3{font-size:13px;margin:6px 0 8px;font-weight:650;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
@@ -2816,36 +2627,5 @@ a.lnk{color:var(--o-deep);font-weight:600;text-decoration:none;display:inline-fl
 @media (max-width:720px){.msg{max-width:90%}.chtools select{max-width:150px}}
 
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.001s!important;animation-iteration-count:1!important;transition-duration:.001s!important}}
-
-/* ---- OVERVIEW bento ---- */
-h2{font-family:var(--fh)}
-.bento .card{padding:16px 18px;display:flex;flex-direction:column}.bento .chead{margin-bottom:10px}.bento h2{font-size:14px}
-.bento #flow{flex:1;display:flex;align-items:center}
-.donrow{display:grid;grid-template-columns:132px 1fr;gap:14px;align-items:center}
-.donut{width:132px;height:132px;display:block}.rtrack{stroke:var(--surface3)}.dv{font:700 22px var(--fh);fill:var(--text)}.ds{font:500 10.5px var(--ff);fill:var(--muted)}
-.donl{display:flex;flex-direction:column;gap:6px;font-size:13px}.donl>div{display:grid;grid-template-columns:auto 1fr auto;align-items:center}.donl b small{font-size:11px;color:var(--muted);font-weight:500}
-.ovsub{margin:14px 0 6px;font-size:12px}
-.hbars{display:flex;align-items:flex-end;gap:3px;height:74px}.hbars i{flex:1;border-radius:3px 3px 1px 1px;opacity:.85;min-height:2px;transition:height .6s}.hbars i:last-child{opacity:1}
-.heat{display:grid;grid-template-columns:repeat(12,1fr);gap:3px;margin:4px 0 12px}
-.heat i{position:relative;aspect-ratio:1.25;border-radius:5px;background:color-mix(in srgb,var(--hc) 70%,var(--surface));display:grid;place-items:center}
-.heat i span{font:600 9.5px var(--ff);color:#0A0E12;opacity:.75}.heat i.cur{outline:2px solid var(--text);outline-offset:1px}
-.kv2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.kv2>div{background:var(--surface2);border-radius:10px;padding:8px 10px;display:flex;flex-direction:column}.kv2 b{font:700 17px var(--fh)}.kv2 .muted{font-size:11.5px}
-.dvc .ring{display:flex;flex-direction:column;align-items:center;margin:2px 0 8px}.ring svg{width:120px;height:120px}
-.rv{font:700 24px var(--fh);fill:var(--text)}.ru{font:500 12px var(--ff);fill:var(--muted)}.rsub{font-size:12px;color:var(--muted);text-transform:capitalize;margin-top:-2px}
-.kvs{display:flex;flex-direction:column;margin-top:auto}.kvs>div{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:12.5px}.kvs span{color:var(--muted)}.kvs b{font-weight:600;text-align:right}
-.cam{position:relative;flex:1;min-height:170px;border-radius:12px;overflow:hidden;background:var(--surface2);display:grid;place-items:center}
-.cam img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.camlive{position:absolute;left:8px;top:8px;display:flex;align-items:center;gap:6px;padding:3px 9px;border-radius:99px;background:#000a;color:#fff;font-size:11px;text-transform:capitalize}.camlive i{width:7px;height:7px;border-radius:50%;background:${C.alert};animation:blink 1.6s infinite}
-.pvc svg{width:100%;height:auto;display:block}
-.bals{display:flex;flex-direction:column;gap:8px}.balr{display:grid;grid-template-columns:76px 1fr 74px;gap:10px;align-items:center;font-size:13px}
-.balr div{height:9px;border-radius:5px;background:var(--surface3);overflow:hidden}.balr i{display:block;height:100%;border-radius:5px;transition:width .8s}.balr b{text-align:right}.balr b small{font-size:11px;color:var(--muted);font-weight:500}
-.ssh{display:flex;justify-content:space-between;margin-top:14px;font-size:13px}.ssh b{font:700 15px var(--fh)}.prog.big{height:9px;border-radius:5px}
-.netc{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}.netc>div:first-child{display:flex;justify-content:space-between;align-items:baseline}.netc b{font:700 24px var(--fh)}.netc .muted{font-size:12px}
-.aitip{display:flex;gap:12px;padding:12px;border-radius:12px;background:var(--surface2);box-shadow:inset 3px 0 0 var(--good)}.aitip.warn{box-shadow:inset 3px 0 0 var(--warn)}.aitip.act{box-shadow:inset 3px 0 0 var(--o)}
-.aitip .iic{width:34px;height:34px;border-radius:10px}.aitip.warn .iic{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
-.aitip b{display:block;font-size:13.5px}.aitip span{font-size:12.5px;color:var(--muted)}
-.hdots{display:grid;grid-template-columns:repeat(3,1fr);gap:6px 10px;margin:12px 0;font-size:12px;color:var(--muted)}.hdots span{display:flex;align-items:center;gap:6px}.hdots i{width:8px;height:8px;border-radius:50%}
-.alines{display:flex;flex-direction:column;gap:6px;font-size:12.5px}.alines>div{display:flex;gap:7px}.alines>div>span:first-child{font-weight:700}
-@media (max-width:1100px){.bento .w4:first-child{grid-column:1/-1}}
 `;
 if (!customElements.get("ampx-studio")) customElements.define("ampx-studio", AmpXStudio); // a second load of this module must not throw
