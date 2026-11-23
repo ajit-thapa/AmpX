@@ -481,7 +481,9 @@ class AmpXStudio extends HTMLElement {
       else if (dis) eta = `${fmtH(Math.max(soc - (floor ?? 0), 0) / 100 * cap / -f.batt)} to reserve`;
     }
     const kwh = soc === null ? "" : `${fx(soc * cap / 100, 1)} of ${fx(cap, 0)} kWh`;
-    const bg = (this._data.energy || {}).budget;
+    const bg = (this._data.energy || {}).budget, rt = (this._data.energy || {}).battery_runtime;
+    // house load alone, no solar: when the battery would reach its reserve
+    if (rt && rt.hours > 0 && !chg) eta = [rt.hours >= 48 ? "Lasts 2+ days" : `Lasts until ${new Date(rt.empty_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}${rt.covers_cheap ? " ✓ cheap window" : ""}`][0];
     this._paintTo("#arc", (bg ? budgetBar(bg) : "") + arcGauge(soc, { state: chg ? `Charging ${fx(f.batt)} kW` : dis ? `Discharging ${fx(-f.batt)} kW` : "Standby", sub: [eta, kwh].filter(Boolean).join(" · "), color: levelColor(soc),
       marks: [{ pct: floor, color: C.peak, label: "Reserve" }] }));
   }

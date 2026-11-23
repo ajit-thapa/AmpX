@@ -42,6 +42,10 @@ from .const import (
     CONF_ST_GRID,
     CONF_ST_GRID_INVERT,
     CONF_ST_PV,
+    CONF_ST_LOAD,
+    CONF_MODE,
+    CONF_NAME_BATTERY,
+    ENGINE_INVERTER,
     CONF_AI_PER_HOUR,
     CONF_AI_TASK,
     CONF_HEALTH_IGNORE,
@@ -93,6 +97,7 @@ SOURCE_KEYS = (
 LOW_BATTERY = 15
 # Sensors that borrow the battery device class but are energy counters or settings, not a device battery
 NOT_A_BATTERY = re.compile(r"export|import|consumption|consumed|feed.?in|generated|charged|discharged|energy|kwh|_today|cutoff|minimum soc|reserve|target", re.I)
+WATCH_AFTER = timedelta(minutes=10)  # a dead energy sensor or an off-schedule battery, after this long
 OFFLINE_AFTER = timedelta(minutes=30)  # a restart or a Wi-Fi blip is not a fault
 VOICE_STATES = {"listening", "processing", "responding"}
 
@@ -134,6 +139,7 @@ class AmpX:
         self._timers: dict[str, Callable[[], None]] = {}
         self._known_issues: set[str] = set()
         self._offline_since: dict[str, datetime] = {}
+        self._watch_since: dict[str, datetime] = {}  # energy sensors down / battery off its schedule
 
     @property
     def features(self):
@@ -618,6 +624,36 @@ class AmpX:
     async def _tick_health(self, _now: datetime) -> None:
         await self.run_health()
 
+    def _energy_watch(self, now: datetime) -> list[str]:
+        """Sensor guard and schedule watchdog.
+
+        AmpX's numbers are only as good as its energy sensors, so a power or SoC sensor
+        that stops reporting is a fault. With the inverter's own schedule in charge, the
+        dispatch mode must sit in Normal: anything else (a forced charge or discharge
+        left behind by an app, an old automation or a person) overrides the schedule."""
+        o, out, watching = self.opts, [], set()
+
+        def held(eid: str) -> bool:
+            watching.add(eid)
+            return now - self._watch_since.setdefault(eid, now) >= WATCH_AFTER
+
+        ignore = set(o.get(CONF_HEALTH_IGNORE) or [])
+        for key in (CONF_ST_PV, CONF_ST_GRID, CONF_ST_BATT, CONF_ST_LOAD, CONF_SOC):
+            eid = o.get(key)
+            st = self.hass.states.get(eid) if eid else None
+            if not eid or eid in ignore or "placeholder" in eid:
+                continue
+            if (st is None or st.state in ("unavailable", "unknown")) and held(eid):
+                out.append(f"Energy sensor {eid} is not reporting: AmpX figures may be wrong")
+        if self.engine() == ENGINE_INVERTER and (eid := o.get(CONF_MODE)):
+            st = self.hass.states.get(eid)
+            if st and st.state not in ("unavailable", "unknown") and not st.state.lower().startswith("normal") and held(eid):
+                name = o.get(CONF_NAME_BATTERY) or "The battery"
+                out.append(f"{name} is in {st.state} mode, not following its own schedule")
+        for gone in set(self._watch_since) - watching:
+            del self._watch_since[gone]
+        return out
+
     async def run_health(self) -> list[str]:
         issues: list[str] = []
         ignore = set(self.opts.get(CONF_HEALTH_IGNORE) or [])
@@ -656,6 +692,7 @@ class AmpX:
                 issues.append(f"{', '.join(offline)} {'is' if len(offline) == 1 else 'are'} offline")
             else:
                 issues.append(f"{len(offline)} devices are offline: {', '.join(offline[:3])} and {len(offline) - 3} more")
+        issues += self._energy_watch(now)
         self.health = sorted(issues)
         # Compare without numbers so "battery at 12%" then "battery at 11%" is one issue, not a new alert each run.
         key = lambda i: re.sub(r"\d+(\.\d+)?", "#", i)  # noqa: E731

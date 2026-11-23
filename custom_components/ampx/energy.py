@@ -235,6 +235,7 @@ class EnergyBrain:
         }
         data["export_earned"] = round(self.earned["cents"] / 100, 2)
         data["supply_left"] = round(self.supply_left(), 2)
+        data["battery_runtime"] = tariff.battery_runtime(now, soc, bat_kwh, reserve, self.profile, self.house_kwh_day, plan)
         data["budget"] = tariff.battery_budget(now, soc, bat_kwh, reserve, plan, self.house_kwh_day, self.supply_left(), self.profile)
         data["ev_guard"] = self.ev_guard_note
         data["house_rule"] = bool(o.get(CONF_HOUSE_RULE))

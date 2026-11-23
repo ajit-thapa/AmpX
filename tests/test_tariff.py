@@ -63,3 +63,29 @@ def test_export_pays_only_at_the_best_feed_in_rate():
     assert not t.export_pays(at(3, 12), PLAN)  # 3c
     flat = t.Plan(fit_evening=5.0, fit_morning=5.0, fit_off_peak=5.0)
     assert t.export_pays(at(3, 12), flat)  # a flat feed-in never blocks an export
+
+
+# ---- battery runtime: "battery lasts until..." ----------------------------
+
+def test_battery_runtime_walks_the_hourly_profile():
+    # 60% of 50 kWh with a 20% reserve = 20 kWh usable; 1 kWh/h -> 20 h -> 16:00 next day
+    r = t.battery_runtime(at(2, 20), 60, 50, 20, [1.0] * 24, 24, PLAN)
+    assert r["hours"] == 20.0
+    assert r["empty_at"] == at(3, 16)
+    assert r["covers_cheap"] is True  # past the 10:00 shoulder window
+
+
+def test_battery_runtime_short_of_the_cheap_window():
+    r = t.battery_runtime(at(2, 20), 30, 50, 20, [2.0] * 24, 48, PLAN)  # 5 kWh at 2 kWh/h
+    assert r["hours"] == 2.5 and r["empty_at"] == datetime(2026, 11, 2, 22, 30)
+    assert r["covers_cheap"] is False
+
+
+def test_battery_runtime_at_reserve_and_without_soc():
+    assert t.battery_runtime(at(2, 20), 20, 50, 20, [1.0] * 24, 24, PLAN)["hours"] == 0.0
+    assert t.battery_runtime(at(2, 20), None, 50, 20, [1.0] * 24, 24, PLAN) is None
+
+
+def test_battery_runtime_caps_at_two_days_and_falls_back_to_daily_use():
+    assert t.battery_runtime(at(2, 20), 100, 50, 0, [0.01] * 24, 0.24, PLAN)["hours"] == 48.0
+    assert t.battery_runtime(at(2, 20), 60, 50, 20, None, 24, PLAN)["hours"] == 20.0

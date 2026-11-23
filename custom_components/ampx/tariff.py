@@ -165,6 +165,47 @@ def room_kwh(soc: float, capacity_kwh: float) -> float:
     return round(capacity_kwh - stored_kwh(soc, capacity_kwh), 1)
 
 
+def battery_runtime(
+    now: datetime,
+    soc: float | None,
+    capacity_kwh: float,
+    reserve_pct: float,
+    profile: list[float] | None,
+    house_kwh_per_day: float,
+    plan: Plan,
+) -> dict | None:
+    """How long the battery carries the house on its own: no solar, no grid.
+
+    Walks the hour-of-day load profile (kWh per hour) from now until the usable
+    energy above the reserve runs out, capped at two days. ``covers_cheap`` says
+    whether it lasts until the next cheap (shoulder) window opens.
+    """
+    if soc is None:
+        return None
+    left = max(soc - reserve_pct, 0.0) / 100 * capacity_kwh
+    rates = profile if profile and len(profile) == 24 else [house_kwh_per_day / 24] * 24
+    t, hours, cap = now, 0.0, 48.0
+    while left > 1e-9 and hours < cap:
+        step = min(1 - (t.minute * 60 + t.second) / 3600, cap - hours) or 1.0
+        rate = max(rates[t.hour], 1e-6)
+        if rate * step >= left:
+            step = left / rate
+            left = 0.0
+        else:
+            left -= rate * step
+        hours += step
+        t = now + timedelta(hours=hours)
+    hours = round(min(hours, cap), 2)
+    empty = now + timedelta(hours=hours)
+    if _in(now.hour, plan.shoulder_window):
+        cheap = now
+    else:
+        cheap = now.replace(hour=plan.shoulder_window[0], minute=0, second=0, microsecond=0)
+        if cheap <= now:
+            cheap += timedelta(days=1)
+    return {"hours": hours, "empty_at": empty, "covers_cheap": empty >= cheap}
+
+
 def battery_budget(
     now: datetime,
     soc: float | None,
