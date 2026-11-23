@@ -1070,19 +1070,25 @@ class AmpXStudio extends HTMLElement {
   _neoControls() { return this._disc().bt.controls; }
   /** True when an external engine (EMHASS) is the brain and AmpX is only the face: no controls, no AmpX decisions. */
   _face() { return !!((this._data || {}).control || {}).face; }
-  _engineName() { return String(((this._data || {}).control || {}).decision_engine || "").toUpperCase(); }
+  _engineName() {
+    const c = (this._data || {}).control || {};
+    const l = c.engine_label || String(c.decision_engine || "");
+    return l.charAt(0).toUpperCase() + l.slice(1);
+  }
+  _inverterRuns() { return ((this._data || {}).control || {}).decision_engine === "inverter"; }
   _faceCard() {
     const o = this._data.optimiser || {}, c = this._data.control || {}, eng = this._engineName();
     const dm = c.mode_entity && this._hass.states[c.mode_entity], dispatch = (dm && dm.state) || o.dispatch_mode || "–";
     const dcol = /discharge/i.test(dispatch) ? C.off_peak : /charge/i.test(dispatch) ? C.grid : C.shoulder;
     const armed = o.armed === true;
     return `<div class="card wide ctl"><h2>Battery control <span class="pill" style="--pc:${dcol}">dispatch: ${esc(dispatch)}</span></h2>
-      <div class="evnote">${icon("home")}<span><b>${esc(eng)} is the brain.</b> It plans and drives the battery; AmpX only shows what it does.
-        ${armed ? "Control is armed." : "Control is not armed, so the battery runs on its own settings."}</span></div>
+      <div class="evnote">${icon("home")}<span><b>${esc(eng)} is the brain.</b> ${this._inverterRuns()
+        ? "The battery follows the schedule set in the Neovolt app; AmpX only shows what it does."
+        : `It plans and drives the battery; AmpX only shows what it does. ${armed ? "Control is armed." : "Control is not armed, so the battery runs on its own settings."}`}</span></div>
       ${o.dispatch_status ? `<div class="row"><span>Battery now</span><b>${esc(o.dispatch_status)}</b></div>` : ""}
-      <div class="row"><span>Plan now</span><b>${o.batt_w == null ? "–" : o.batt_w < -50 ? "charge " + fx(-o.batt_w / 1000, 1) + " kW" : o.batt_w > 50 ? "discharge " + fx(o.batt_w / 1000, 1) + " kW" : "hold"}</b></div>
-      <div class="row"><span>Optimiser</span><b>${esc(o.status || "no data")}</b></div>
-      <div class="rowend" style="margin-top:8px"><span class="muted">To take control back, set the decision engine to AmpX in AmpX options.</span><button class="ghost" data-go="energy/plan">See plan ↗</button></div></div>`;
+      ${this._inverterRuns() ? "" : `<div class="row"><span>Plan now</span><b>${o.batt_w == null ? "–" : o.batt_w < -50 ? "charge " + fx(-o.batt_w / 1000, 1) + " kW" : o.batt_w > 50 ? "discharge " + fx(o.batt_w / 1000, 1) + " kW" : "hold"}</b></div>
+      <div class="row"><span>Optimiser</span><b>${esc(o.status || "no data")}</b></div>`}
+      <div class="rowend" style="margin-top:8px"><span class="muted">To take control back, set the decision engine to AmpX in AmpX options.</span>${this._inverterRuns() ? "" : '<button class="ghost" data-go="energy/plan">See plan ↗</button>'}</div></div>`;
   }
   _ctlCards() {
     const d = this._data, c = d.control; if (!c) return "";
@@ -1776,7 +1782,7 @@ class AmpXStudio extends HTMLElement {
     const bar = (v, label) => `<div class="hbar"><span>${label}</span><div><i style="width:${v === null ? 0 : Math.min(v / mx, 1) * 100}%;background:${C.solar}"></i></div><b>${v === null ? "–" : fx(v, 0) + " kWh"}</b></div>`;
     const face = this._face();
     return `<section class="grid">
-      ${face ? this._externalPlanCard() : this._planCard()}
+      ${face ? (this._inverterRuns() ? this._faceCard() : this._externalPlanCard()) : this._planCard()}
       <div class="card wide"><h2>Today's rates <span class="legend"><b style="color:${C.shoulder}">■</b> shoulder <b style="color:${C.off_peak}">■</b> off-peak <b style="color:${C.peak}">■</b> peak <b style="color:#2e7d32">━</b> feed-in</span></h2>
         <div class="chart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${grid}${bars}
         <path d="${pts}" fill="none" stroke="#2e7d32" stroke-width="2.5"/>${labels}</svg></div></div>

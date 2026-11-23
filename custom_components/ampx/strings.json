@@ -77,7 +77,7 @@
           "ev_charger_kw": "EV charger power",
           "battery_efficiency": "Battery round-trip efficiency",
           "house_off_grid": "House rule: never buy grid power for the house outside the cheap window (the EV may use off-peak grid)",
-          "decision_engine": "Decision engine: ampx (AmpX decides) or hermes (Hermes decides; AmpX shows and suggests)"
+          "decision_engine": "Decision engine: ampx (AmpX decides), or an outside brain that AmpX only shows: emhass, hermes, or inverter (the Neovolt's own schedule)"
         }
       },
       "tariff": {

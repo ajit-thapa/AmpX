@@ -105,13 +105,15 @@ CONF_LOW_SOLAR = "low_solar_kwh"
 CONF_TOPUP_KW = "topup_kw"
 CONF_EXPORT_KW = "export_kw"
 CONF_EXPORT_MIN_SOC = "export_min_soc"
-CONF_ENGINE = "decision_engine"  # ampx | hermes | emhass: who makes energy decisions
+CONF_ENGINE = "decision_engine"  # ampx | hermes | emhass | inverter: who makes energy decisions
 CONF_OBSERVE = "observe_only"  # AmpX decides and logs, but sends nothing to the battery or EV
 ENGINE_AMPX = "ampx"
 ENGINE_HERMES = "hermes"
 ENGINE_EMHASS = "emhass"
+ENGINE_INVERTER = "inverter"  # the inverter's own schedule (e.g. Neovolt app / time-of-use settings)
 # An external engine is the brain: AmpX is only the face (shows, never writes, plans or judges).
-EXTERNAL_ENGINES = (ENGINE_HERMES, ENGINE_EMHASS)
+EXTERNAL_ENGINES = (ENGINE_HERMES, ENGINE_EMHASS, ENGINE_INVERTER)
+ENGINE_LABELS = {ENGINE_HERMES: "Hermes", ENGINE_EMHASS: "EMHASS", ENGINE_INVERTER: "the inverter's own schedule"}
 ENGINES = (ENGINE_AMPX, *EXTERNAL_ENGINES)
 EVENT_SNAPSHOT = "ampx_energy_snapshot"  # fired every refresh when Hermes decides
 CONF_HOUSE_RULE = "house_off_grid"  # never buy grid power for the house outside the cheap window

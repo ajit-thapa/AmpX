@@ -15,6 +15,7 @@ from .const import (
     CONF_ENGINE,
     ENGINE_AMPX,
     ENGINE_HERMES,
+    ENGINE_LABELS,
     CONF_AP_PLANNER,
     CONF_BATT_MAX_KW,
     CONF_CYCLE_COST,
@@ -645,7 +646,7 @@ class EnergyBrain:
 
     # ---- actions --------------------------------------------------------
     def _external_note(self) -> str:
-        return f"skipped: {self.brain.engine().upper()} drives the battery"
+        return f"skipped: {ENGINE_LABELS.get(self.brain.engine(), self.brain.engine())} drives the battery"
 
     async def _set(self, domain: str, service: str, key: str, **data: Any) -> bool:
         if self.brain.hermes():  # Hermes decides and writes; AmpX only shows and suggests

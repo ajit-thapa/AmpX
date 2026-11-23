@@ -246,6 +246,7 @@ async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
                 "house_rule": bool(brain.opts.get(CONF_HOUSE_RULE)),
                 "decision_engine": brain.engine(),
                 "face": brain.face(),
+                "engine_label": ENGINE_LABELS.get(brain.engine(), "AmpX"),
                 "observe": brain.observe(),
                 "batt_max_kw": float(brain.opts.get(CONF_BATT_MAX_KW) or 10),
                 "ev_trickle_kw": float(brain.opts.get(CONF_EV_TRICKLE_KW) or 0),
@@ -464,7 +465,7 @@ async def ws_action(hass: HomeAssistant, connection, msg) -> None:
         return
     action, ident = msg["action"], msg.get("target", "")
     if action in ENERGY_ACTIONS and brain.face():
-        connection.send_error(msg["id"], "external_engine", f"{brain.engine().upper()} drives the battery; AmpX only shows it")
+        connection.send_error(msg["id"], "external_engine", f"{ENGINE_LABELS.get(brain.engine(), brain.engine())} drives the battery; AmpX only shows it")
         return
     try:
         if action == "accept_suggestion":
@@ -524,7 +525,7 @@ async def ws_set_options(hass: HomeAssistant, connection, msg) -> None:
     engine = changes.get(CONF_ENGINE, brain.engine())
     locked = sorted(k for k in changes if k in FACE_LOCKED)
     if engine in EXTERNAL_ENGINES and locked:
-        connection.send_error(msg["id"], "external_engine", f"{engine.upper()} is the brain; AmpX cannot change {', '.join(locked)}")
+        connection.send_error(msg["id"], "external_engine", f"{ENGINE_LABELS.get(engine, engine)} is the brain; AmpX cannot change {', '.join(locked)}")
         return
     entry = brain.entry
     hass.config_entries.async_update_entry(entry, options={**entry.options, **changes})  # reloads AmpX

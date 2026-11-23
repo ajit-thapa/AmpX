@@ -123,3 +123,21 @@ async def test_energy_actions_say_who_drives(hass: HomeAssistant):
         assert result == "skipped: EMHASS drives the battery"
     await hass.async_block_till_done()
     assert not sent
+
+
+async def test_inverter_schedule_engine_is_face_mode(hass: HomeAssistant):
+    """The inverter's own schedule (Neovolt app/settings) drives the battery: AmpX only shows it."""
+    from custom_components.ampx.const import ENGINE_INVERTER
+
+    brain, sent = await _setup(hass, decision_engine=ENGINE_INVERTER, autopilot_mode="auto")
+    assert brain.face() and brain.autopilot.mode == "off"
+    assert await brain.energy._set("number", "set_value", "dispatch_power", value=5.0) is False
+    assert await brain.energy.start_export(True) == "skipped: the inverter's own schedule drives the battery"
+    await hass.async_block_till_done()
+    assert not sent
+
+
+def test_engine_validator_accepts_inverter():
+    from custom_components.ampx.websocket import CONTROL_OPTIONS
+
+    assert CONTROL_OPTIONS[CONF_ENGINE]("inverter") == "inverter"
