@@ -82,6 +82,7 @@ from .motion_lights import MotionLights
 from .routines import Routines
 from .sealion7_feature import Sealion7Feature
 from .security import Security
+from .household import Household
 from .timeline import Timeline
 from .visitors import PROMPT as LOOK_PROMPT, Visitors
 from .gate import SpeechGate, parse_time
@@ -128,6 +129,7 @@ class AmpX:
         self.heating = Heating(self)
         self.security = Security(self)
         self.visitors = Visitors(self)
+        self.household = Household(self)
         self.briefing = Briefing(self)
         self.backup = Backup(self)
         self.autopilot = Autopilot(self)
@@ -146,7 +148,7 @@ class AmpX:
         return (
             self.timeline, self.journal, self.routines, self.learning, self.motion_lights,
             self.heating, self.security, self.visitors, self.briefing, self.backup, self.autopilot,
-            self.sealion7,
+            self.sealion7, self.household,
         )
 
     # ---- lifecycle ------------------------------------------------------
@@ -693,6 +695,7 @@ class AmpX:
             else:
                 issues.append(f"{len(offline)} devices are offline: {', '.join(offline[:3])} and {len(offline) - 3} more")
         issues += self._energy_watch(now)
+        issues += self.household.issues()
         self.health = sorted(issues)
         # Compare without numbers so "battery at 12%" then "battery at 11%" is one issue, not a new alert each run.
         key = lambda i: re.sub(r"\d+(\.\d+)?", "#", i)  # noqa: E731

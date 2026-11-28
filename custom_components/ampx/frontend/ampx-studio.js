@@ -430,8 +430,8 @@ class AmpXStudio extends HTMLElement {
     }).join("");
     const go = (t, label) => `<button class="go" data-go="${t}" aria-label="${label}">${icon("arrow")}</button>`;
     return `<section class="grid now">
-      <div class="card wide insight ${ins.tone}"><span class="iic">${icon(ins.ic)}</span>
-        <div class="itx"><b>${esc(ins.title)}</b><span>${esc(ins.text)}</span></div>
+      <div class="card wide insight ${ins.tone}"><span class="orb" id="orb" role="img"></span>
+        <div class="itx"><b>${esc(ins.title)}</b><span>${esc(ins.text)}</span><div class="ochips">${this._houseChips()}</div></div>
         <button class="pill btn" style="--pc:${mode[1]}" data-go="battery" aria-label="Open battery control">${mode[0]}</button>
         ${ins.go ? `<button class="go" data-go="${ins.go}" aria-label="Details">${icon("arrow")}</button>` : ""}</div>
       <div class="card wide kpis" id="kpis"></div>
@@ -471,6 +471,29 @@ class AmpXStudio extends HTMLElement {
     this._paintArc(f);
     this._battWidgets();
     this._paintVisuals();
+    this._paintOrb(f);
+  }
+  /** Home pulse: colour = tariff period, beat = how hard the grid works, red = something is wrong. */
+  _paintOrb(f) {
+    const o = this._root.querySelector("#orb"); if (!o) return;
+    const d = this._data, h = d.household || {}, alarm = (h.safety || []).some(x => x.on), warn = (d.health || []).length > 0;
+    const col = alarm ? C.alert || "#EF4444" : C[(d.energy || {}).period] || C.off_peak, g = f.grid;
+    const beat = Math.max(1.2, 6 - Math.min(Math.abs(g), 8) * 0.6);
+    o.style.setProperty("--oc", col); o.style.setProperty("--ob", beat.toFixed(1) + "s");
+    o.classList.toggle("warn", !alarm && warn);
+    o.setAttribute("aria-label", alarm ? "Alarm" : g < -0.05 ? `Exporting ${fx(-g, 1)} kW` : g > 0.05 ? `Importing ${fx(g, 1)} kW` : "Self-powered");
+    o.title = o.getAttribute("aria-label");
+  }
+  /** Short house notes under the insight: alarms, bin day, appliances done, health. */
+  _houseChips() {
+    const d = this._data, h = d.household || {}, out = [];
+    (h.safety || []).filter(x => x.on).forEach(x => out.push(["bad", `${x.name}: ${x.kind}`]));
+    if (h.bins_tomorrow) out.push(["warn", h.bins_tomorrow.replace(/\.$/, "")]);
+    else { const b = (h.bins || [])[0]; if (b && b.days === 0) out.push(["", `${b.name} today`]); }
+    (h.events || []).slice(0, 2).forEach(e => out.push(["ok", e.text]));
+    (h.appliances || []).filter(a => a.running).forEach(a => out.push(["", `${a.name} running`]));
+    if ((d.health || []).length) out.push(["warn", `${d.health.length} health issue${d.health.length > 1 ? "s" : ""}`]);
+    return out.map(([c, t]) => `<span class="hchip ${c}">${esc(t)}</span>`).join("");
   }
   _paintArc(f) {
     const b = this._pf().battery, soc = this._socNow(), cap = b.capacity || 10, floor = b.reserve ?? null;
@@ -1897,9 +1920,26 @@ class AmpXStudio extends HTMLElement {
       <div class="card"><h2>House health</h2>${this._list(d.health, h => `<div class="row">${esc(h)}</div>`, `<span class="ok">All clear</span>`)}
         <div class="row"><span class="muted">Speech ${d.hushed ? "hushed" : "active"}</span><button id="hush">${d.hushed ? "Unhush" : "Hush 1h"}</button></div></div>
       ${this._houseExtras()}
+      ${this._householdCards()}
       <div class="card w6"><h2>This week</h2>${this._list(Object.keys(wk).sort(), k => `<div class="row"><span class="muted">${esc(k.replace(/_/g, " "))}</span><b>${Number(wk[k]).toFixed(Number.isInteger(wk[k]) ? 0 : 1)}</b></div>`, "Nothing recorded yet.")}</div>
       <div class="card wide"><h2>Timeline</h2>${this._list((d.timeline || []).slice(0, 14), x => `<div class="row"><span>${esc(x.text)}</span><span class="muted">${esc(x.kind)} · ${hm(x.time)}</span></div>`, "No events yet.")}</div>
     </section>`;
+  }
+  _householdCards() {
+    const h = this._data.household || {}, cards = [];
+    const when = n => n === 0 ? "today" : n === 1 ? "tomorrow" : `in ${n} days`;
+    if ((h.bins || []).length) cards.push(`<div class="card"><h2>Bin day</h2>${h.bins_tomorrow ? `<div class="row warn"><b>${esc(h.bins_tomorrow)}</b></div>` : ""}
+      ${h.bins.map(b => `<div class="row"><span>${esc(b.name)}</span><b>${when(b.days)}</b></div>`).join("")}</div>`);
+    if ((h.safety || []).length) cards.push(`<div class="card"><h2>Leak, smoke &amp; CO</h2>
+      ${h.safety.map(x => `<div class="row ${x.on ? "bad" : ""}"><span>${esc(x.name)}${x.name.toLowerCase().includes(x.kind.split(" ")[0]) ? "" : ` <span class="muted">${esc(x.kind)}</span>`}</span><b>${x.on ? "ALARM" : "OK"}</b></div>`).join("")}</div>`);
+    if ((h.appliances || []).length) cards.push(`<div class="card"><h2>Appliances</h2>
+      ${h.appliances.map(a => `<div class="row"><span>${esc(a.name)}</span><b${a.running ? ' class="ok"' : ""}>${esc(a.state)}</b></div>`).join("")}
+      ${(h.events || []).map(e => `<div class="row muted"><span>${esc(e.text)}</span><span>${esc(e.time.slice(11, 16))}</span></div>`).join("")}</div>`);
+    if ((h.loads || []).length) {
+      const mx = Math.max(...h.loads.map(l => l.kw), 0.1);
+      cards.push(`<div class="card"><h2>Big loads now</h2>${h.loads.map(l => `<div class="lrow"><span>${esc(l.name)}</span><i style="width:${Math.max(l.kw / mx * 100, 2)}%"></i><b>${l.kw >= 1 ? fx(l.kw, 2) + " kW" : Math.round(l.kw * 1000) + " W"}</b></div>`).join("")}</div>`);
+    }
+    return cards.join("");
   }
   async _act(msg, note) {
     try { const r = await this._hass.callWS({ type: "ampx/action", ...msg }); if (note) this._note = note(r.result); }
@@ -2629,5 +2669,16 @@ a.lnk{color:var(--o-deep);font-weight:600;text-decoration:none;display:inline-fl
 @media (max-width:720px){.msg{max-width:90%}.chtools select{max-width:150px}}
 
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.001s!important;animation-iteration-count:1!important;transition-duration:.001s!important}}
+
+/* home pulse orb + house chips */
+.orb{--oc:#F59E0B;--ob:4s;flex:none;width:52px;height:52px;border-radius:50%;background:radial-gradient(circle at 34% 30%,#fff9,transparent 38%),radial-gradient(circle,color-mix(in srgb,var(--oc) 85%,#fff) 0,var(--oc) 70%);box-shadow:0 0 0 0 color-mix(in srgb,var(--oc) 45%,transparent);animation:orbbeat var(--ob) ease-in-out infinite}
+.orb.warn{outline:2px solid var(--warn);outline-offset:3px}
+@keyframes orbbeat{0%,100%{transform:scale(1);box-shadow:0 0 0 0 color-mix(in srgb,var(--oc) 45%,transparent)}50%{transform:scale(1.06);box-shadow:0 0 0 12px transparent}}
+@media (prefers-reduced-motion:reduce){.orb{animation:none}}
+.ochips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}.ochips:empty{display:none}
+.hchip{font-size:12px;padding:2px 9px;border-radius:99px;background:var(--surface2);border:1px solid var(--line)}
+.hchip.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent)}.hchip.bad{color:#fff;background:var(--bad);border-color:var(--bad)}.hchip.ok{color:var(--good)}
+.row.warn b{color:var(--warn)}
+.lrow{display:grid;grid-template-columns:minmax(80px,1fr) 2fr 64px;gap:8px;align-items:center;padding:5px 0;font-size:13px}.lrow i{display:block;height:8px;border-radius:4px;background:var(--o)}.lrow b{text-align:right}
 `;
 if (!customElements.get("ampx-studio")) customElements.define("ampx-studio", AmpXStudio); // a second load of this module must not throw

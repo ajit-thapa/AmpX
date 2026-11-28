@@ -81,6 +81,8 @@ class Briefing(Feature):
             ]
             if today:
                 parts.append("Reminders today: " + "; ".join(today) + ".")
+            if bins := brain.household.bins_tomorrow():
+                parts.append(bins)
         if "parcels" in sections:
             waiting = brain.visitors.parcels_waiting
             if waiting:

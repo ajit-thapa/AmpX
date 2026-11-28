@@ -216,6 +216,7 @@ async def ws_overview(hass: HomeAssistant, connection, msg) -> None:
             "journal": list(brain.journal.items)[:30],
             "week": brain.timeline.week(),
             "security": brain.security.check(),
+            "household": brain.household.status(),
             "backups": await brain.backup.list(),
             "profile": _profile(brain),
             "studio": {
